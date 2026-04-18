@@ -1,0 +1,258 @@
+@import "tailwindcss";
+
+:root {
+  /* 极速复盘风格的暗色基底 */
+  --bg-primary: #0d0e15;       /* 主背景 (内容区) */
+  --bg-secondary: #14161f;     /* 侧边栏 / 顶栏 */
+  --bg-tertiary: #1c1f2b;      /* 输入框 / 标签背景 */
+  --bg-card: #1a1d28;          /* 卡片 */
+  --bg-card-hover: #232636;    /* 卡片 hover */
+  --border-color: #232633;     /* 描边 */
+  --border-color-strong: #2c2f3d;
+
+  --text-primary: #f1f2f6;
+  --text-secondary: #a8acbb;
+  --text-muted: #5d6175;
+
+  /* 急速复盘的核心红绿橙 */
+  --accent-red: #ef4444;       /* 涨 / 看涨 */
+  --accent-green: #22c55e;     /* 跌 / 看跌 */
+  --accent-orange: #f59e0b;    /* 主品牌色 / 选中态 */
+  --accent-orange-strong: #fb923c;
+  --accent-blue: #3b82f6;
+  --accent-purple: #8b5cf6;
+  --accent-yellow: #eab308;
+
+  /* 字体分级 */
+  --font-hero: 1.25rem;
+  --font-lg: 0.9375rem;
+  --font-md: 0.8125rem;
+  --font-sm: 0.75rem;
+  --font-xs: 0.6875rem;
+
+  /* 5 档红色饱和色阶 (整格染色 - 急速复盘风格, 比之前更鲜艳) */
+  --cell-red-1: #5e1a1a;
+  --cell-red-2: #842020;
+  --cell-red-3: #a82424;
+  --cell-red-4: #cb2727;
+  --cell-red-5: #e02828;
+
+  /* 5 档绿色饱和色阶 */
+  --cell-green-1: #14532d;
+  --cell-green-2: #166534;
+  --cell-green-3: #15803d;
+  --cell-green-4: #16a34a;
+  --cell-green-5: #1cb454;
+
+  /* 中性灰 */
+  --cell-neutral: #242736;
+
+  /* 板级色带 (高板偏深红, 低板偏蓝) - 用于股票卡整体染色 */
+  --board-7: #b91c1c;          /* 7板+ 深红 */
+  --board-6: #dc2626;          /* 6板 */
+  --board-5: #e85d2a;          /* 5板 橘红 */
+  --board-4: #f97316;          /* 4板 橙 */
+  --board-3: #f59e0b;          /* 3板 琥珀 */
+  --board-2: #d97706;          /* 2板 中橙 */
+  --board-1: #475569;          /* 1板 深石板 */
+  --board-reseal: #16a34a;     /* 反包 */
+
+  /* 排名色 (#1=金, #2=橙, #3=红, #4-#5=暗) */
+  --rank-1: #f59e0b;
+  --rank-2: #f97316;
+  --rank-3: #dc2626;
+  --rank-other: #6b7280;
+}
+
+@theme inline {
+  --color-bg-primary: var(--bg-primary);
+  --color-bg-secondary: var(--bg-secondary);
+  --color-bg-tertiary: var(--bg-tertiary);
+  --color-bg-card: var(--bg-card);
+  --color-border: var(--border-color);
+  --color-text-primary: var(--text-primary);
+  --color-text-secondary: var(--text-secondary);
+  --color-text-muted: var(--text-muted);
+  --color-up: var(--accent-red);
+  --color-down: var(--accent-green);
+  --color-accent: var(--accent-orange);
+  --color-info: var(--accent-blue);
+  --color-ai: var(--accent-purple);
+}
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--bg-tertiary) transparent;
+}
+
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+  background: var(--bg-tertiary);
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
+
+body {
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", "SF Pro Text", "Segoe UI", Roboto, sans-serif;
+  font-size: var(--font-md);
+  overflow: hidden;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+.tabular-nums { font-variant-numeric: tabular-nums; }
+
+table { border-collapse: collapse; }
+
+/* 数据表 (急速复盘风格 - 仅底部细分隔, 无 hover, 无右描边) */
+.data-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--font-md);
+}
+.data-table th,
+.data-table td {
+  border-bottom: 1px solid var(--border-color);
+  padding: 0.35rem 0.5rem;
+  text-align: center;
+  white-space: nowrap;
+  height: 32px;
+  line-height: 1;
+}
+
+.data-table thead th {
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+  font-weight: 600;
+  font-size: var(--font-sm);
+  position: sticky;
+  top: 0;
+  z-index: 5;
+}
+.data-table tbody td.label-cell {
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+  font-weight: 500;
+  font-size: var(--font-sm);
+  text-align: left;
+  position: sticky;
+  left: 0;
+  z-index: 4;
+}
+
+/* 数字单元格 */
+.cell-num {
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  font-size: var(--font-md);
+  color: #fff;
+}
+.cell-num-sub {
+  font-size: var(--font-xs);
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  margin-top: 0.125rem;
+  opacity: 0.85;
+}
+
+/* 可点击元素 */
+.clickable {
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+.clickable:hover { background: rgba(255, 255, 255, 0.06); }
+
+/* 急速复盘风格的股票卡 (整体染色) */
+.stock-card {
+  display: flex;
+  flex-direction: column;
+  padding: 6px 8px;
+  cursor: pointer;
+  color: #fff;
+  border-radius: 3px;
+  transition: transform 0.12s ease, box-shadow 0.12s ease;
+  min-height: 64px;
+}
+.stock-card:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.45);
+}
+
+/* 题材小标签 (在股票卡底部) */
+.theme-tag {
+  display: inline-block;
+  font-size: 10px;
+  padding: 1px 5px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.16);
+  color: #fff;
+  font-weight: 500;
+  margin-right: 2px;
+  margin-top: 3px;
+}
+
+/* 急速复盘风格的圆角小徽章 */
+.badge-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 6px;
+  border-radius: 10px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+/* 浮动股票徽章 (右下角) */
+.floating-stock-chip {
+  position: fixed;
+  right: 16px;
+  bottom: 80px;
+  z-index: 35;
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  background: var(--accent-red);
+  color: #fff;
+  border-radius: 4px;
+  padding: 4px 8px;
+  font-weight: 700;
+  font-size: 11px;
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.45);
+  cursor: pointer;
+}
+.floating-stock-chip .label { font-size: 9px; opacity: 0.85; margin-top: 1px; }
+
+/* 浮动 Ai 入口 (右下角) */
+.floating-ai-btn {
+  position: fixed;
+  right: 16px;
+  bottom: 16px;
+  z-index: 35;
+  background: var(--accent-purple);
+  color: #fff;
+  border-radius: 4px;
+  padding: 4px 12px;
+  font-size: 12px;
+  font-weight: 700;
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.45);
+  cursor: pointer;
+  border: none;
+}
+
+/* 极速复盘 logo 红色徽标 */
+.brand-logo-mark {
+  width: 24px;
+  height: 24px;
+  border-radius: 5px;
+  background: linear-gradient(135deg, #ef4444 0%, #f97316 100%);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
