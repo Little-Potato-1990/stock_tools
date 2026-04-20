@@ -17,6 +17,7 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.ai.brief_generator import generate_brief
+from app.ai.brief_stream import stream_headline
 from app.ai.debate import run_debate, stream_debate
 from app.ai.ladder_brief import generate_ladder_brief
 from app.ai.lhb_brief import generate_lhb_brief
@@ -234,6 +235,26 @@ async def get_debate_stream(
     await check_and_log_quota(db, user, action="debate", model=model)
     return StreamingResponse(
         stream_debate(topic_type, topic_key, trade_date, model),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
+@router.get("/brief/headline-stream")
+async def get_headline_stream(
+    kind: str = Query(..., pattern="^(today|sentiment|theme|ladder|lhb)$"),
+    trade_date: date = Query(None),
+    model: str = Query("deepseek-v3"),
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """5 张 AI 卡片的 headline 流式生成 — 用于打字机效果, 不替换完整 brief 缓存."""
+    if trade_date is None:
+        from app.ai.brief_generator import _latest_trade_date_with_data
+        trade_date = _latest_trade_date_with_data() or date.today()
+    await check_and_log_quota(db, user, action=f"stream_{kind}", model=model)
+    return StreamingResponse(
+        stream_headline(kind, trade_date, model),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )

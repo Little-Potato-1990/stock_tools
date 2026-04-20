@@ -4,6 +4,8 @@ import { useEffect, useState } from "react";
 import { Sparkles, RefreshCw, Activity, MessageSquare } from "lucide-react";
 import { useUIStore } from "@/stores/ui-store";
 import { EvidenceBadge } from "./EvidenceBadge";
+import { StreamHeadlineControl } from "./StreamHeadlineControl";
+import { useStreamingHeadline } from "@/hooks/useStreamingHeadline";
 
 interface TrendPoint {
   date: string;
@@ -47,6 +49,7 @@ export function SentimentAiCard({ hero = false }: Props = {}) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const askAI = useUIStore((s) => s.askAI);
+  const stream = useStreamingHeadline("sentiment", data?.trade_date, data?.model);
 
   const load = async (refresh = false) => {
     setLoading(true);
@@ -144,10 +147,18 @@ export function SentimentAiCard({ hero = false }: Props = {}) {
         </span>
         <div className="ml-auto flex items-center gap-1.5">
           <EvidenceBadge evidence={data.evidence} accent={PHASE_COLOR[data.phase]} />
+          <StreamHeadlineControl
+            isStreaming={stream.isStreaming}
+            hasOverride={stream.hasOverride}
+            onStart={stream.start}
+            onReset={stream.reset}
+            size={hero ? 13 : 11}
+            accent={PHASE_COLOR[data.phase]}
+          />
           <button
             onClick={() => load(true)}
             className="p-1 transition-opacity hover:opacity-70"
-            title="重新生成"
+            title="重新生成 (走完整 brief 缓存)"
             style={{ color: "var(--text-muted)" }}
           >
             <RefreshCw size={hero ? 13 : 11} />
@@ -164,7 +175,21 @@ export function SentimentAiCard({ hero = false }: Props = {}) {
           letterSpacing: hero ? 0.3 : 0,
         }}
       >
-        {data.judgment}
+        {stream.hasOverride ? (
+          <>
+            {stream.text || "…"}
+            {stream.isStreaming && (
+              <span
+                className="ml-0.5 inline-block animate-pulse"
+                style={{ color: PHASE_COLOR[data.phase] }}
+              >
+                ▍
+              </span>
+            )}
+          </>
+        ) : (
+          data.judgment
+        )}
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-2 mb-2">

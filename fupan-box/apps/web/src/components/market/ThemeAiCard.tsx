@@ -12,6 +12,8 @@ import {
 } from "lucide-react";
 import { useUIStore } from "@/stores/ui-store";
 import { EvidenceBadge } from "./EvidenceBadge";
+import { StreamHeadlineControl } from "./StreamHeadlineControl";
+import { useStreamingHeadline } from "@/hooks/useStreamingHeadline";
 
 interface ThemeItem {
   name: string;
@@ -139,6 +141,7 @@ export function ThemeAiCard() {
   const [error, setError] = useState<string | null>(null);
   const askAI = useUIStore((s) => s.askAI);
   const openThemeDetail = useUIStore((s) => s.openThemeDetail);
+  const stream = useStreamingHeadline("theme", data?.trade_date, data?.model);
 
   const load = async (refresh = false) => {
     setLoading(true);
@@ -227,10 +230,16 @@ export function ThemeAiCard() {
         </span>
         <div className="ml-auto flex items-center gap-1.5">
           <EvidenceBadge evidence={data.evidence} />
+          <StreamHeadlineControl
+            isStreaming={stream.isStreaming}
+            hasOverride={stream.hasOverride}
+            onStart={stream.start}
+            onReset={stream.reset}
+          />
           <button
             onClick={() => load(true)}
             className="p-1 transition-opacity hover:opacity-70"
-            title="重新生成"
+            title="重新生成 (走完整 brief 缓存)"
             style={{ color: "var(--text-muted)" }}
           >
             <RefreshCw size={11} />
@@ -246,7 +255,21 @@ export function ThemeAiCard() {
           lineHeight: 1.5,
         }}
       >
-        {data.headline}
+        {stream.hasOverride ? (
+          <>
+            {stream.text || "…"}
+            {stream.isStreaming && (
+              <span
+                className="ml-0.5 inline-block animate-pulse"
+                style={{ color: "var(--accent-purple)" }}
+              >
+                ▍
+              </span>
+            )}
+          </>
+        ) : (
+          data.headline
+        )}
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-2 mb-2">

@@ -18,6 +18,8 @@ import {
 import { api } from "@/lib/api";
 import { useUIStore } from "@/stores/ui-store";
 import { EvidenceBadge } from "@/components/market/EvidenceBadge";
+import { StreamHeadlineControl } from "@/components/market/StreamHeadlineControl";
+import { useStreamingHeadline } from "@/hooks/useStreamingHeadline";
 import type {
   AiBrief,
   KeyMetric,
@@ -131,6 +133,7 @@ function SectionHeader({
 
 function HeroBlock({ brief }: { brief: AiBrief }) {
   const openDebate = useUIStore((s) => s.openDebate);
+  const stream = useStreamingHeadline("today", brief.trade_date, brief.model);
   return (
     <div
       style={{
@@ -178,6 +181,13 @@ function HeroBlock({ brief }: { brief: AiBrief }) {
             {brief.generated_at.slice(11, 16)}
           </span>
           <EvidenceBadge evidence={brief.evidence} size="md" label="依据" />
+          <StreamHeadlineControl
+            isStreaming={stream.isStreaming}
+            hasOverride={stream.hasOverride}
+            onStart={stream.start}
+            onReset={stream.reset}
+            size={13}
+          />
         </div>
       </div>
 
@@ -190,7 +200,21 @@ function HeroBlock({ brief }: { brief: AiBrief }) {
           letterSpacing: "0.01em",
         }}
       >
-        {brief.tagline}
+        {stream.hasOverride ? (
+          <>
+            {stream.text || "…"}
+            {stream.isStreaming && (
+              <span
+                className="ml-1 inline-block animate-pulse"
+                style={{ color: "var(--accent-purple)" }}
+              >
+                ▍
+              </span>
+            )}
+          </>
+        ) : (
+          brief.tagline
+        )}
       </div>
 
       <div className="flex flex-wrap gap-2 mt-3">

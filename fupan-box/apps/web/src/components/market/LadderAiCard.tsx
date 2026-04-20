@@ -5,6 +5,8 @@ import { Sparkles, RefreshCw, MessageSquare } from "lucide-react";
 import { api } from "@/lib/api";
 import { useUIStore } from "@/stores/ui-store";
 import { EvidenceBadge } from "./EvidenceBadge";
+import { StreamHeadlineControl } from "./StreamHeadlineControl";
+import { useStreamingHeadline } from "@/hooks/useStreamingHeadline";
 
 interface LadderBrief {
   trade_date: string;
@@ -30,6 +32,7 @@ export function LadderAiCard() {
   const [error, setError] = useState<string | null>(null);
   const openStockDetail = useUIStore((s) => s.openStockDetail);
   const askAI = useUIStore((s) => s.askAI);
+  const stream = useStreamingHeadline("ladder", data?.trade_date, data?.model);
 
   const load = async (refresh = false) => {
     setLoading(true);
@@ -109,10 +112,16 @@ export function LadderAiCard() {
         </span>
         <div className="ml-auto flex items-center gap-1.5">
           <EvidenceBadge evidence={data.evidence} />
+          <StreamHeadlineControl
+            isStreaming={stream.isStreaming}
+            hasOverride={stream.hasOverride}
+            onStart={stream.start}
+            onReset={stream.reset}
+          />
           <button
             onClick={() => load(true)}
             className="p-1 transition-opacity hover:opacity-70"
-            title="重新生成"
+            title="重新生成 (走完整 brief 缓存)"
             style={{ color: "var(--text-muted)" }}
           >
             <RefreshCw size={11} />
@@ -127,7 +136,21 @@ export function LadderAiCard() {
           color: "var(--text-primary)",
         }}
       >
-        {data.headline}
+        {stream.hasOverride ? (
+          <>
+            {stream.text || "…"}
+            {stream.isStreaming && (
+              <span
+                className="ml-0.5 inline-block animate-pulse"
+                style={{ color: "var(--accent-purple)" }}
+              >
+                ▍
+              </span>
+            )}
+          </>
+        ) : (
+          data.headline
+        )}
       </div>
 
       <div
