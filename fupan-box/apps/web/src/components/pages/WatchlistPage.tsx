@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 import { api } from "@/lib/api";
 import { Plus, Trash2, LogIn, UserPlus } from "lucide-react";
 import { PageHeader } from "@/components/layout/PageHeader";
+import { WatchlistAiCard } from "@/components/market/WatchlistAiCard";
 
 interface WatchlistItem {
   id: number;
@@ -206,6 +207,11 @@ export function WatchlistPage() {
       </div>
 
       {error && <p className="px-4 text-xs mb-2" style={{ color: "var(--accent-red)" }}>{error}</p>}
+
+      {/* AI 一句话定调 — P3-D */}
+      <div className="px-4">
+        <WatchlistAiCard itemCount={items.length} />
+      </div>
 
       {/* Watchlist table */}
       <div className="px-4 pb-6">

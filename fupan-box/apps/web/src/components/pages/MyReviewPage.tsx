@@ -18,6 +18,8 @@ import {
 } from "lucide-react";
 import { api, type TradeRecord, type TradePattern, type TradeCreate } from "@/lib/api";
 import { useUIStore } from "@/stores/ui-store";
+import { EvidenceBadge } from "@/components/market/EvidenceBadge";
+import { FeedbackThumbs } from "@/components/market/FeedbackThumbs";
 
 type AiReview = {
   mode_label: string;
@@ -26,6 +28,7 @@ type AiReview = {
   weaknesses: Array<{ label: string; text: string }>;
   suggestions: Array<{ label: string; text: string }>;
   model: string;
+  evidence?: string[];
 };
 
 const todayStr = () => new Date().toISOString().slice(0, 10);
@@ -618,12 +621,25 @@ function AiReviewCard({
                 <span className="font-bold" style={{ fontSize: 11, color: "var(--accent-purple)" }}>
                   {review.mode_label}
                 </span>
+                {review.evidence && review.evidence.length > 0 && (
+                  <span className="ml-auto">
+                    <EvidenceBadge evidence={review.evidence} />
+                  </span>
+                )}
               </div>
               <div style={{ color: "var(--text-primary)", lineHeight: 1.5 }}>{review.summary}</div>
             </div>
             <Section icon={<Trophy size={11} style={{ color: "var(--accent-red)" }} />} title="优势" items={review.strengths} color="var(--accent-red)" />
             <Section icon={<TrendingDown size={11} style={{ color: "var(--accent-green)" }} />} title="短板" items={review.weaknesses} color="var(--accent-green)" />
             <Section icon={<Lightbulb size={11} style={{ color: "var(--accent-orange)" }} />} title="改进建议" items={review.suggestions} color="var(--accent-orange)" />
+            <div className="pt-2 mt-2" style={{ borderTop: "1px dashed var(--border-color)" }}>
+              <FeedbackThumbs
+                kind="today"
+                tradeDate={new Date().toISOString().slice(0, 10)}
+                model={review.model}
+                snapshot={{ headline: review.summary, mode_label: review.mode_label, evidence: review.evidence }}
+              />
+            </div>
           </>
         )}
       </div>

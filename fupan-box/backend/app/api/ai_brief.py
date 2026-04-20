@@ -24,6 +24,7 @@ from app.ai.debate import run_debate, stream_debate
 from app.ai.feedback_service import get_feedback_stats, record_feedback
 from app.ai.ladder_brief import generate_ladder_brief
 from app.ai.lhb_brief import generate_lhb_brief
+from app.ai.watchlist_brief import codes_hash, generate_watchlist_brief
 from app.ai.prediction_tracker import get_stats, snapshot_predictions, verify_pending
 from app.ai.sentiment_brief import generate_sentiment_brief
 from app.ai.theme_brief import generate_theme_brief
@@ -240,6 +241,45 @@ async def get_debate_stream(
         stream_debate(topic_type, topic_key, trade_date, model),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
+@router.get("/watchlist-brief")
+async def get_watchlist_brief(
+    trade_date: date = Query(None),
+    model: str = Query("deepseek-v3"),
+    refresh: int = Query(0),
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """根据当前登录用户的 watchlist 生成 1 句定调 + 每只点评 + focus 推荐.
+
+    缓存 key = (user_id, codes_hash, trade_date, model), TTL 30 分钟.
+    """
+    from sqlalchemy import select as _select
+    from app.models.user import UserWatchlist
+
+    rows = (await db.execute(
+        _select(UserWatchlist.stock_code).where(UserWatchlist.user_id == user.id)
+    )).scalars().all()
+    codes = [str(c) for c in rows]
+    if trade_date is None:
+        from app.ai.brief_generator import _latest_trade_date_with_data
+        trade_date = _latest_trade_date_with_data() or date.today()
+    h = codes_hash(codes)
+    cache_key = f"watchlist_brief:{user.id}:{h}:{trade_date}:{model}"
+    return await cached_brief(
+        cache_key,
+        generate_watchlist_brief,
+        codes,
+        trade_date,
+        model,
+        action="watchlist_brief",
+        model=model,
+        trade_date=trade_date,
+        mem_ttl=1800.0,
+        pg_ttl_h=1.0,
+        refresh=bool(refresh),
     )
 
 

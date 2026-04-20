@@ -292,6 +292,33 @@ class ApiClient {
     return this.get<AiBrief>(`/api/ai/brief${q}`);
   }
 
+  getWatchlistBrief(tradeDate?: string, refresh = false) {
+    const params = new URLSearchParams();
+    if (tradeDate) params.set("trade_date", tradeDate);
+    if (refresh) params.set("refresh", "1");
+    const q = params.toString() ? `?${params.toString()}` : "";
+    return this.get<{
+      trade_date: string;
+      model: string;
+      stocks_count: number;
+      found: number;
+      headline: string;
+      focus: { code: string; reason: string };
+      summary: {
+        total: number;
+        found: number;
+        missing: number;
+        limit_up: number;
+        limit_down: number;
+        avg_change_pct: number | null;
+        winners: Array<{ code: string; name: string; change_pct: number }>;
+        losers: Array<{ code: string; name: string; change_pct: number }>;
+      };
+      per_stock: Array<{ code: string; tag: string; note: string }>;
+      evidence: string[];
+    }>(`/api/ai/watchlist-brief${q}`);
+  }
+
   getLadderBrief(tradeDate?: string) {
     const q = tradeDate ? `?trade_date=${tradeDate}` : "";
     return this.get<{

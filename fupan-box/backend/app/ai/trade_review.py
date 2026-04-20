@@ -19,6 +19,7 @@ import statistics
 from typing import Any, Iterable
 
 from app.ai.brief_generator import _call_llm
+from app.ai.cross_context import NO_FLUFF_RULES
 
 logger = logging.getLogger(__name__)
 
@@ -178,7 +179,8 @@ def _build_prompt(trades: list, pattern: dict[str, Any]) -> tuple[str, str]:
         "你是 A 股资深超短线导师, 现在要给一位散户用户做交易复盘点评。"
         "**禁止**: 编造数据、给具体买卖价位、空话套话。"
         "**风格**: 直接、犀利、给可执行建议, 中文输出。"
-        "严格按 JSON schema 返回, 不要 markdown fence。"
+        "严格按 JSON schema 返回, 不要 markdown fence。\n\n"
+        f"{NO_FLUFF_RULES}"
     )
     user = (
         f"该用户最近 {pattern['days']} 天 {pattern['trade_count']} 笔交易统计:\n"
@@ -192,15 +194,30 @@ def _build_prompt(trades: list, pattern: dict[str, Any]) -> tuple[str, str]:
         '  "summary": "<=80字 一段话总结操作风格 + 最显眼的问题",\n'
         '  "strengths": [{"label": "<=4字", "text": "<=50字"}],\n'
         '  "weaknesses": [{"label": "<=4字", "text": "<=50字"}],\n'
-        '  "suggestions": [{"label": "<=4字", "text": "<=60字 必须是可执行动作"}]\n'
+        '  "suggestions": [{"label": "<=4字", "text": "<=60字 必须是可执行动作"}],\n'
+        '  "evidence": ["1-3 条 ≤ 30 字 关键数字, 必须引用 pattern 里的真实数字, 例如 \\\"win_rate=0.42 / chase_rate=0.55\\\""]\n'
         "}\n```\n"
         "strengths/weaknesses/suggestions 各 2-3 条, 每条 label 不同。"
     )
     return system, user
 
 
+def _heuristic_evidence(pattern: dict[str, Any]) -> list[str]:
+    ev: list[str] = []
+    if pattern.get("trade_count"):
+        ev.append(f"近 {pattern['days']} 天 {pattern['trade_count']} 笔")
+    if (wr := pattern.get("win_rate")) is not None:
+        ev.append(f"win_rate={wr:.2f}")
+    if (exp := pattern.get("expectancy")) is not None:
+        ev.append(f"expectancy={exp:+.1f}%")
+    if (cr := pattern.get("chase_rate")) is not None:
+        ev.append(f"chase_rate={cr:.2f}")
+    return ev[:3]
+
+
 def _merge_llm(pattern: dict[str, Any], llm_out: dict | None) -> dict[str, Any]:
     base = _heuristic_review(pattern)
+    base["evidence"] = _heuristic_evidence(pattern)
     if not llm_out:
         return base
 
@@ -221,6 +238,14 @@ def _merge_llm(pattern: dict[str, Any], llm_out: dict | None) -> dict[str, Any]:
                 clean.append({"label": label, "text": text})
         if clean:
             base[key] = clean
+
+    if (ev_raw := llm_out.get("evidence")):
+        ev_clean: list[str] = []
+        for e in (ev_raw if isinstance(ev_raw, list) else [])[:3]:
+            if isinstance(e, str) and (s := e.strip()):
+                ev_clean.append(s[:40])
+        if ev_clean:
+            base["evidence"] = ev_clean
 
     return base
 
