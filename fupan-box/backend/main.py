@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import os
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -16,8 +17,15 @@ logger = logging.getLogger("fupanbox")
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
+    # schema 由 alembic 管理 (alembic upgrade head). 仅当显式开启 dev 兜底
+    # 时, 为本地零启动体验保留 create_all 行为.
+    if os.environ.get("DEV_AUTO_CREATE_ALL", "0") == "1":
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+        logger.warning(
+            "DEV_AUTO_CREATE_ALL=1 启用了 Base.metadata.create_all, 仅用于本地开发, "
+            "生产环境请改用: alembic upgrade head"
+        )
 
     embedded = start_embedded_celery()
     app.state.embedded_celery = embedded

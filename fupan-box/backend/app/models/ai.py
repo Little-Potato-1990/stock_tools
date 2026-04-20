@@ -55,6 +55,9 @@ class AIBriefFeedback(Base):
     __table_args__ = (
         Index("ix_ai_fb_kind_date", "brief_kind", "trade_date"),
         Index("ix_ai_fb_user", "user_id"),
+        # FeedbackStatsPanel 默认 days=30, 按 created_at >= now()-N days 过滤,
+        # 不加索引会全表扫描.
+        Index("ix_ai_fb_created_at", "created_at"),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
