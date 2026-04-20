@@ -1,9 +1,10 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { X, ExternalLink, Star } from "lucide-react";
+import { X, ExternalLink, Star, Zap } from "lucide-react";
 import { api } from "@/lib/api";
 import { getCellColor } from "@/lib/colorScale";
+import { useUIStore } from "@/stores/ui-store";
 
 interface StockDetail {
   stock_code: string;
@@ -35,6 +36,7 @@ export function StockDetailDrawer({ stockCode, onClose }: Props) {
   const [detail, setDetail] = useState<StockDetail | null>(null);
   const [loading, setLoading] = useState(false);
   const [isWatchlisted, setIsWatchlisted] = useState(false);
+  const openWhyRose = useUIStore((s) => s.openWhyRose);
 
   const fetchDetail = useCallback(async (code: string) => {
     setLoading(true);
@@ -102,6 +104,20 @@ export function StockDetailDrawer({ stockCode, onClose }: Props) {
             </span>
           </div>
           <div className="flex items-center gap-1 flex-shrink-0">
+            <button
+              onClick={() => stockCode && openWhyRose(stockCode, detail?.stock_name)}
+              className="flex items-center gap-0.5 px-1.5 py-1 rounded transition-colors"
+              style={{
+                color: "var(--accent-purple)",
+                fontSize: 10,
+                background: "rgba(168,85,247,0.1)",
+                border: "1px solid rgba(168,85,247,0.3)",
+              }}
+              title="AI 解读: 为什么涨/跌 / 卡位 / 高度 / 明日策略"
+            >
+              <Zap size={11} />
+              为什么{detail?.recent_quotes?.[0]?.change_pct && detail.recent_quotes[0].change_pct >= 0 ? "涨" : "跌"}
+            </button>
             <button
               onClick={async () => {
                 if (!api.isLoggedIn() || !stockCode) return;

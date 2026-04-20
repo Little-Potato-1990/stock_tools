@@ -1,4 +1,86 @@
+import type { AiBrief } from "@/types/ai-brief";
+
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+
+// ===== Types =====
+export interface TradeCreate {
+  trade_date: string;
+  code: string;
+  name?: string;
+  buy_price: number;
+  sell_price: number;
+  qty: number;
+  intraday_chg_at_buy?: number;
+  holding_minutes?: number;
+  reason?: string;
+}
+
+export interface TradeRecord extends TradeCreate {
+  id: number;
+  pnl: number;
+  pnl_pct: number;
+  created_at: string;
+}
+
+export interface TradePattern {
+  days: number;
+  trade_count: number;
+  win_count: number;
+  win_rate: number;
+  total_pnl: number;
+  avg_pnl_pct: number;
+  avg_win_pct?: number;
+  avg_loss_pct?: number;
+  expectation: number;
+  max_win: { code: string; name: string; pnl_pct: number; trade_date: string } | null;
+  max_loss: { code: string; name: string; pnl_pct: number; trade_date: string } | null;
+  chase_rate: number;
+  chase_count?: number;
+  avg_holding_min: number | null;
+  median_holding_min: number | null;
+  mode_label: string;
+  mode_desc: string;
+}
+
+export interface QuotaUsage {
+  tier: string;
+  tier_label: string;
+  tier_price_rmb: number;
+  trade_date: string;
+  actions: Array<{
+    action: string;
+    label: string;
+    used: number;
+    quota: number;
+    remaining: number;
+    percent: number;
+  }>;
+}
+
+export interface TierInfo {
+  tier: string;
+  tier_label: string;
+  price_rmb: number;
+  quota: Array<{ action: string; label: string; quota: number }>;
+}
+
+export interface Anomaly {
+  id: number;
+  trade_date: string;
+  detected_at: string;
+  anomaly_type: "surge" | "plunge" | "break" | "seal" | "theme_burst";
+  anomaly_label: string;
+  code: string | null;
+  name: string | null;
+  theme: string | null;
+  price: number | null;
+  change_pct: number | null;
+  delta_5m_pct: number | null;
+  volume_yi: number | null;
+  severity: number;
+  ai_brief: string | null;
+  seen: boolean;
+}
 
 class ApiClient {
   private token: string | null = null;
@@ -108,8 +190,19 @@ class ApiClient {
     return this.get<Array<Record<string, unknown>>>(`/api/market/search?q=${encodeURIComponent(q)}`);
   }
 
-  getNews(count = 30) {
-    return this.get<Array<Record<string, unknown>>>(`/api/market/news?count=${count}`);
+  getNews(count = 30, enrich = true) {
+    const e = enrich ? 1 : 0;
+    return this.get<Array<{
+      title: string;
+      content: string;
+      pub_time: string;
+      related_concepts: string[];
+      tags?: string[];
+      themes?: string[];
+      rel_codes?: string[];
+      importance?: number;
+      sentiment?: "bullish" | "neutral" | "bearish";
+    }>>(`/api/market/news?count=${count}&enrich=${e}`);
   }
 
   getBigdataRank(dimension: string) {
@@ -194,6 +287,221 @@ class ApiClient {
     return this.get<Array<{ id: string; name: string; provider: string; tag: string }>>("/api/ai/models");
   }
 
+  getAiBrief(tradeDate?: string) {
+    const q = tradeDate ? `?trade_date=${tradeDate}` : "";
+    return this.get<AiBrief>(`/api/ai/brief${q}`);
+  }
+
+  getLadderBrief(tradeDate?: string) {
+    const q = tradeDate ? `?trade_date=${tradeDate}` : "";
+    return this.get<{
+      trade_date: string;
+      generated_at: string;
+      model: string;
+      headline: string;
+      structure: Array<{ label: string; text: string }>;
+      key_stocks: Array<{ code: string; name: string; board: number; tag: string; note: string }>;
+    }>(`/api/ai/ladder-brief${q}`);
+  }
+
+  getWhyRose(code: string, tradeDate?: string, refresh = false) {
+    const params = new URLSearchParams({ code });
+    if (tradeDate) params.set("trade_date", tradeDate);
+    if (refresh) params.set("refresh", "1");
+    return this.get<{
+      code: string;
+      name: string;
+      trade_date: string;
+      generated_at: string;
+      model: string;
+      direction: "rose" | "fell" | "unknown";
+      headline: string;
+      drivers: Array<{ label: string; text: string }>;
+      position: { label: string; text: string };
+      height: { label: string; text: string };
+      tomorrow: { label: string; text: string };
+      verdict: "S" | "A" | "B" | "C";
+      verdict_label: string;
+    }>(`/api/ai/why-rose?${params.toString()}`);
+  }
+
+  getDebate(
+    topicType: "market" | "stock" | "theme" = "market",
+    topicKey?: string,
+    tradeDate?: string,
+    refresh = false,
+  ) {
+    const params = new URLSearchParams({ topic_type: topicType });
+    if (topicKey) params.set("topic_key", topicKey);
+    if (tradeDate) params.set("trade_date", tradeDate);
+    if (refresh) params.set("refresh", "1");
+    return this.get<{
+      topic_type: "market" | "stock" | "theme";
+      topic_key: string | null;
+      topic_label: string;
+      trade_date: string;
+      model: string;
+      bull: {
+        headline: string;
+        reasons: Array<{ label: string; text: string }>;
+        trigger: string;
+        confidence: number;
+      };
+      bear: {
+        headline: string;
+        reasons: Array<{ label: string; text: string }>;
+        trigger: string;
+        confidence: number;
+      };
+      judge: {
+        verdict: "看多" | "看空" | "分歧" | "观望";
+        winner_side: "bull" | "bear" | "tie";
+        win_margin: number;
+        summary: string;
+        key_variable: string;
+        next_step: string;
+      };
+    }>(`/api/ai/debate?${params.toString()}`);
+  }
+
+  getAiTrackStats(days = 30) {
+    return this.get<{
+      window_days: number;
+      from_date: string;
+      to_date: string;
+      overall: { verified: number; hits: number; hit_rate: number | null };
+      by_kind: Record<
+        string,
+        {
+          total: number;
+          verified: number;
+          hits: number;
+          hit_rate: number | null;
+          avg_score: number | null;
+        }
+      >;
+      recent: Array<{
+        trade_date: string;
+        kind: string;
+        key: string;
+        model: string;
+        payload: Record<string, unknown>;
+        verify_payload: Record<string, unknown> | null;
+        hit: boolean | null;
+        score: number | null;
+        verified_at: string | null;
+      }>;
+    }>(`/api/ai/track/stats?days=${days}`);
+  }
+
+  triggerAiTrackVerify(horizon = 3) {
+    return this.post<{
+      checked: number;
+      hit: number;
+      miss: number;
+      skip: number;
+    }>(`/api/ai/track/verify?horizon=${horizon}`, {});
+  }
+
+  // ===== P0 我的交易复盘 =====
+  listTrades(days = 30) {
+    return this.get<Array<TradeRecord>>(`/api/trades/?days=${days}`);
+  }
+
+  createTrade(t: TradeCreate) {
+    return this.post<TradeRecord>("/api/trades/", t);
+  }
+
+  deleteTrade(id: number) {
+    return this.delete<{ ok: boolean }>(`/api/trades/${id}`);
+  }
+
+  getTradePattern(days = 30) {
+    return this.get<TradePattern>(`/api/trades/pattern?days=${days}`);
+  }
+
+  getTradeAiReview(days = 30, model = "deepseek-v3") {
+    return this.post<{
+      pattern: TradePattern;
+      review: {
+        mode_label: string;
+        summary: string;
+        strengths: Array<{ label: string; text: string }>;
+        weaknesses: Array<{ label: string; text: string }>;
+        suggestions: Array<{ label: string; text: string }>;
+        model: string;
+      };
+    }>(`/api/trades/ai-review?days=${days}&model=${model}`, {});
+  }
+
+  // ===== P1 商业化分层 + 配额 =====
+  getQuotaUsage() {
+    return this.get<QuotaUsage>("/api/quota/usage");
+  }
+
+  getTiers() {
+    return this.get<TierInfo[]>("/api/quota/tiers");
+  }
+
+  // ===== P2 盘中异动 =====
+  listAnomalies(limit = 50, minSeverity = 1) {
+    return this.get<Anomaly[]>(`/api/intraday/anomalies?limit=${limit}&min_severity=${minSeverity}`);
+  }
+
+  getAnomalyUnseenCount() {
+    return this.get<{ trade_date: string; unseen: number }>("/api/intraday/anomalies/unseen-count");
+  }
+
+  getAnomalyDetail(id: number, refresh = false) {
+    return this.get<Anomaly & { context?: Record<string, unknown> }>(
+      `/api/intraday/anomalies/${id}${refresh ? "?refresh_brief=1" : ""}`
+    );
+  }
+
+  markAnomaliesSeen(ids?: number[], allToday = false) {
+    return this.post<{ ok: boolean }>("/api/intraday/anomalies/seen", { ids, all_today: allToday });
+  }
+
+  triggerAnomalyScan(fake = false) {
+    return this.post<{ status: string; saved: number }>(`/api/intraday/scan${fake ? "?fake=1" : ""}`, {});
+  }
+
+  getDataHealth() {
+    return this.get<{
+      status: "ok" | "stale" | "partial" | "empty";
+      latest_trade_date: string | null;
+      today: string;
+      today_ready: boolean;
+      ready: boolean;
+      snapshot_types: string[];
+      missing: string[];
+      last_pipeline: {
+        trade_date: string | null;
+        finished_at: string | null;
+        records_count: number;
+      } | null;
+      last_failure: {
+        trade_date: string;
+        step: string;
+        started_at: string;
+        error_message: string | null;
+      } | null;
+      stale_minutes: number | null;
+    }>(`/api/snapshot/status/health`);
+  }
+
+  listAiConversations() {
+    return this.get<
+      Array<{ id: number; title: string; trade_date: string | null; updated_at: string }>
+    >(`/api/ai/conversations`);
+  }
+
+  getAiConversationMessages(convId: number) {
+    return this.get<
+      Array<{ id: number; role: "user" | "assistant"; content: string; created_at: string }>
+    >(`/api/ai/conversations/${convId}/messages`);
+  }
+
   async streamChat(
     message: string,
     modelId: string,
@@ -202,6 +510,7 @@ class ApiClient {
     onError: (err: string) => void,
     conversationId?: number,
     tradeDate?: string,
+    context?: Record<string, unknown> | null,
   ) {
     const headers: Record<string, string> = { "Content-Type": "application/json" };
     if (this.token) headers["Authorization"] = `Bearer ${this.token}`;
@@ -214,6 +523,7 @@ class ApiClient {
         model_id: modelId,
         conversation_id: conversationId || undefined,
         trade_date: tradeDate || undefined,
+        context: context || undefined,
       }),
     });
 

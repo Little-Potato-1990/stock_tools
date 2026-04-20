@@ -20,6 +20,11 @@ class Settings(BaseSettings):
 
     ai_free_quota_daily: int = 5
 
+    # 开发模式: backend lifespan 内顺手 spawn celery worker + beat 子进程, 一个命令拉起全栈.
+    # 生产模式 (docker-compose) 应设为 0, 让 worker / beat 各自独立服务管理.
+    dev_embed_celery: bool = True
+    dev_embed_celery_concurrency: int = 2  # worker -c 参数, 本地 2 足够
+
     class Config:
         env_file = ".env"
 

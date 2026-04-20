@@ -212,7 +212,7 @@ table { border-collapse: collapse; }
 .floating-stock-chip {
   position: fixed;
   right: 16px;
-  bottom: 80px;
+  bottom: 164px;
   z-index: 35;
   display: inline-flex;
   flex-direction: column;
@@ -227,6 +227,40 @@ table { border-collapse: collapse; }
   cursor: pointer;
 }
 .floating-stock-chip .label { font-size: 9px; opacity: 0.85; margin-top: 1px; }
+
+/* 浮动 ⚖️ AI 多空辩论 入口 */
+.floating-debate-btn {
+  position: fixed;
+  right: 16px;
+  bottom: 122px;
+  z-index: 35;
+  background: var(--accent-purple);
+  color: #fff;
+  border-radius: 4px;
+  padding: 4px 10px;
+  font-size: 11px;
+  font-weight: 700;
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.45);
+  cursor: pointer;
+  border: none;
+}
+
+/* 浮动 ⚡ 为什么涨/跌 入口 (右下角中) */
+.floating-whyrose-btn {
+  position: fixed;
+  right: 16px;
+  bottom: 80px;
+  z-index: 35;
+  background: var(--accent-orange);
+  color: #fff;
+  border-radius: 4px;
+  padding: 4px 10px;
+  font-size: 11px;
+  font-weight: 700;
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.45);
+  cursor: pointer;
+  border: none;
+}
 
 /* 浮动 Ai 入口 (右下角) */
 .floating-ai-btn {

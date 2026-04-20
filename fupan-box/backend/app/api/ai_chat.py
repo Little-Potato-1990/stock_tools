@@ -1,12 +1,13 @@
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func
+from sqlalchemy import select
 from pydantic import BaseModel
 from datetime import date, datetime
 
 from app.database import get_db
 from app.api.auth import get_current_user
+from app.api.quota import check_and_log_quota
 from app.models.user import User
 from app.models.ai import AIConversation, AIMessage
 from app.ai.models import get_models_dict, DEFAULT_MODEL, AVAILABLE_MODELS
@@ -21,6 +22,7 @@ class ChatRequest(BaseModel):
     model_id: str = DEFAULT_MODEL
     conversation_id: int | None = None
     trade_date: str | None = None
+    context: dict | None = None
 
 
 @router.get("/models")
@@ -34,27 +36,11 @@ async def chat(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    settings = get_settings()
-
-    # Validate model
     valid_ids = {m.id for m in AVAILABLE_MODELS}
     if req.model_id not in valid_ids:
         raise HTTPException(400, f"Invalid model: {req.model_id}")
 
-    # Quota check
-    today_count_result = await db.execute(
-        select(func.count(AIMessage.id))
-        .join(AIConversation, AIMessage.conversation_id == AIConversation.id)
-        .where(
-            AIConversation.user_id == user.id,
-            AIMessage.role == "user",
-            func.date(AIMessage.created_at) == date.today(),
-        )
-    )
-    today_count = today_count_result.scalar() or 0
-    quota = user.ai_quota_daily or settings.ai_free_quota_daily
-    if today_count >= quota:
-        raise HTTPException(429, f"今日 AI 对话次数已达上限（{quota} 次）")
+    await check_and_log_quota(db, user, action="chat", model=req.model_id)
 
     # Get or create conversation
     conversation_id = req.conversation_id
@@ -99,7 +85,9 @@ async def chat(
 
     async def event_stream():
         full_content = ""
-        async for sse_line in stream_chat(req.model_id, messages, req.trade_date):
+        async for sse_line in stream_chat(
+            req.model_id, messages, req.trade_date, user_context=req.context
+        ):
             if '"done": true' in sse_line or '"done":true' in sse_line:
                 import json
                 try:

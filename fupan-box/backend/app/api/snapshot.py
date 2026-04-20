@@ -198,3 +198,94 @@ async def get_update_status(
         }
         for r in rows
     ]
+
+
+_CORE_SNAP_TYPES = ["overview", "ladder", "themes", "industries"]
+
+
+@router.get("/status/health")
+async def get_health_status(db: AsyncSession = Depends(get_db)):
+    """聚合数据健康状态: 最新数据日期, 是否齐全, 上次管线时间."""
+    from datetime import datetime, date as ddate
+    from sqlalchemy import func, distinct
+
+    latest_date_q = await db.execute(
+        select(func.max(DailySnapshot.trade_date)).where(
+            DailySnapshot.snapshot_type == "overview"
+        )
+    )
+    latest_date = latest_date_q.scalar()
+
+    snap_types: list[str] = []
+    if latest_date:
+        types_q = await db.execute(
+            select(distinct(DailySnapshot.snapshot_type)).where(
+                DailySnapshot.trade_date == latest_date
+            )
+        )
+        snap_types = [r for r in types_q.scalars().all() if r]
+
+    missing = [t for t in _CORE_SNAP_TYPES if t not in snap_types]
+    ready = bool(latest_date) and not missing
+
+    last_pipeline_q = await db.execute(
+        select(DataUpdateLog)
+        .where(DataUpdateLog.step == "aggregate", DataUpdateLog.status == "success")
+        .order_by(DataUpdateLog.finished_at.desc().nullslast())
+        .limit(1)
+    )
+    last = last_pipeline_q.scalar_one_or_none()
+
+    last_failure_q = await db.execute(
+        select(DataUpdateLog)
+        .where(DataUpdateLog.status == "failed")
+        .order_by(DataUpdateLog.started_at.desc())
+        .limit(1)
+    )
+    last_failure = last_failure_q.scalar_one_or_none()
+
+    today = ddate.today()
+    today_ready = bool(latest_date and latest_date >= today)
+
+    if today_ready and ready:
+        status = "ok"
+    elif ready:
+        status = "stale"
+    elif latest_date:
+        status = "partial"
+    else:
+        status = "empty"
+
+    stale_minutes: int | None = None
+    if last and last.finished_at:
+        stale_minutes = int((datetime.now() - last.finished_at).total_seconds() // 60)
+
+    return {
+        "status": status,
+        "latest_trade_date": latest_date.isoformat() if latest_date else None,
+        "today": today.isoformat(),
+        "today_ready": today_ready,
+        "ready": ready,
+        "snapshot_types": sorted(snap_types),
+        "missing": missing,
+        "last_pipeline": (
+            {
+                "trade_date": last.trade_date.isoformat() if last else None,
+                "finished_at": last.finished_at.isoformat() if last and last.finished_at else None,
+                "records_count": last.records_count if last else 0,
+            }
+            if last
+            else None
+        ),
+        "last_failure": (
+            {
+                "trade_date": last_failure.trade_date.isoformat(),
+                "step": last_failure.step,
+                "started_at": last_failure.started_at.isoformat(),
+                "error_message": last_failure.error_message,
+            }
+            if last_failure
+            else None
+        ),
+        "stale_minutes": stale_minutes,
+    }

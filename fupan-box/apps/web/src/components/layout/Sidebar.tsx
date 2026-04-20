@@ -11,17 +11,24 @@ import {
   Newspaper,
   Star,
   Bot,
+  Sparkles,
+  Award,
+  BookOpen,
+  Wallet,
   type LucideIcon,
 } from "lucide-react";
 import { useUIStore, type NavModule } from "@/stores/ui-store";
+import { DataHealthChip } from "./DataHealthChip";
 
 interface NavItem {
   key: NavModule;
   label: string;
   icon: LucideIcon;
+  badge?: string;
 }
 
 const NAV: NavItem[] = [
+  { key: "today", label: "今日复盘", icon: Sparkles, badge: "AI" },
   { key: "sentiment", label: "大盘情绪", icon: Activity },
   { key: "ladder", label: "连板天梯", icon: TrendingUp },
   { key: "strong", label: "强势股追踪", icon: TrendingUp },
@@ -32,6 +39,9 @@ const NAV: NavItem[] = [
   { key: "search", label: "个股检索", icon: SearchIcon },
   { key: "news", label: "财联社要闻", icon: Newspaper },
   { key: "watchlist", label: "我的自选", icon: Star },
+  { key: "my_review", label: "我的复盘", icon: BookOpen, badge: "AI" },
+  { key: "ai_track", label: "AI 战绩", icon: Award, badge: "AI" },
+  { key: "account", label: "账户套餐", icon: Wallet },
 ];
 
 export function Sidebar() {
@@ -99,6 +109,23 @@ export function Sidebar() {
               >
                 <Icon size={14} strokeWidth={isActive ? 2.4 : 1.8} />
                 <span className="flex-1">{item.label}</span>
+                {item.badge && (
+                  <span
+                    className="font-bold"
+                    style={{
+                      padding: "1px 5px",
+                      borderRadius: 3,
+                      fontSize: 9,
+                      letterSpacing: "0.04em",
+                      background: isActive
+                        ? "rgba(26,29,40,0.85)"
+                        : "var(--accent-purple)",
+                      color: isActive ? "var(--accent-orange)" : "#fff",
+                    }}
+                  >
+                    {item.badge}
+                  </span>
+                )}
               </button>
             </div>
           );
@@ -128,27 +155,7 @@ export function Sidebar() {
           AI 副驾
         </button>
 
-        <div
-          className="rounded text-center"
-          style={{
-            padding: "7px 6px",
-            background: "var(--bg-tertiary)",
-            border: "1px solid var(--border-color)",
-          }}
-        >
-          <div
-            className="font-bold flex items-center justify-center gap-1"
-            style={{ color: "var(--text-primary)", fontSize: "var(--font-sm)" }}
-          >
-            👤 用户中心
-          </div>
-          <div
-            className="mt-0.5"
-            style={{ color: "var(--text-muted)", fontSize: 10 }}
-          >
-            本地模式 · 数据实时
-          </div>
-        </div>
+        <DataHealthChip />
       </div>
     </aside>
   );

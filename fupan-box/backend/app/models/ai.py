@@ -1,4 +1,4 @@
-from sqlalchemy import String, Date, Text, ForeignKey, Column
+from sqlalchemy import String, Date, Integer, Float, Text, ForeignKey, Column, UniqueConstraint, Index
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 from datetime import date, datetime
@@ -40,4 +40,36 @@ class NewsSummary(Base):
     publish_date: Mapped[date] = mapped_column(Date, index=True)
     related_stocks: Mapped[dict | None] = mapped_column(JSONB)
     related_themes: Mapped[dict | None] = mapped_column(JSONB)
+    created_at: Mapped[datetime] = mapped_column(default=datetime.now)
+
+
+class AIPrediction(Base):
+    """AI 预测落库 — 用于 T+N 后回溯命中率, 形成自我进化闭环.
+
+    kind 枚举:
+        regime          : 大盘势的判断 (consensus/climax/diverge/repair)
+        tilt            : 相似日 AI 综合判断 (延续/反转/震荡)
+        promotion       : 晋级候选 (key=stock_code)
+        first_board     : 首板候选 (key=stock_code)
+        avoid           : 风险规避 (key=stock_code)
+
+    payload 存预测的完整内容; verify_payload 存校验时的实际数据.
+    score: -1 ~ 1 分, hit: True/False/None (None=尚未校验).
+    """
+    __tablename__ = "ai_predictions"
+    __table_args__ = (
+        UniqueConstraint("trade_date", "kind", "key", name="uq_ai_pred"),
+        Index("ix_ai_pred_kind_date", "kind", "trade_date"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    trade_date: Mapped[date] = mapped_column(Date, index=True)
+    model: Mapped[str] = mapped_column(String(50))
+    kind: Mapped[str] = mapped_column(String(20))
+    key: Mapped[str] = mapped_column(String(80), default="_")
+    payload: Mapped[dict] = mapped_column(JSONB)
+    verify_payload: Mapped[dict | None] = mapped_column(JSONB)
+    hit: Mapped[bool | None] = mapped_column()
+    score: Mapped[float | None] = mapped_column(Float)
+    verified_at: Mapped[datetime | None] = mapped_column()
     created_at: Mapped[datetime] = mapped_column(default=datetime.now)

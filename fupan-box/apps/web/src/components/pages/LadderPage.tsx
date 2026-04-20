@@ -6,6 +6,7 @@ import { api } from "@/lib/api";
 import { LadderStats } from "@/components/market/LadderStats";
 import { LadderGrid } from "@/components/market/LadderGrid";
 import { LadderMatrix } from "@/components/market/LadderMatrix";
+import { LadderAiCard } from "@/components/market/LadderAiCard";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Flame, Search } from "lucide-react";
 
@@ -315,7 +316,12 @@ export function LadderPage() {
         ))}
       </div>
 
-      {activeTab === "ladder" && <LadderMatrix />}
+      {activeTab === "ladder" && (
+        <>
+          <LadderAiCard />
+          <LadderMatrix />
+        </>
+      )}
 
       {activeTab === "related" && <RelatedQuery />}
 

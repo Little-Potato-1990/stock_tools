@@ -225,11 +225,10 @@ async def get_yesterday_limit_up_performance(
 @router.get("/news")
 async def get_financial_news(
     count: int = Query(30, ge=5, le=100),
+    enrich: int = Query(1, ge=0, le=1, description="是否启用 AI 打标 (1 启用 / 0 关闭)"),
     db: AsyncSession = Depends(get_db),
 ):
-    """财经要闻: 拉取最新财经新闻 + 关联概念标签"""
-    # 实时新闻没有 Tushare 等价接口, 这里直接走 akshare 实时接口;
-    # 概念名单仍优先走可配置的 adapter, akshare 仅作 fallback.
+    """财经要闻: 拉取最新财经新闻 + AI 打标 (题材/重要级/利好利空) + 自选股命中"""
     import akshare as ak
     from app.pipeline.akshare_adapter import AKShareAdapter
     from app.pipeline.runner import get_adapter
@@ -261,29 +260,42 @@ async def get_financial_news(
     if df is None or df.empty:
         return []
 
-    results = []
+    raw: list[dict] = []
     for _, row in df.head(count).iterrows():
         title = str(row.get("新闻标题", row.get("标题", row.get("title", ""))))
         content = str(row.get("新闻内容", row.get("内容", row.get("content", ""))))
         pub_time = str(row.get("发布时间", row.get("时间", row.get("datetime", ""))))
-
         if not title:
             continue
-
-        related_concepts = []
+        related = []
         text = title + content
         for cn in concept_names:
             if len(cn) >= 2 and cn in text:
-                related_concepts.append(cn)
-
-        results.append({
+                related.append(cn)
+        raw.append({
             "title": title,
-            "content": content[:200] if content else "",
+            "content": content[:300] if content else "",
             "pub_time": pub_time,
-            "related_concepts": related_concepts[:8],
+            "related_concepts": related[:8],
         })
 
-    return results
+    if not raw:
+        return []
+
+    enriched: list[dict] = []
+    if enrich:
+        from app.ai.news_tagger import tag_news_batch
+        try:
+            tags_arr = await tag_news_batch(raw, theme_pool=concept_names)
+        except Exception:
+            tags_arr = [{} for _ in raw]
+        for it, tg in zip(raw, tags_arr):
+            it = {**it, **tg}
+            enriched.append(it)
+    else:
+        enriched = raw
+
+    return enriched
 
 
 @router.get("/bigdata-rank")

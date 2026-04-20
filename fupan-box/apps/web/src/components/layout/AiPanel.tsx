@@ -1,8 +1,8 @@
 "use client";
 
-import { useState, useRef, useEffect, useCallback } from "react";
-import { X, Send, Sparkles, ChevronDown, LogIn } from "lucide-react";
-import { useUIStore } from "@/stores/ui-store";
+import { useState, useRef, useEffect, useCallback, useMemo } from "react";
+import { X, Send, Sparkles, ChevronDown, LogIn, History } from "lucide-react";
+import { useUIStore, type NavModule } from "@/stores/ui-store";
 import { api } from "@/lib/api";
 
 interface ModelInfo {
@@ -18,6 +18,25 @@ interface Message {
   content: string;
 }
 
+const MODULE_LABELS: Record<NavModule, string> = {
+  today: "今日复盘",
+  sentiment: "大盘情绪",
+  ladder: "连板天梯",
+  strong: "强势股",
+  themes: "题材",
+  industries: "行业",
+  capital: "资金分析",
+  lhb: "龙虎榜",
+  search: "搜索",
+  news: "资讯",
+  watchlist: "自选股",
+  ai_track: "AI 预测追踪",
+  my_review: "我的复盘",
+  account: "账户套餐",
+  dashboard: "仪表盘",
+  bigdata: "大数据",
+};
+
 export function AiPanel() {
   const open = useUIStore((s) => s.aiPanelOpen);
   const close = useUIStore((s) => s.closeAiPanel);
@@ -28,6 +47,63 @@ export function AiPanel() {
   const isStreaming = useUIStore((s) => s.isStreaming);
   const setIsStreaming = useUIStore((s) => s.setIsStreaming);
   const focusedStock = useUIStore((s) => s.focusedStock);
+  const activeModule = useUIStore((s) => s.activeModule);
+  const themeDetailName = useUIStore((s) => s.themeDetailName);
+  const stockDetailCode = useUIStore((s) => s.stockDetailCode);
+  const recentInteractions = useUIStore((s) => s.recentInteractions);
+
+  const pendingPrompt = useUIStore((s) => s.pendingChatPrompt);
+  const consumePending = useUIStore((s) => s.consumePendingPrompt);
+
+  const [watchlist, setWatchlist] = useState<Array<{ code: string; name?: string }>>([]);
+  useEffect(() => {
+    if (!api.isLoggedIn()) {
+      setWatchlist([]);
+      return;
+    }
+    let alive = true;
+    api.getWatchlist()
+      .then((rows) => {
+        if (!alive) return;
+        setWatchlist(rows.map((r) => ({ code: r.stock_code })));
+      })
+      .catch(() => {
+        if (alive) setWatchlist([]);
+      });
+    return () => {
+      alive = false;
+    };
+  }, [open]);
+
+  const aiContext = useMemo(() => {
+    const ctx: {
+      module: NavModule;
+      stockCode?: string;
+      stockName?: string;
+      theme?: string;
+      watchlist?: Array<{ code: string; name?: string }>;
+      recent?: Array<{ kind: string; key: string; label?: string; ago_min: number }>;
+    } = { module: activeModule };
+    if (stockDetailCode) {
+      ctx.stockCode = stockDetailCode;
+      if (focusedStock?.code === stockDetailCode) ctx.stockName = focusedStock.name;
+    } else if (focusedStock) {
+      ctx.stockCode = focusedStock.code;
+      ctx.stockName = focusedStock.name;
+    }
+    if (themeDetailName) ctx.theme = themeDetailName;
+    if (watchlist.length > 0) ctx.watchlist = watchlist.slice(0, 30);
+    if (recentInteractions.length > 0) {
+      const now = Date.now();
+      ctx.recent = recentInteractions.slice(0, 8).map((it) => ({
+        kind: it.kind,
+        key: it.key,
+        label: it.label,
+        ago_min: Math.max(0, Math.round((now - it.ts) / 60000)),
+      }));
+    }
+    return ctx;
+  }, [activeModule, focusedStock, themeDetailName, stockDetailCode, watchlist, recentInteractions]);
 
   const [input, setInput] = useState("");
   const [messages, setMessages] = useState<Message[]>([
@@ -42,17 +118,28 @@ export function AiPanel() {
   const [showModelPicker, setShowModelPicker] = useState(false);
   const [loggedIn, setLoggedIn] = useState(false);
 
+  const [showHistory, setShowHistory] = useState(false);
+  const [convs, setConvs] = useState<
+    Array<{ id: number; title: string; trade_date: string | null; updated_at: string }>
+  >([]);
+  const [convsLoading, setConvsLoading] = useState(false);
+
   const bottomRef = useRef<HTMLDivElement>(null);
   const pickerRef = useRef<HTMLDivElement>(null);
+  const historyRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  // 打开抽屉时自动聚焦输入框
   useEffect(() => {
-    if (open) {
-      const t = setTimeout(() => inputRef.current?.focus(), 240);
-      return () => clearTimeout(t);
-    }
+    if (!open) return;
+    const t = setTimeout(() => inputRef.current?.focus(), 240);
+    return () => clearTimeout(t);
   }, [open]);
+
+  useEffect(() => {
+    if (!open || !pendingPrompt) return;
+    const p = consumePending();
+    if (p) setInput(p);
+  }, [open, pendingPrompt, consumePending]);
 
   useEffect(() => {
     api.restoreToken();
@@ -72,10 +159,57 @@ export function AiPanel() {
       if (pickerRef.current && !pickerRef.current.contains(e.target as Node)) {
         setShowModelPicker(false);
       }
+      if (historyRef.current && !historyRef.current.contains(e.target as Node)) {
+        setShowHistory(false);
+      }
     };
     document.addEventListener("mousedown", handler);
     return () => document.removeEventListener("mousedown", handler);
   }, []);
+
+  const loadHistory = useCallback(async () => {
+    if (!api.isLoggedIn()) {
+      setConvs([]);
+      return;
+    }
+    setConvsLoading(true);
+    try {
+      const list = await api.listAiConversations();
+      setConvs(list);
+    } catch {
+      setConvs([]);
+    } finally {
+      setConvsLoading(false);
+    }
+  }, []);
+
+  const handleOpenHistory = useCallback(() => {
+    setShowHistory((prev) => {
+      const next = !prev;
+      if (next) loadHistory();
+      return next;
+    });
+  }, [loadHistory]);
+
+  const handlePickConversation = useCallback(async (convId: number) => {
+    setShowHistory(false);
+    if (convId === conversationId) return;
+    try {
+      const msgs = await api.getAiConversationMessages(convId);
+      setConversationId(convId);
+      setMessages(
+        msgs
+          .filter((m) => m.role === "user" || m.role === "assistant")
+          .map((m) => ({ id: String(m.id), role: m.role, content: m.content }))
+      );
+    } catch (e) {
+      const err = e instanceof Error ? e.message : "load failed";
+      setMessages((prev) => [
+        ...prev,
+        { id: Date.now().toString(), role: "assistant", content: `加载历史会话失败: ${err}` },
+      ]);
+    }
+  }, [conversationId, setConversationId]);
 
   // ESC 关闭
   useEffect(() => {
@@ -129,8 +263,10 @@ export function AiPanel() {
         setIsStreaming(false);
       },
       conversationId ?? undefined,
+      undefined,
+      aiContext,
     );
-  }, [input, isStreaming, selectedModel, conversationId, setConversationId, setIsStreaming]);
+  }, [input, isStreaming, selectedModel, conversationId, setConversationId, setIsStreaming, aiContext]);
 
   const handleNewChat = () => {
     setConversationId(null);
@@ -184,7 +320,22 @@ export function AiPanel() {
               复盘副驾
             </span>
           </div>
-          <div className="flex items-center gap-1">
+          <div className="flex items-center gap-1 relative" ref={historyRef}>
+            <button
+              onClick={handleOpenHistory}
+              className="font-semibold transition-colors flex items-center gap-1"
+              title="历史会话"
+              style={{
+                fontSize: "var(--font-sm)",
+                padding: "4px 8px",
+                background: showHistory ? "var(--accent-purple)" : "var(--bg-tertiary)",
+                color: showHistory ? "#fff" : "var(--text-secondary)",
+                borderRadius: 4,
+              }}
+            >
+              <History size={12} />
+              历史
+            </button>
             <button
               onClick={handleNewChat}
               className="font-semibold transition-colors"
@@ -201,7 +352,126 @@ export function AiPanel() {
             <button onClick={close} className="p-1.5 transition-opacity hover:opacity-70">
               <X size={16} style={{ color: "var(--text-secondary)" }} />
             </button>
+
+            {showHistory && (
+              <div
+                className="absolute right-0 top-full mt-1 z-50 max-h-80 overflow-y-auto"
+                style={{
+                  width: 280,
+                  background: "var(--bg-card)",
+                  border: "1px solid var(--border-color)",
+                  borderRadius: 4,
+                  boxShadow: "0 8px 24px rgba(0,0,0,0.5)",
+                }}
+              >
+                {convsLoading ? (
+                  <div
+                    className="px-3 py-3 text-center"
+                    style={{ color: "var(--text-muted)", fontSize: "var(--font-sm)" }}
+                  >
+                    加载中...
+                  </div>
+                ) : convs.length === 0 ? (
+                  <div
+                    className="px-3 py-3 text-center"
+                    style={{ color: "var(--text-muted)", fontSize: "var(--font-sm)" }}
+                  >
+                    {loggedIn ? "暂无历史会话" : "请先登录"}
+                  </div>
+                ) : (
+                  convs.map((c) => (
+                    <button
+                      key={c.id}
+                      onClick={() => handlePickConversation(c.id)}
+                      className="w-full text-left px-3 py-2 transition-colors hover:brightness-125"
+                      style={{
+                        background:
+                          c.id === conversationId ? "var(--bg-tertiary)" : "transparent",
+                        color: "var(--text-primary)",
+                        fontSize: "var(--font-sm)",
+                        borderBottom: "1px solid var(--border-color)",
+                      }}
+                    >
+                      <div
+                        className="truncate font-semibold"
+                        style={{
+                          color:
+                            c.id === conversationId
+                              ? "var(--accent-purple)"
+                              : "var(--text-primary)",
+                        }}
+                      >
+                        {c.title || "未命名对话"}
+                      </div>
+                      <div
+                        className="flex items-center gap-2 mt-0.5"
+                        style={{ fontSize: "var(--font-xs)", color: "var(--text-muted)" }}
+                      >
+                        {c.trade_date && <span>{c.trade_date}</span>}
+                        <span className="ml-auto">
+                          {new Date(c.updated_at).toLocaleString("zh-CN", {
+                            month: "2-digit",
+                            day: "2-digit",
+                            hour: "2-digit",
+                            minute: "2-digit",
+                          })}
+                        </span>
+                      </div>
+                    </button>
+                  ))
+                )}
+              </div>
+            )}
           </div>
+        </div>
+
+        {/* Context chips */}
+        <div
+          className="flex items-center gap-1 px-4 py-1.5 flex-wrap flex-shrink-0"
+          style={{
+            background: "var(--bg-tertiary)",
+            borderBottom: "1px solid var(--border-color)",
+            fontSize: "var(--font-xs)",
+          }}
+        >
+          <span style={{ color: "var(--text-muted)" }}>上下文:</span>
+          <span
+            style={{
+              padding: "1px 6px",
+              borderRadius: 3,
+              background: "var(--bg-secondary)",
+              color: "var(--accent-purple)",
+              border: "1px solid var(--border-color)",
+            }}
+          >
+            {MODULE_LABELS[aiContext.module]}
+          </span>
+          {aiContext.stockCode && (
+            <span
+              style={{
+                padding: "1px 6px",
+                borderRadius: 3,
+                background: "var(--bg-secondary)",
+                color: "var(--accent-orange)",
+                border: "1px solid var(--border-color)",
+              }}
+            >
+              {aiContext.stockName ?? aiContext.stockCode}
+            </span>
+          )}
+          {aiContext.theme && (
+            <span
+              style={{
+                padding: "1px 6px",
+                borderRadius: 3,
+                background: "var(--bg-secondary)",
+                color: "var(--accent-red)",
+                border: "1px solid var(--border-color)",
+              }}
+            >
+              {aiContext.theme}
+            </span>
+          )}
         </div>
 
         {/* Model selector */}

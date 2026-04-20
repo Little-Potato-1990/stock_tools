@@ -4,6 +4,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { api } from "@/lib/api";
 import { useUIStore } from "@/stores/ui-store";
 import { PageHeader } from "@/components/layout/PageHeader";
+import { ThemeAiCard } from "@/components/market/ThemeAiCard";
 
 const PAGE_SIZE = 7;
 const MAX_DAYS = 60;
@@ -255,6 +256,8 @@ export function ThemesPage() {
             : undefined
         }
       />
+
+      <ThemeAiCard />
 
       {loading ? (
         <div

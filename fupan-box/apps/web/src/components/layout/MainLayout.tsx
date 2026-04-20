@@ -5,6 +5,10 @@ import { AiPanel } from "./AiPanel";
 import { FloatingStockBadge } from "./FloatingStockBadge";
 import { StockDetailDrawer } from "@/components/market/StockDetailDrawer";
 import { ThemeDetailDrawer } from "@/components/market/ThemeDetailDrawer";
+import { WhyRoseModal } from "@/components/market/WhyRoseModal";
+import { DebateModal } from "@/components/market/DebateModal";
+import { AnomalyBell } from "@/components/market/AnomalyBell";
+import { AnomalyDrawer } from "@/components/market/AnomalyDrawer";
 import { useUIStore } from "@/stores/ui-store";
 
 export function MainLayout({ children }: { children: React.ReactNode }) {
@@ -22,9 +26,13 @@ export function MainLayout({ children }: { children: React.ReactNode }) {
       <main className="flex-1 min-h-0 min-w-0 overflow-y-auto">{children}</main>
 
       <FloatingStockBadge />
+      <AnomalyBell />
+      <AnomalyDrawer />
       <AiPanel />
       <StockDetailDrawer stockCode={stockDetailCode} onClose={closeStockDetail} />
       <ThemeDetailDrawer themeName={themeDetailName} onClose={closeThemeDetail} />
+      <WhyRoseModal />
+      <DebateModal />
     </div>
   );
 }

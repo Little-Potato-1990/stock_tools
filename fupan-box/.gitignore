@@ -40,3 +40,8 @@ logs/
 *.sqlite
 *.sqlite3
 *.dump
+
+# Celery beat 运行时状态文件
+celerybeat-schedule
+celerybeat-schedule-*
+celerybeat.pid
