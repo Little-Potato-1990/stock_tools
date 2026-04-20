@@ -16,8 +16,10 @@ import {
 } from "lucide-react";
 import { api } from "@/lib/api";
 import { useUIStore } from "@/stores/ui-store";
+import { FeedbackStatsPanel } from "./FeedbackStatsPanel";
 
 type Stats = Awaited<ReturnType<typeof api.getAiTrackStats>>;
+type Mode = "hit_rate" | "feedback";
 
 const KIND_META: Record<
   string,
@@ -37,6 +39,7 @@ const KIND_META: Record<
 const KIND_ORDER = ["regime", "tilt", "promotion", "first_board", "avoid"];
 
 export function AiTrackPage() {
+  const [mode, setMode] = useState<Mode>("hit_rate");
   const [stats, setStats] = useState<Stats | null>(null);
   const [loading, setLoading] = useState(false);
   const [verifying, setVerifying] = useState(false);
@@ -105,8 +108,38 @@ export function AiTrackPage() {
           >
             AI 战绩看板
           </span>
+          <div
+            className="ml-3 flex items-center"
+            style={{
+              background: "var(--bg-tertiary)",
+              borderRadius: 4,
+              padding: 2,
+            }}
+          >
+            {[
+              { id: "hit_rate" as Mode, label: "T+3 命中率" },
+              { id: "feedback" as Mode, label: "用户反馈" },
+            ].map((t) => (
+              <button
+                key={t.id}
+                onClick={() => setMode(t.id)}
+                className="px-2 py-0.5 rounded font-bold transition-colors"
+                style={{
+                  background: mode === t.id ? "var(--accent-purple)" : "transparent",
+                  color: mode === t.id ? "#fff" : "var(--text-secondary)",
+                  fontSize: 11,
+                  border: "none",
+                  cursor: "pointer",
+                }}
+              >
+                {t.label}
+              </button>
+            ))}
+          </div>
           <span style={{ fontSize: 10, color: "var(--text-muted)" }}>
-            把 AI 给出的判断留个底, 几天后回头看准不准, 形成自我进化闭环
+            {mode === "hit_rate"
+              ? "把 AI 给出的判断留个底, 几天后回头看准不准, 形成自我进化闭环"
+              : "用户对 5 张 AI 卡片的 👍 / 👎, 用来反向修正 prompt"}
           </span>
         </div>
         <div className="flex items-center gap-2">
@@ -155,7 +188,7 @@ export function AiTrackPage() {
         </div>
       </div>
 
-      <div className="p-3 space-y-3">
+      <div className="p-3 space-y-3" style={{ display: mode === "feedback" ? "none" : undefined }}>
         <div
           className="grid grid-cols-1 md:grid-cols-3 gap-3 px-3 py-3"
           style={{
@@ -499,6 +532,12 @@ export function AiTrackPage() {
           )}
         </div>
       </div>
+
+      {mode === "feedback" && (
+        <div className="p-3">
+          <FeedbackStatsPanel days={days} />
+        </div>
+      )}
     </div>
   );
 }

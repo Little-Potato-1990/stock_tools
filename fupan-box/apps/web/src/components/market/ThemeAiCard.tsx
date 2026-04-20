@@ -14,6 +14,7 @@ import { useUIStore } from "@/stores/ui-store";
 import { EvidenceBadge } from "./EvidenceBadge";
 import { StreamHeadlineControl } from "./StreamHeadlineControl";
 import { useStreamingHeadline } from "@/hooks/useStreamingHeadline";
+import { FeedbackThumbs } from "./FeedbackThumbs";
 
 interface ThemeItem {
   name: string;
@@ -429,6 +430,14 @@ export function ThemeAiCard() {
           </button>
         </div>
       )}
+      <div className="mt-2 pt-2" style={{ borderTop: "1px dashed var(--border-color)" }}>
+        <FeedbackThumbs
+          kind="theme"
+          tradeDate={data.trade_date}
+          model={data.model}
+          snapshot={{ headline: data.headline, evidence: data.evidence, next_bet: data.next_bet }}
+        />
+      </div>
     </div>
   );
 }

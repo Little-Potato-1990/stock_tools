@@ -7,6 +7,7 @@ import { useUIStore } from "@/stores/ui-store";
 import { EvidenceBadge } from "./EvidenceBadge";
 import { StreamHeadlineControl } from "./StreamHeadlineControl";
 import { useStreamingHeadline } from "@/hooks/useStreamingHeadline";
+import { FeedbackThumbs } from "./FeedbackThumbs";
 
 interface LadderBrief {
   trade_date: string;
@@ -253,6 +254,14 @@ export function LadderAiCard() {
             </button>
           </div>
         ))}
+      </div>
+      <div className="mt-2 pt-2" style={{ borderTop: "1px dashed var(--border-color)" }}>
+        <FeedbackThumbs
+          kind="ladder"
+          tradeDate={data.trade_date}
+          model={data.model}
+          snapshot={{ headline: data.headline, evidence: data.evidence, key_stocks: data.key_stocks }}
+        />
       </div>
     </div>
   );

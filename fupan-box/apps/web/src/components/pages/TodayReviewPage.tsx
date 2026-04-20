@@ -20,6 +20,7 @@ import { useUIStore } from "@/stores/ui-store";
 import { EvidenceBadge } from "@/components/market/EvidenceBadge";
 import { StreamHeadlineControl } from "@/components/market/StreamHeadlineControl";
 import { useStreamingHeadline } from "@/hooks/useStreamingHeadline";
+import { FeedbackThumbs } from "@/components/market/FeedbackThumbs";
 import type {
   AiBrief,
   KeyMetric,
@@ -221,6 +222,14 @@ function HeroBlock({ brief }: { brief: AiBrief }) {
         {brief.key_metrics.map((m) => (
           <MetricBadge key={m.label} metric={m} />
         ))}
+      </div>
+      <div className="mt-3 pt-2" style={{ borderTop: "1px dashed rgba(139,92,246,0.28)" }}>
+        <FeedbackThumbs
+          kind="today"
+          tradeDate={brief.trade_date}
+          model={brief.model}
+          snapshot={{ headline: brief.tagline, evidence: brief.evidence, regime: brief.regime }}
+        />
       </div>
     </div>
   );

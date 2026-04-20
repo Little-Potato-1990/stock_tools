@@ -6,6 +6,7 @@ import { useUIStore } from "@/stores/ui-store";
 import { EvidenceBadge } from "./EvidenceBadge";
 import { StreamHeadlineControl } from "./StreamHeadlineControl";
 import { useStreamingHeadline } from "@/hooks/useStreamingHeadline";
+import { FeedbackThumbs } from "./FeedbackThumbs";
 
 interface TrendPoint {
   date: string;
@@ -308,6 +309,14 @@ export function SentimentAiCard({ hero = false }: Props = {}) {
           </button>
         </div>
       )}
+      <div className="mt-2 pt-2" style={{ borderTop: "1px dashed var(--border-color)" }}>
+        <FeedbackThumbs
+          kind="sentiment"
+          tradeDate={data.trade_date}
+          model={data.model}
+          snapshot={{ headline: data.judgment, phase: data.phase, evidence: data.evidence }}
+        />
+      </div>
     </div>
   );
 }

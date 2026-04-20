@@ -6,6 +6,7 @@ import { useUIStore } from "@/stores/ui-store";
 import { EvidenceBadge } from "./EvidenceBadge";
 import { StreamHeadlineControl } from "./StreamHeadlineControl";
 import { useStreamingHeadline } from "@/hooks/useStreamingHeadline";
+import { FeedbackThumbs } from "./FeedbackThumbs";
 
 interface KeyOffice {
   name: string;
@@ -345,6 +346,14 @@ export function LhbAiCard() {
           })}
         </div>
       )}
+      <div className="mt-2 pt-2" style={{ borderTop: "1px dashed var(--border-color)" }}>
+        <FeedbackThumbs
+          kind="lhb"
+          tradeDate={data.trade_date}
+          model={data.model}
+          snapshot={{ headline: data.headline, evidence: data.evidence, key_offices: data.key_offices }}
+        />
+      </div>
     </div>
   );
 }

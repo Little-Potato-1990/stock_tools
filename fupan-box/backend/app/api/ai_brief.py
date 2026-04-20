@@ -16,9 +16,12 @@ from fastapi import APIRouter, Depends, Query
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from pydantic import BaseModel, Field
+
 from app.ai.brief_generator import generate_brief
 from app.ai.brief_stream import stream_headline
 from app.ai.debate import run_debate, stream_debate
+from app.ai.feedback_service import get_feedback_stats, record_feedback
 from app.ai.ladder_brief import generate_ladder_brief
 from app.ai.lhb_brief import generate_lhb_brief
 from app.ai.prediction_tracker import get_stats, snapshot_predictions, verify_pending
@@ -258,6 +261,42 @@ async def get_headline_stream(
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
+
+
+class FeedbackPayload(BaseModel):
+    brief_kind: str = Field(..., pattern="^(today|sentiment|theme|ladder|lhb)$")
+    trade_date: date
+    rating: int = Field(..., ge=-1, le=1)
+    model: str | None = None
+    reason: str | None = Field(None, max_length=500)
+    evidence_correct: bool | None = None
+    snapshot: dict | None = None
+
+
+@router.post("/feedback")
+async def post_feedback(
+    payload: FeedbackPayload,
+    user: User = Depends(get_current_user),
+):
+    """记录用户对 AI 卡片的 👍 / 👎 反馈; 可选附带 evidence_correct 与 reason."""
+    if payload.rating == 0:
+        return {"ok": False, "error": "rating must be 1 (up) or -1 (down)"}
+    return record_feedback(
+        user_id=getattr(user, "id", None),
+        brief_kind=payload.brief_kind,
+        trade_date=payload.trade_date,
+        rating=payload.rating,
+        model=payload.model,
+        reason=payload.reason,
+        evidence_correct=payload.evidence_correct,
+        snapshot=payload.snapshot,
+    )
+
+
+@router.get("/feedback/stats")
+async def get_feedback_stats_api(days: int = Query(30, ge=7, le=180)):
+    """聚合最近 N 天 5 张 AI 卡片的反馈 — 用于 AiTrack 新 tab."""
+    return get_feedback_stats(days=days)
 
 
 @router.get("/track/stats")

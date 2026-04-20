@@ -43,6 +43,32 @@ class NewsSummary(Base):
     created_at: Mapped[datetime] = mapped_column(default=datetime.now)
 
 
+class AIBriefFeedback(Base):
+    """用户对 5 张 AI 卡片 / 主 brief 的反馈 — P3-C 反馈闭环.
+
+    rating: 1 = 👍, -1 = 👎 (前端默认只暴露这两态)
+    evidence_correct: True/False/None — 用户对 evidence 真实性的标注 (None = 没标)
+    snapshot: 反馈瞬间的卡片快照 (headline + evidence 等), 便于复盘看用户在评什么
+    """
+
+    __tablename__ = "ai_brief_feedback"
+    __table_args__ = (
+        Index("ix_ai_fb_kind_date", "brief_kind", "trade_date"),
+        Index("ix_ai_fb_user", "user_id"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
+    brief_kind: Mapped[str] = mapped_column(String(30), index=True)
+    trade_date: Mapped[date] = mapped_column(Date, index=True)
+    model: Mapped[str | None] = mapped_column(String(50))
+    rating: Mapped[int] = mapped_column(Integer)
+    reason: Mapped[str | None] = mapped_column(Text)
+    evidence_correct: Mapped[bool | None] = mapped_column()
+    snapshot: Mapped[dict | None] = mapped_column(JSONB)
+    created_at: Mapped[datetime] = mapped_column(default=datetime.now)
+
+
 class AIPrediction(Base):
     """AI 预测落库 — 用于 T+N 后回溯命中率, 形成自我进化闭环.
 
