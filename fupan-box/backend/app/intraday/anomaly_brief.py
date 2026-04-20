@@ -16,20 +16,12 @@ from sqlalchemy.orm import Session
 
 from app.ai.brief_generator import _call_llm
 from app.config import get_settings
+from app.intraday.labels import label_anomaly
 from app.models.anomaly import IntradayAnomaly
 from app.models.market import LimitUpRecord
 from app.models.stock import DailyQuote, Stock
 
 logger = logging.getLogger(__name__)
-
-
-_TYPE_LABEL = {
-    "surge": "急拉",
-    "plunge": "闪崩",
-    "break": "涨停打开",
-    "seal": "反包封板",
-    "theme_burst": "板块异动",
-}
 
 
 def _build_context(anom: IntradayAnomaly) -> dict[str, Any] | None:
@@ -92,7 +84,7 @@ def _build_context(anom: IntradayAnomaly) -> dict[str, Any] | None:
             return {
                 "anom_id": anom.id,
                 "anomaly_type": anom.anomaly_type,
-                "anomaly_label": _TYPE_LABEL.get(anom.anomaly_type, anom.anomaly_type),
+                "anomaly_label": label_anomaly(anom.anomaly_type),
                 "code": anom.code,
                 "name": anom.name,
                 "industry": stock.industry if stock else None,

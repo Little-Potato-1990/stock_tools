@@ -9,6 +9,7 @@
     refresh: =1 强制重新生成 (跳过缓存)
 """
 
+import asyncio
 import logging
 from datetime import date
 
@@ -18,23 +19,28 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from pydantic import BaseModel, Field
 
-from app.ai.brief_generator import generate_brief
+from app.ai.brief_cache import cache_stats, cached_brief, invalidate_pg, pg_get
+from app.ai.brief_generator import _latest_trade_date_with_data, generate_brief
 from app.ai.brief_stream import stream_headline
 from app.ai.debate import run_debate, stream_debate
 from app.ai.feedback_service import get_feedback_stats, record_feedback
 from app.ai.ladder_brief import generate_ladder_brief
 from app.ai.lhb_brief import generate_lhb_brief
-from app.ai.watchlist_brief import codes_hash, generate_watchlist_brief
 from app.ai.prediction_tracker import get_stats, snapshot_predictions, verify_pending
 from app.ai.sentiment_brief import generate_sentiment_brief
 from app.ai.theme_brief import generate_theme_brief
 from app.ai.why_rose import generate_why_rose
-from app.ai.brief_cache import cached_brief, invalidate_pg, cache_stats
 from app.api._cache import invalidate
 from app.api.auth import get_current_user
 from app.api.quota import check_and_log_quota
 from app.database import get_db
 from app.models.user import User
+from app.services.prewarm_service import (
+    prewarm_debate,
+    prewarm_market_briefs,
+    prewarm_why_rose,
+)
+from app.services.watchlist_service import get_or_generate_watchlist_brief
 
 logger = logging.getLogger(__name__)
 
@@ -58,7 +64,6 @@ def _resolve_td(td: date | None) -> date:
     """统一 trade_date resolve, 让 cache_key 永远落在具体日期, 才能跨预热/ondemand 共享."""
     if td:
         return td
-    from app.ai.brief_generator import _latest_trade_date_with_data
     try:
         return _latest_trade_date_with_data() or date.today()
     except Exception:
@@ -172,9 +177,7 @@ async def get_why_rose(
         invalidate("why_rose")
         invalidate_pg(key)
     # 仅在真正调 LLM 时扣 quota — 命中缓存不扣
-    from app.ai.brief_cache import pg_get
-    import asyncio as _asyncio
-    pg_hit = await _asyncio.to_thread(pg_get, key) if not refresh else None
+    pg_hit = await asyncio.to_thread(pg_get, key) if not refresh else None
     if pg_hit is None:
         await check_and_log_quota(db, user, action="why_rose", model=model)
     return await cached_brief(
@@ -200,9 +203,7 @@ async def get_debate(
     if refresh:
         invalidate("debate")
         invalidate_pg(key)
-    from app.ai.brief_cache import pg_get
-    import asyncio as _asyncio
-    pg_hit = await _asyncio.to_thread(pg_get, key) if not refresh else None
+    pg_hit = await asyncio.to_thread(pg_get, key) if not refresh else None
     if pg_hit is None:
         await check_and_log_quota(db, user, action="debate", model=model)
     return await cached_brief(
@@ -256,29 +257,11 @@ async def get_watchlist_brief(
 
     缓存 key = (user_id, codes_hash, trade_date, model), TTL 30 分钟.
     """
-    from sqlalchemy import select as _select
-    from app.models.user import UserWatchlist
-
-    rows = (await db.execute(
-        _select(UserWatchlist.stock_code).where(UserWatchlist.user_id == user.id)
-    )).scalars().all()
-    codes = [str(c) for c in rows]
-    if trade_date is None:
-        from app.ai.brief_generator import _latest_trade_date_with_data
-        trade_date = _latest_trade_date_with_data() or date.today()
-    h = codes_hash(codes)
-    cache_key = f"watchlist_brief:{user.id}:{h}:{trade_date}:{model}"
-    return await cached_brief(
-        cache_key,
-        generate_watchlist_brief,
-        codes,
-        trade_date,
-        model,
-        action="watchlist_brief",
-        model=model,
+    return await get_or_generate_watchlist_brief(
+        db,
+        user.id,
         trade_date=trade_date,
-        mem_ttl=1800.0,
-        pg_ttl_h=1.0,
+        model=model,
         refresh=bool(refresh),
     )
 
@@ -293,7 +276,6 @@ async def get_headline_stream(
 ):
     """5 张 AI 卡片的 headline 流式生成 — 用于打字机效果, 不替换完整 brief 缓存."""
     if trade_date is None:
-        from app.ai.brief_generator import _latest_trade_date_with_data
         trade_date = _latest_trade_date_with_data() or date.today()
     await check_and_log_quota(db, user, action=f"stream_{kind}", model=model)
     return StreamingResponse(
@@ -361,22 +343,17 @@ async def trigger_prewarm(
     concurrency: int = Query(4),
 ):
     """手动触发预热. job ∈ {market_briefs, why_rose, debate, all}."""
-    from app.tasks.prewarm import (
-        _prewarm_market_briefs_async,
-        _prewarm_why_rose_async,
-        _prewarm_debate_async,
-    )
     td = trade_date
     if job == "market_briefs":
-        return await _prewarm_market_briefs_async(td, model)
+        return await prewarm_market_briefs(td, model)
     if job == "why_rose":
-        return await _prewarm_why_rose_async(td, model, max_per_dir, concurrency)
+        return await prewarm_why_rose(td, model, max_per_dir, concurrency)
     if job == "debate":
-        return await _prewarm_debate_async(td, model, top_n_themes, max(2, concurrency))
+        return await prewarm_debate(td, model, top_n_themes, max(2, concurrency))
     if job == "all":
         return {
-            "market_briefs": await _prewarm_market_briefs_async(td, model),
-            "why_rose": await _prewarm_why_rose_async(td, model, max_per_dir, concurrency),
-            "debate": await _prewarm_debate_async(td, model, top_n_themes, max(2, concurrency)),
+            "market_briefs": await prewarm_market_briefs(td, model),
+            "why_rose": await prewarm_why_rose(td, model, max_per_dir, concurrency),
+            "debate": await prewarm_debate(td, model, top_n_themes, max(2, concurrency)),
         }
     return {"error": f"unknown job: {job}"}

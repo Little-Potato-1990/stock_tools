@@ -17,20 +17,12 @@ from sqlalchemy import select, func, update, desc
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
-from app.models.anomaly import IntradayAnomaly
 from app.intraday.anomaly_brief import generate_anomaly_brief
 from app.intraday.anomaly_detector import scan_once
+from app.intraday.labels import label_anomaly
+from app.models.anomaly import IntradayAnomaly
 
 router = APIRouter()
-
-
-_TYPE_LABEL = {
-    "surge": "急拉",
-    "plunge": "闪崩",
-    "break": "涨停打开",
-    "seal": "反包封板",
-    "theme_burst": "板块异动",
-}
 
 
 def _row_to_dict(r: IntradayAnomaly) -> dict[str, Any]:
@@ -39,7 +31,7 @@ def _row_to_dict(r: IntradayAnomaly) -> dict[str, Any]:
         "trade_date": r.trade_date.isoformat(),
         "detected_at": r.detected_at.isoformat(),
         "anomaly_type": r.anomaly_type,
-        "anomaly_label": _TYPE_LABEL.get(r.anomaly_type, r.anomaly_type),
+        "anomaly_label": label_anomaly(r.anomaly_type),
         "code": r.code,
         "name": r.name,
         "theme": r.theme,

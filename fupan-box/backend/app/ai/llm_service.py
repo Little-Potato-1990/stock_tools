@@ -101,7 +101,6 @@ def _format_user_context(context: dict | None) -> str:
 def build_system_prompt(
     trade_date: str | None,
     user_context: dict | None = None,
-    db_sync_url: str | None = None,
 ) -> str:
     """Construct system prompt with market context for the given trade date."""
     base = (
