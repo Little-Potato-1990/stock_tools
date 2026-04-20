@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback } from "react";
+import { Sparkles } from "lucide-react";
 import { api } from "@/lib/api";
 import { useUIStore } from "@/stores/ui-store";
 import { getBoardLevelColor } from "@/lib/colorScale";
@@ -10,6 +11,24 @@ const MAX_DAYS = 60;
 const SCROLL_THRESHOLD = 140;
 const COL_WIDTH = 130;
 const LABEL_WIDTH = 110;
+
+// P1 改造: 复用 ladder-brief.key_stocks 的 AI 标记叠加到卡片上
+// tag 来源 (LLM 输出): 高度龙头 / 主线龙头 / 超预期 / 空间股 / 梯队跟随
+const AI_TAG_COLOR: Record<string, string> = {
+  "高度龙头": "var(--accent-red)",
+  "主线龙头": "var(--accent-orange)",
+  "超预期": "var(--accent-purple)",
+  "空间股": "var(--accent-red)",
+  "梯队跟随": "var(--text-muted)",
+};
+
+interface KeyStockAi {
+  code: string;
+  name: string;
+  board: number;
+  tag: string;
+  note: string;
+}
 /** 题材行最小高度 (与参考 web 对齐, 让卡片堆从同一 y 开始) */
 const THEME_ROW_MIN_H = 220;
 /** 卡片固定高度, 用于跨列对齐 */
@@ -328,6 +347,11 @@ export function LadderMatrix() {
   const scrollerRef = useRef<HTMLDivElement | null>(null);
   const openStockDetail = useUIStore((s) => s.openStockDetail);
 
+  /** P1: ladder-brief.key_stocks 索引 (code -> AI tag/note), 仅最新交易日 */
+  const [aiByCode, setAiByCode] = useState<Map<string, KeyStockAi>>(
+    () => new Map()
+  );
+
   /** 题材交叉高亮 (hover 同名题材) */
   const [hoverTheme, setHoverTheme] = useState<string | null>(null);
   /** 题材弹窗: 选中题材名 + 选中日期 (当前仅 KPL 题材可点开) */
@@ -375,6 +399,29 @@ export function LadderMatrix() {
       cancel = true;
     };
   }, [reqDays]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // P1: 单独拉一次 ladder-brief, 把 key_stocks 索引到 stockCodeKey -> KeyStockAi
+  // 后端 PG 缓存命中, 几乎瞬时. 失败时静默跳过, 不影响主网格.
+  useEffect(() => {
+    let cancel = false;
+    api
+      .getLadderBrief()
+      .then((brief) => {
+        if (cancel) return;
+        const m = new Map<string, KeyStockAi>();
+        for (const ks of brief.key_stocks ?? []) {
+          if (!ks.code) continue;
+          m.set(stockCodeKey(ks.code), ks);
+        }
+        setAiByCode(m);
+      })
+      .catch(() => {
+        /* 静默 — AI 暂不可用时, 卡片照样能用 */
+      });
+    return () => {
+      cancel = true;
+    };
+  }, []);
 
   const triggerLoadMore = useCallback(() => {
     if (!hasMore || loadingMore) return;
@@ -762,11 +809,19 @@ export function LadderMatrix() {
                     const amt = fmtAmount(s.amount);
                     const seal = fmtAmount(s.limit_order_amount);
                     const hasReason = !!s.limit_reason;
-                    const cardH = hasReason ? CARD_H_NORMAL : CARD_H_NO_REASON;
+                    // P1: AI 命中只在最新一天 (i === 0) 才叠加, 历史日 AI 没意义
+                    const aiHit =
+                      i === 0 ? aiByCode.get(stockCodeKey(s.stock_code)) : undefined;
+                    const cardH = hasReason
+                      ? CARD_H_NORMAL + (aiHit ? 16 : 0)
+                      : CARD_H_NO_REASON + (aiHit ? 16 : 0);
                     const indMatch =
                       !!hoverTheme &&
                       (s.industry === hoverTheme ||
                         (s.theme_names ?? []).includes(hoverTheme));
+                    const aiBorder = aiHit
+                      ? AI_TAG_COLOR[aiHit.tag] || "var(--accent-purple)"
+                      : null;
                     return (
                       <button
                         key={`${d.trade_date}-${s.stock_code}`}
@@ -784,15 +839,45 @@ export function LadderMatrix() {
                             : "var(--bg-card)",
                           border: indMatch
                             ? `1px solid var(--accent-red)`
-                            : "1px solid var(--border-color)",
+                            : aiBorder
+                              ? `1px solid ${aiBorder}`
+                              : "1px solid var(--border-color)",
                           borderLeft: `3px solid ${color}`,
                           borderRadius: 3,
                           padding: "4px 6px",
                           cursor: "pointer",
                           display: "block",
                           overflow: "hidden",
+                          boxShadow: aiHit
+                            ? `0 0 0 1px ${aiBorder} inset`
+                            : "none",
                         }}
+                        title={aiHit ? `AI ${aiHit.tag}: ${aiHit.note}` : undefined}
                       >
+                        {aiHit && (
+                          <div
+                            className="flex items-center gap-1 truncate"
+                            style={{
+                              fontSize: 9,
+                              lineHeight: "14px",
+                              marginBottom: 1,
+                              color: aiBorder ?? "var(--accent-purple)",
+                              fontWeight: 700,
+                            }}
+                          >
+                            <Sparkles size={9} />
+                            <span className="truncate">{aiHit.tag}</span>
+                            <span
+                              className="truncate"
+                              style={{
+                                color: "var(--text-muted)",
+                                fontWeight: 400,
+                              }}
+                            >
+                              · {aiHit.note}
+                            </span>
+                          </div>
+                        )}
                         <div className="flex items-center justify-between gap-1">
                           <span
                             className="font-bold truncate"

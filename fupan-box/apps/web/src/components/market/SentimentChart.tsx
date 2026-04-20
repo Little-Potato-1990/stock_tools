@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { ChevronDown, ChevronRight, BarChart3 } from "lucide-react";
 import ReactEChartsCore from "echarts-for-react/lib/core";
 import * as echarts from "echarts/core";
 import { LineChart, BarChart } from "echarts/charts";
@@ -8,6 +9,7 @@ import {
   GridComponent,
   TooltipComponent,
   LegendComponent,
+  MarkPointComponent,
 } from "echarts/components";
 import { CanvasRenderer } from "echarts/renderers";
 import { api } from "@/lib/api";
@@ -18,6 +20,7 @@ echarts.use([
   GridComponent,
   TooltipComponent,
   LegendComponent,
+  MarkPointComponent,
   CanvasRenderer,
 ]);
 
@@ -106,6 +109,8 @@ function ChartCard({
 
 export function SentimentChart() {
   const [data, setData] = useState<SentimentRow[]>([]);
+  // P1: 5 张高级图表默认折叠, 减少视觉噪音
+  const [advancedOpen, setAdvancedOpen] = useState(false);
 
   useEffect(() => {
     api
@@ -179,7 +184,36 @@ export function SentimentChart() {
     smooth: true,
   });
 
-  // ===== 情绪周期: 多曲线对比 (8 条上涨率) =====
+  // P1: 在 "上日强势票上涨率" 系列上加 markPoint, 自动标极端值
+  // 规则化 (不依赖 LLM): >=0.70 红色 "过热, 注意分歧"; <=0.35 绿色 "冰点, 关注修复"
+  const luRates = data.map((d) => d.yesterday_lu_up_rate);
+  const luMarkPointData: Array<{
+    coord: [number, number];
+    value: string;
+    itemStyle: { color: string };
+    label?: { color: string };
+  }> = [];
+  for (let i = 0; i < luRates.length; i++) {
+    const v = luRates[i];
+    if (v == null) continue;
+    if (v >= 0.7) {
+      luMarkPointData.push({
+        coord: [i, v],
+        value: "过热",
+        itemStyle: { color: "#ef4444" },
+        label: { color: "#fff" },
+      });
+    } else if (v <= 0.35) {
+      luMarkPointData.push({
+        coord: [i, v],
+        value: "冰点",
+        itemStyle: { color: "#22c55e" },
+        label: { color: "#fff" },
+      });
+    }
+  }
+
+  // ===== 情绪周期: 多曲线对比 (主图 — 全部上涨率) =====
   const cycleOption: echarts.EChartsCoreOption = {
     backgroundColor: "transparent",
     grid: { top: 36, right: 16, bottom: 24, left: 40, containLabel: false },
@@ -189,7 +223,15 @@ export function SentimentChart() {
     yAxis: pctYAxis,
     series: [
       lineSeries("收盘上涨率", "#3b82f6", data.map((d) => d.up_rate)),
-      lineSeries("上日强势票上涨率", "#f59e0b", data.map((d) => d.yesterday_lu_up_rate)),
+      {
+        ...lineSeries("上日强势票上涨率", "#f59e0b", luRates),
+        markPoint: {
+          symbol: "pin",
+          symbolSize: 32,
+          data: luMarkPointData,
+          label: { fontSize: 9, fontWeight: 700 },
+        },
+      },
       lineSeries("上日妖股上涨率", "#ef4444", data.map((d) => d.yesterday_panic_up_rate ?? null)),
       lineSeries("上日弱势票上涨率", "#22c55e", data.map((d) => d.yesterday_weak_up_rate ?? null)),
       lineSeries("上证上涨率", "#8b5cf6", data.map((d) => d.sh_up_rate ?? null)),
@@ -566,12 +608,46 @@ export function SentimentChart() {
 
   return (
     <div className="p-3 space-y-2">
-      <ChartCard title="情绪周期" option={cycleOption} height={220} />
-      <ChartCard title="主板赚钱效应" option={mainEarnOption} />
-      <ChartCard title="创业板赚钱效应" option={gemEarnOption} />
-      <ChartCard title="亏钱效应" option={lossOption} />
-      <ChartCard title="大盘量价" option={volumeOption} />
-      <ChartCard title="强势 & 反包系数 (近似)" option={strongOption} />
+      {/* P1: 主图 — 情绪周期 (始终展开, 极端值自动 markPoint) */}
+      <ChartCard title="情绪周期 (主图 · 自动标极端值)" option={cycleOption} height={260} />
+
+      {/* P1: 5 张高级图表折叠, 默认收起 */}
+      <button
+        type="button"
+        onClick={() => setAdvancedOpen((v) => !v)}
+        className="w-full flex items-center gap-2 px-3 py-2 rounded transition-opacity hover:opacity-90"
+        style={{
+          background: "var(--bg-secondary)",
+          border: "1px solid var(--border-color)",
+          color: "var(--text-secondary)",
+          fontSize: "var(--font-sm)",
+          fontWeight: 700,
+        }}
+      >
+        {advancedOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+        <BarChart3 size={14} style={{ color: "var(--text-muted)" }} />
+        <span>高级图表 · 5 张细分子图</span>
+        <span
+          className="ml-auto"
+          style={{
+            color: "var(--text-muted)",
+            fontWeight: 400,
+            fontSize: "var(--font-xs)",
+          }}
+        >
+          (赚钱效应 / 亏钱效应 / 量价 / 强势系数)
+        </span>
+      </button>
+
+      {advancedOpen && (
+        <div className="space-y-2">
+          <ChartCard title="主板赚钱效应" option={mainEarnOption} />
+          <ChartCard title="创业板赚钱效应" option={gemEarnOption} />
+          <ChartCard title="亏钱效应" option={lossOption} />
+          <ChartCard title="大盘量价" option={volumeOption} />
+          <ChartCard title="强势 & 反包系数 (近似)" option={strongOption} />
+        </div>
+      )}
     </div>
   );
 }

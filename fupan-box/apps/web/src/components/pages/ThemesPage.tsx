@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback } from "react";
-import { ChevronRight, MoreHorizontal } from "lucide-react";
+import { ChevronRight, MoreHorizontal, TrendingUp, TrendingDown, Zap } from "lucide-react";
 import { api } from "@/lib/api";
 import { useUIStore } from "@/stores/ui-store";
 import { PageHeader } from "@/components/layout/PageHeader";
@@ -14,6 +14,29 @@ const MAX_DAYS = 60;
 const COL_WIDTH = 150;
 /** 每列展示的强势行业/题材条数 */
 const ROWS = 22;
+
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
+
+// P1: ThemeAiCard 已判定的 AI 主线/退潮/新晋, 在网格 cell 上叠 1 个小角标,
+// 让用户不用扫文字就知道 AI 怎么看这条题材
+type AiThemeKind = "leading" | "fading" | "emerging";
+
+const AI_KIND_META: Record<AiThemeKind, { label: string; color: string }> = {
+  leading: { label: "主线", color: "var(--accent-red)" },
+  fading: { label: "退潮", color: "var(--accent-green)" },
+  emerging: { label: "新晋", color: "var(--accent-orange)" },
+};
+
+interface ThemeBriefItem {
+  name: string;
+  ai_note: string;
+}
+
+interface ThemeBrief {
+  leading: ThemeBriefItem[];
+  fading: ThemeBriefItem[];
+  emerging: ThemeBriefItem[];
+}
 
 type SnapshotRow = { trade_date: string; data: Record<string, unknown> };
 
@@ -86,13 +109,20 @@ function leadStockShort(s: string): string {
 function IndustryCell({
   it,
   consecutive,
+  aiKind,
+  aiNote,
   onClick,
 }: {
   it: IndustryItem;
   consecutive: number;
+  aiKind?: AiThemeKind;
+  aiNote?: string;
   onClick: () => void;
 }) {
   const lead = leadStockShort(it.lead_stock);
+  const ai = aiKind ? AI_KIND_META[aiKind] : null;
+  const Icon =
+    aiKind === "leading" ? TrendingUp : aiKind === "fading" ? TrendingDown : Zap;
   return (
     <div
       onClick={onClick}
@@ -101,9 +131,36 @@ function IndustryCell({
         background: themeBg(it.change_pct),
         minHeight: 50,
         padding: "5px 7px",
+        border: ai ? `1.5px solid ${ai.color}` : undefined,
+        boxShadow: ai ? `0 0 0 1px ${ai.color} inset` : undefined,
+        position: "relative",
       }}
+      title={ai && aiNote ? `AI ${ai.label}: ${aiNote}` : undefined}
     >
-      <div className="flex items-center gap-1">
+      {ai && (
+        <div
+          className="absolute"
+          style={{
+            top: -1,
+            right: -1,
+            background: ai.color,
+            color: "#fff",
+            padding: "0 4px",
+            borderRadius: "0 2px 0 4px",
+            fontSize: 9,
+            lineHeight: "13px",
+            fontWeight: 700,
+            display: "inline-flex",
+            alignItems: "center",
+            gap: 2,
+            boxShadow: "0 1px 4px rgba(0,0,0,0.25)",
+          }}
+        >
+          <Icon size={9} />
+          AI·{ai.label}
+        </div>
+      )}
+      <div className="flex items-center gap-1" style={{ marginTop: ai ? 8 : 0 }}>
         <span
           className="font-bold truncate flex-1"
           style={{ fontSize: 12, color: "#fff" }}
@@ -159,6 +216,38 @@ export function ThemesPage() {
   const [loadingMore, setLoadingMore] = useState(false);
   const scrollerRef = useRef<HTMLDivElement | null>(null);
   const openThemeDetail = useUIStore((s) => s.openThemeDetail);
+
+  // P1: theme-brief 索引 (题材名 -> AI 状态), 仅用于最新一天的 cell 标记
+  const [aiByTheme, setAiByTheme] = useState<
+    Map<string, { kind: AiThemeKind; note: string }>
+  >(() => new Map());
+
+  useEffect(() => {
+    let cancel = false;
+    fetch(`${API_BASE}/api/ai/theme-brief`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d: ThemeBrief | null) => {
+        if (cancel || !d) return;
+        const m = new Map<string, { kind: AiThemeKind; note: string }>();
+        // 优先级: leading > emerging > fading (主线/新晋更值得高亮)
+        for (const it of d.fading ?? []) {
+          if (it.name) m.set(it.name, { kind: "fading", note: it.ai_note ?? "" });
+        }
+        for (const it of d.emerging ?? []) {
+          if (it.name) m.set(it.name, { kind: "emerging", note: it.ai_note ?? "" });
+        }
+        for (const it of d.leading ?? []) {
+          if (it.name) m.set(it.name, { kind: "leading", note: it.ai_note ?? "" });
+        }
+        setAiByTheme(m);
+      })
+      .catch(() => {
+        /* AI 暂不可用时, 网格照常显示, 无角标 */
+      });
+    return () => {
+      cancel = true;
+    };
+  }, []);
 
   useEffect(() => {
     if (days.length > 0) setLoadingMore(true);
@@ -334,14 +423,20 @@ export function ThemesPage() {
                           : "none",
                     }}
                   >
-                    {indList.map((it) => (
-                      <IndustryCell
-                        key={`ind-${day.trade_date}-${it.name}`}
-                        it={it}
-                        consecutive={consecutiveDays(it.name, dayIdx)}
-                        onClick={() => openThemeDetail(it.name)}
-                      />
-                    ))}
+                    {indList.map((it) => {
+                      // AI 角标只在最新交易日有意义 (theme-brief 是当天判定)
+                      const ai = dayIdx === 0 ? aiByTheme.get(it.name) : undefined;
+                      return (
+                        <IndustryCell
+                          key={`ind-${day.trade_date}-${it.name}`}
+                          it={it}
+                          consecutive={consecutiveDays(it.name, dayIdx)}
+                          aiKind={ai?.kind}
+                          aiNote={ai?.note}
+                          onClick={() => openThemeDetail(it.name)}
+                        />
+                      );
+                    })}
                     {indList.length === 0 && (
                       <div
                         style={{
