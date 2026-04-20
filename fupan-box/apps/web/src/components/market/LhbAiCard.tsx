@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { Sparkles, RefreshCw, MessageSquare, Building2 } from "lucide-react";
 import { useUIStore } from "@/stores/ui-store";
+import { EvidenceBadge } from "./EvidenceBadge";
 
 interface KeyOffice {
   name: string;
@@ -28,6 +29,7 @@ interface LhbBrief {
   structure: Array<{ label: string; text: string }>;
   key_offices: KeyOffice[];
   key_stocks: KeyStock[];
+  evidence?: string[];
 }
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
@@ -143,14 +145,17 @@ export function LhbAiCard() {
         <span style={{ fontSize: "var(--font-xs)", color: "var(--text-muted)" }}>
           {data.trade_date} · {data.model}
         </span>
-        <button
-          onClick={() => load(true)}
-          className="ml-auto p-1 transition-opacity hover:opacity-70"
-          title="重新生成"
-          style={{ color: "var(--text-muted)" }}
-        >
-          <RefreshCw size={11} />
-        </button>
+        <div className="ml-auto flex items-center gap-1.5">
+          <EvidenceBadge evidence={data.evidence} />
+          <button
+            onClick={() => load(true)}
+            className="p-1 transition-opacity hover:opacity-70"
+            title="重新生成"
+            style={{ color: "var(--text-muted)" }}
+          >
+            <RefreshCw size={11} />
+          </button>
+        </div>
       </div>
 
       <div

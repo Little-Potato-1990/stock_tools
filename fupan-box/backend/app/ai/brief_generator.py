@@ -28,6 +28,7 @@ from openai import AsyncOpenAI
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
 
+from app.ai.cross_context import NO_FLUFF_RULES, build_cross_context_block
 from app.ai.llm_service import _get_client
 from app.config import get_settings
 from app.models.snapshot import DailySnapshot
@@ -681,6 +682,7 @@ def _build_llm_prompt(
     leaders: list[dict],
     plan_pool: dict[str, list[dict]],
     theme_trends: dict[str, list[int]],
+    cross_ctx: str = "",
 ) -> tuple[str, str]:
     """生成 (system, user) prompt. 要求 LLM 严格输出 JSON."""
     system = (
@@ -688,8 +690,9 @@ def _build_llm_prompt(
         "用户会给你今天的市场数据，请输出一份精炼的判断。\n\n"
         "**输出要求**：必须严格返回符合下述 schema 的 JSON 对象，不要任何额外文字、不要 markdown 代码块。\n"
         "**风格**：简洁、专业、有判断力，不模棱两可。\n"
-        "**禁止**：编造未给出的数据；不得新增/修改输入中没有的股票代码；只能在我给的候选池里写 trigger 和 risk。\n\n"
-        "JSON schema:\n"
+        "**禁止**：编造未给出的数据；不得新增/修改输入中没有的股票代码；只能在我给的候选池里写 trigger 和 risk。\n"
+        + NO_FLUFF_RULES
+        + "\nJSON schema:\n"
         "{\n"
         '  "tagline": "一句话总结今日行情，<=30 字，体现核心判断",\n'
         '  "regime": "consensus|climax|diverge|repair",\n'
@@ -705,7 +708,12 @@ def _build_llm_prompt(
         '    "first_board": [{"code": "(必须来自候选池)", "trigger": "<=40字", "risk": "low|medium|high"}],\n'
         '    "reseal": [{"code": "(必须来自候选池)", "trigger": "<=40字", "risk": "low|medium|high"}],\n'
         '    "avoid": [{"code": "(必须来自候选池)", "reason": "<=40字 风险点"}]\n'
-        "  }\n"
+        "  },\n"
+        '  "evidence": [\n'
+        '    "1-3 条 ≤30 字 关键数字证据, 必须引用输入里的真实数字",\n'
+        '    "示例: \'涨停 78, 最高 5 板, 炸板率 32%\'",\n'
+        '    "示例: \'光模块 lu_5d [3,5,7,9,12], 主线确立\'"\n'
+        "  ]\n"
         "}\n\n"
         "regime 判定原则：\n"
         "- 共振日(consensus): 涨停密集、炸板率低、赚钱效应高\n"
@@ -745,8 +753,9 @@ def _build_llm_prompt(
         f"一字板 {overview.get('one_word_count', 0)} 只\n\n"
         f"主线题材(含近5日涨停数趋势 lu_trend_5d): {json.dumps(main_line_brief, ensure_ascii=False)}\n\n"
         f"高度龙头: {json.dumps(leader_brief, ensure_ascii=False)}\n\n"
-        f"明日候选池(只能在这里选 code): {json.dumps(pool_brief, ensure_ascii=False)}\n\n"
-        "请输出 JSON。"
+        f"明日候选池(只能在这里选 code): {json.dumps(pool_brief, ensure_ascii=False)}\n"
+        f"{cross_ctx}"
+        "\n请输出 JSON。"
     )
     return system, user
 
@@ -794,6 +803,10 @@ def _merge_llm(brief: dict, llm_out: dict | None, overview: dict) -> dict:
         brief["tagline"] = _heuristic_tagline(overview, regime_label)
         brief["regime"] = regime
         brief["regime_label"] = regime_label
+        brief["evidence"] = [
+            f"涨停 {overview.get('limit_up_count', 0)} / 跌停 {overview.get('limit_down_count', 0)}, 最高 {overview.get('max_height', 0)} 板",
+            f"炸板率 {overview.get('broken_rate', 0) * 100:.0f}%, 昨涨停今涨率 {overview.get('yesterday_lu_up_rate', 0) * 100:.0f}%",
+        ]
         return brief
 
     valid_regime = {"consensus", "climax", "diverge", "repair"}
@@ -852,6 +865,18 @@ def _merge_llm(brief: dict, llm_out: dict | None, overview: dict) -> dict:
         if j:
             it["reason"] = (j.get("reason") or it["reason"] or "")[:80]
 
+    evidence: list[str] = []
+    for raw in (llm_out.get("evidence") or [])[:3]:
+        s = (str(raw) if not isinstance(raw, str) else raw).strip()[:40]
+        if s:
+            evidence.append(s)
+    if not evidence:
+        evidence = [
+            f"涨停 {overview.get('limit_up_count', 0)} / 跌停 {overview.get('limit_down_count', 0)}, 最高 {overview.get('max_height', 0)} 板",
+            f"炸板率 {overview.get('broken_rate', 0) * 100:.0f}%, 昨涨停今涨率 {overview.get('yesterday_lu_up_rate', 0) * 100:.0f}%",
+        ]
+    brief["evidence"] = evidence
+
     return brief
 
 
@@ -883,6 +908,7 @@ async def generate_brief(
         "tomorrow_plan": {"promotion": [], "first_board": [], "reseal": [], "avoid": []},
         "similar_days": [],
         "similar_judgment": {"tilt": "震荡", "probability": 50, "key_risk": "", "note": ""},
+        "evidence": [],
     }
 
     if not overview:
@@ -915,6 +941,13 @@ async def generate_brief(
     similar_judgment = await _judge_similar_days(overview, similar_days, model_id=model_id)
     base_brief["similar_judgment"] = similar_judgment
 
+    cross_ctx = build_cross_context_block(
+        trade_date,
+        model_id,
+        include_sentiment=True,
+        include_theme=True,
+        include_ladder=True,
+    )
     system, user = _build_llm_prompt(
         trade_date.isoformat(),
         overview,
@@ -922,6 +955,7 @@ async def generate_brief(
         base_brief["leaders"],
         plan_pool,
         theme_trends,
+        cross_ctx,
     )
     llm_out = await _call_llm(system, user, model_id)
     return _merge_llm(base_brief, llm_out, overview)

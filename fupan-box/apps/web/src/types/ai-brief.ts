@@ -115,4 +115,5 @@ export interface AiBrief {
   tomorrow_plan: TomorrowPlan;
   similar_days: SimilarDay[];
   similar_judgment?: SimilarJudgment;
+  evidence?: string[];
 }

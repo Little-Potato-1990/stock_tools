@@ -27,6 +27,7 @@ from app.ai.brief_generator import (
     _latest_trade_date_with_data,
     _load_snapshots,
 )
+from app.ai.cross_context import NO_FLUFF_RULES, build_cross_context_block
 
 logger = logging.getLogger(__name__)
 
@@ -96,18 +97,27 @@ def _derive_key_stock_pool(struct: dict[str, Any]) -> list[dict[str, Any]]:
     return pool[:7]
 
 
-def _build_prompt(trade_date: str, struct: dict[str, Any], pool: list[dict]) -> tuple[str, str]:
+def _build_prompt(
+    trade_date: str,
+    struct: dict[str, Any],
+    pool: list[dict],
+    cross_ctx: str = "",
+) -> tuple[str, str]:
     system = (
         "你是 A 股短线复盘助手, 专门做连板梯队结构拆解。"
         "请基于给定数据, 用中文输出 JSON。"
         "**严格要求**: stock_code/stock_name 必须从给定数据中选, 不得编造。"
         "判断要直接、精炼、口语化, 不要套话。"
+        "tag 应与上游主线/情绪呼应: 主线题材里的最高板 = '主线龙头', "
+        "非主线但板高 = '高度龙头', 题材新冒头 = '超预期', 板高且无连板梯队衔接 = '空间股'。"
+        + NO_FLUFF_RULES
     )
 
     user = (
         f"今日 {trade_date} 板梯结构数据如下:\n\n"
-        f"```json\n{json.dumps({'struct': struct, 'pool': pool}, ensure_ascii=False)[:3500]}\n```\n\n"
-        "请输出 JSON, 严格按以下 schema:\n"
+        f"```json\n{json.dumps({'struct': struct, 'pool': pool}, ensure_ascii=False)[:3500]}\n```\n"
+        f"{cross_ctx}"
+        "\n请输出 JSON, 严格按以下 schema:\n"
         "```json\n"
         "{\n"
         '  "headline": "一句话概括今日梯队 (≤40 字, 突出高度/主线/情绪)",\n'
@@ -118,6 +128,11 @@ def _build_prompt(trade_date: str, struct: dict[str, Any], pool: list[dict]) -> 
         "  ],\n"
         '  "key_stocks": [\n'
         '    {"code": "(必须从 pool 中选)", "name": "(对应名称)", "board": (板数), "tag": "高度龙头|主线龙头|超预期|空间股 之一", "note": "1 句点评 ≤40 字"}\n'
+        "  ],\n"
+        '  "evidence": [\n'
+        '    "1-3 条 ≤30 字 关键数字证据, 必须引用 struct 里的真实数字",\n'
+        '    "示例: \'最高 5 板独苗, 4 板 2 只, 3 板缺位\'",\n'
+        '    "示例: \'光模块 4 只入梯, 占总数 30%\'"\n'
         "  ]\n"
         "}\n```\n"
         "key_stocks 输出 3-5 只。注意 code 必须严格在 pool 中。不要返回 markdown fence。"
@@ -153,7 +168,14 @@ def _heuristic_brief(struct: dict[str, Any], pool: list[dict]) -> dict[str, Any]
         "tag": "高度龙头" if s["board"] == max_b else "梯队跟随",
         "note": "暂无 LLM 点评",
     } for s in pool[:3]]
-    return {"headline": headline, "structure": structure, "key_stocks": key_stocks}
+
+    evidence: list[str] = [f"最高 {max_b} 板, 涨停总数 {total} 只"]
+    if missing:
+        evidence.append(f"缺位: {','.join(map(str, missing[:3]))} 板")
+    if themes:
+        evidence.append(f"主线 {top_theme} {themes[0]['count']} 只入梯")
+
+    return {"headline": headline, "structure": structure, "key_stocks": key_stocks, "evidence": evidence}
 
 
 def _merge_llm(base_struct: dict[str, Any], pool: list[dict], llm_out: dict | None) -> dict[str, Any]:
@@ -197,7 +219,15 @@ def _merge_llm(base_struct: dict[str, Any], pool: list[dict], llm_out: dict | No
     if not key_stocks:
         key_stocks = _heuristic_brief(base_struct, pool)["key_stocks"]
 
-    return {"headline": headline, "structure": structure, "key_stocks": key_stocks}
+    evidence: list[str] = []
+    for raw in (llm_out.get("evidence") or [])[:3]:
+        s = (str(raw) if not isinstance(raw, str) else raw).strip()[:40]
+        if s:
+            evidence.append(s)
+    if not evidence:
+        evidence = _heuristic_brief(base_struct, pool).get("evidence", [])
+
+    return {"headline": headline, "structure": structure, "key_stocks": key_stocks, "evidence": evidence}
 
 
 async def generate_ladder_brief(
@@ -217,6 +247,7 @@ async def generate_ladder_brief(
         "headline": "",
         "structure": [],
         "key_stocks": [],
+        "evidence": [],
     }
 
     if not ladder:
@@ -234,7 +265,10 @@ async def generate_ladder_brief(
         "themes": struct["themes"],
     }
 
-    system, user = _build_prompt(trade_date.isoformat(), llm_struct, pool)
+    cross_ctx = build_cross_context_block(
+        trade_date, model_id, include_sentiment=True, include_theme=True
+    )
+    system, user = _build_prompt(trade_date.isoformat(), llm_struct, pool, cross_ctx)
     llm_out = await _call_llm(system, user, model_id)
     merged = _merge_llm(struct, pool, llm_out)
     base.update(merged)

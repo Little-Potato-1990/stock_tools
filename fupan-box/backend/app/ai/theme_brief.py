@@ -28,6 +28,7 @@ from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
 
 from app.ai.brief_generator import _call_llm, _latest_trade_date_with_data
+from app.ai.cross_context import NO_FLUFF_RULES, build_cross_context_block
 from app.config import get_settings
 from app.models.snapshot import DailySnapshot
 
@@ -154,11 +155,17 @@ def _derive_pools(agg: dict[str, Any]) -> dict[str, list[dict]]:
     return {"leading": leading, "fading": fading, "emerging": emerging}
 
 
-def _build_prompt(trade_date: str, agg: dict[str, Any], pools: dict[str, list[dict]]) -> tuple[str, str]:
+def _build_prompt(
+    trade_date: str,
+    agg: dict[str, Any],
+    pools: dict[str, list[dict]],
+    cross_ctx: str = "",
+) -> tuple[str, str]:
     system = (
         "你是 A 股短线复盘专家, 专门做题材轮动节奏判断。"
         "基于给定的近 5 日题材排名/涨幅/涨停数据, 用中文输出 JSON。"
         "**严格要求**: name 必须从给定数据中选, 不得编造。判断要直接、精炼、有可操作性。"
+        + NO_FLUFF_RULES
     )
 
     profile_brief = []
@@ -180,8 +187,9 @@ def _build_prompt(trade_date: str, agg: dict[str, Any], pools: dict[str, list[di
 
     user = (
         f"今日 {trade_date} 题材排名/涨幅/涨停数据如下:\n\n"
-        f"```json\n{json.dumps({'profiles': profile_brief, 'pools': pool_brief}, ensure_ascii=False)[:3500]}\n```\n\n"
-        "请输出 JSON, 严格按以下 schema:\n"
+        f"```json\n{json.dumps({'profiles': profile_brief, 'pools': pool_brief}, ensure_ascii=False)[:3500]}\n```\n"
+        f"{cross_ctx}"
+        "\n请输出 JSON, 严格按以下 schema:\n"
         "```json\n"
         "{\n"
         '  "headline": "一句话概括今日轮动 (≤40字), 突出主线/退潮/新晋焦点",\n'
@@ -194,7 +202,11 @@ def _build_prompt(trade_date: str, agg: dict[str, Any], pools: dict[str, list[di
         '  "emerging": [\n'
         '    {"name": "(从 emerging 中选)", "ai_note": "≤40字, 写明潜力点"}\n'
         "  ],\n"
-        '  "next_bet": {"name": "(可选, 从 emerging 或 leading 选)", "reason": "≤50字, 明日重点关注的逻辑"}\n'
+        '  "next_bet": {"name": "(可选, 从 emerging 或 leading 选)", "reason": "≤50字, 明日重点关注的逻辑"},\n'
+        '  "evidence": [\n'
+        '    "1-3 条 ≤30 字 关键数字证据, 必须引用 profiles 里的真实数字",\n'
+        '    "示例: \'光模块今日排名 #1, 涨停 12 只, 5日 lu_trend [3,5,7,9,12]\'"\n'
+        "  ]\n"
         "}\n```\n"
         "leading/fading/emerging 各输出 2-3 条。不要返回 markdown fence。"
     )
@@ -208,12 +220,22 @@ def _heuristic_brief(agg: dict[str, Any], pools: dict[str, list[dict]]) -> dict[
     headline = (
         f"主线 {leading_names[0]}" if leading_names else "今日题材分散"
     )
+    evidence: list[str] = []
+    if pools["leading"]:
+        p = pools["leading"][0]
+        evidence.append(f"主线 {p['name']} 今日排名 #{p['today_rank']}, 涨停 {p['lu_trend'][-1] if p['lu_trend'] else 0} 只")
+    if pools["fading"]:
+        evidence.append(f"退潮: {'/'.join(fading_names[:2])}, 排名下滑")
+    if pools["emerging"]:
+        p = pools["emerging"][0]
+        evidence.append(f"新晋 {p['name']} 今日排名 #{p['today_rank']}")
     return {
         "headline": headline,
         "leading": [{"name": p["name"], "ai_note": f"今日排名 {p['today_rank']}, 涨停数 {p['lu_trend'][-1]}"} for p in pools["leading"][:3]],
         "fading": [{"name": p["name"], "ai_note": "近期排名下滑, 跟风票熄火"} for p in pools["fading"][:3]],
         "emerging": [{"name": p["name"], "ai_note": "新进 top, 关注延续性"} for p in pools["emerging"][:3]],
         "next_bet": {"name": (emerging_names + leading_names)[0] if (emerging_names or leading_names) else "", "reason": "暂无 LLM 推荐"},
+        "evidence": evidence,
     }
 
 
@@ -273,12 +295,21 @@ def _merge_llm(agg: dict[str, Any], pools: dict[str, list[dict]], llm_out: dict 
                 it["lu_trend"] = p["lu_trend"]
                 it["chg_today"] = round(p["chgs"][-1] if p["chgs"] else 0.0, 2)
 
+    evidence: list[str] = []
+    for raw in (llm_out.get("evidence") or [])[:3]:
+        s = (str(raw) if not isinstance(raw, str) else raw).strip()[:40]
+        if s:
+            evidence.append(s)
+    if not evidence:
+        evidence = _heuristic_brief(agg, pools).get("evidence", [])
+
     return {
         "headline": headline,
         "leading": leading,
         "fading": fading,
         "emerging": emerging,
         "next_bet": next_bet,
+        "evidence": evidence,
     }
 
 
@@ -301,6 +332,7 @@ async def generate_theme_brief(
         "fading": [],
         "emerging": [],
         "next_bet": {"name": "", "reason": ""},
+        "evidence": [],
     }
 
     if not themes_series:
@@ -310,7 +342,10 @@ async def generate_theme_brief(
     agg = _aggregate_themes(themes_series, ladder_series)
     pools = _derive_pools(agg)
 
-    system, user = _build_prompt(trade_date.isoformat(), agg, pools)
+    cross_ctx = build_cross_context_block(
+        trade_date, model_id, include_sentiment=True
+    )
+    system, user = _build_prompt(trade_date.isoformat(), agg, pools, cross_ctx)
     llm_out = await _call_llm(system, user, model_id)
     merged = _merge_llm(agg, pools, llm_out)
     base.update(merged)

@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { Sparkles, RefreshCw, MessageSquare } from "lucide-react";
 import { api } from "@/lib/api";
 import { useUIStore } from "@/stores/ui-store";
+import { EvidenceBadge } from "./EvidenceBadge";
 
 interface LadderBrief {
   trade_date: string;
@@ -12,6 +13,7 @@ interface LadderBrief {
   headline: string;
   structure: Array<{ label: string; text: string }>;
   key_stocks: Array<{ code: string; name: string; board: number; tag: string; note: string }>;
+  evidence?: string[];
 }
 
 const TAG_COLOR: Record<string, string> = {
@@ -105,14 +107,17 @@ export function LadderAiCard() {
         <span style={{ fontSize: "var(--font-xs)", color: "var(--text-muted)" }}>
           {data.trade_date} · {data.model}
         </span>
-        <button
-          onClick={() => load(true)}
-          className="ml-auto p-1 transition-opacity hover:opacity-70"
-          title="重新生成"
-          style={{ color: "var(--text-muted)" }}
-        >
-          <RefreshCw size={11} />
-        </button>
+        <div className="ml-auto flex items-center gap-1.5">
+          <EvidenceBadge evidence={data.evidence} />
+          <button
+            onClick={() => load(true)}
+            className="p-1 transition-opacity hover:opacity-70"
+            title="重新生成"
+            style={{ color: "var(--text-muted)" }}
+          >
+            <RefreshCw size={11} />
+          </button>
+        </div>
       </div>
 
       <div

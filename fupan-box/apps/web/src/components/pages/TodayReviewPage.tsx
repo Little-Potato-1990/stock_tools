@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 import { api } from "@/lib/api";
 import { useUIStore } from "@/stores/ui-store";
+import { EvidenceBadge } from "@/components/market/EvidenceBadge";
 import type {
   AiBrief,
   KeyMetric,
@@ -176,6 +177,7 @@ function HeroBlock({ brief }: { brief: AiBrief }) {
             {brief.trade_date} · 模型 {brief.model} · 生成于{" "}
             {brief.generated_at.slice(11, 16)}
           </span>
+          <EvidenceBadge evidence={brief.evidence} size="md" label="依据" />
         </div>
       </div>
 
@@ -759,11 +761,10 @@ function SimilarJudgmentCard({ j }: { j: NonNullable<AiBrief["similar_judgment"]
           </span>
         </div>
         <span
-          className="font-bold"
+          className="font-bold tabular-nums"
           style={{
             fontSize: 18,
             color: meta.color,
-            tabularNums: "tabular-nums" as never,
           }}
         >
           {j.probability}%

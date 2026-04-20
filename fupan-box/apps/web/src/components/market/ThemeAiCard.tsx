@@ -11,6 +11,7 @@ import {
   MessageSquare,
 } from "lucide-react";
 import { useUIStore } from "@/stores/ui-store";
+import { EvidenceBadge } from "./EvidenceBadge";
 
 interface ThemeItem {
   name: string;
@@ -29,6 +30,7 @@ interface ThemeBrief {
   fading: ThemeItem[];
   emerging: ThemeItem[];
   next_bet: { name: string; reason: string };
+  evidence?: string[];
 }
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
@@ -223,14 +225,17 @@ export function ThemeAiCard() {
         >
           {data.trade_date} · {data.model}
         </span>
-        <button
-          onClick={() => load(true)}
-          className="ml-auto p-1 transition-opacity hover:opacity-70"
-          title="重新生成"
-          style={{ color: "var(--text-muted)" }}
-        >
-          <RefreshCw size={11} />
-        </button>
+        <div className="ml-auto flex items-center gap-1.5">
+          <EvidenceBadge evidence={data.evidence} />
+          <button
+            onClick={() => load(true)}
+            className="p-1 transition-opacity hover:opacity-70"
+            title="重新生成"
+            style={{ color: "var(--text-muted)" }}
+          >
+            <RefreshCw size={11} />
+          </button>
+        </div>
       </div>
 
       <div

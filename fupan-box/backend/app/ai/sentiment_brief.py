@@ -27,6 +27,7 @@ from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
 
 from app.ai.brief_generator import _call_llm, _latest_trade_date_with_data
+from app.ai.cross_context import NO_FLUFF_RULES
 from app.config import get_settings
 from app.models.market import MarketSentiment
 
@@ -97,6 +98,7 @@ def _build_prompt(trade_date: str, series: list[dict], phase: str, phase_label: 
         "你是 A 股短线情绪分析师。"
         "基于给定的近 N 日大盘情绪序列, 用中文输出 JSON。"
         "判断要直接、精炼, 避免空话套话, 突出可操作性。"
+        + NO_FLUFF_RULES
     )
     user = (
         f"今日 {trade_date}, 情绪序列(从早到晚)如下:\n\n"
@@ -117,6 +119,11 @@ def _build_prompt(trade_date: str, series: list[dict], phase: str, phase_label: 
         '    {"label": "仓位", "action": "≤30 字, 直接给数字或方向"},\n'
         '    {"label": "选股", "action": "..."},\n'
         '    {"label": "止损", "action": "..."}\n'
+        "  ],\n"
+        '  "evidence": [\n'
+        '    "1-3 条 ≤30 字 关键数字证据, 必须引用 series 里的真实数字",\n'
+        '    "示例: \'昨日涨停今日上涨率 72%, 显著高于近5日均值 55%\'",\n'
+        '    "示例: \'今日炸板率 28%, 较昨日下降 12pp\'"\n'
         "  ]\n"
         "}\n```\n"
         "字段含义:\n"
@@ -169,10 +176,18 @@ def _heuristic_brief(series: list[dict], phase: str, phase_label: str) -> dict[s
         ],
     }
     play = play_map.get(phase, play_map["diverge"])
+    evidence: list[str] = [
+        f"涨停 {today['lu']} (跌停 {today['ld']}), 最高 {today['max_height']} 板",
+        f"炸板率 {today['broken_rate'] * 100:.0f}%, 昨涨停今涨率 {today['yesterday_lu_up_rate'] * 100:.0f}%",
+    ]
+    if len(series) >= 2:
+        prev = series[-2]
+        d_lu = today["lu"] - prev["lu"]
+        evidence.append(f"涨停数较昨日 {d_lu:+d}, 炸板率 {(today['broken_rate'] - prev['broken_rate']) * 100:+.0f}pp")
     return {
         "phase": phase, "phase_label": phase_label,
         "judgment": f"今日 {today['lu']} 只涨停, 炸板率 {today['broken_rate'] * 100:.0f}%, {phase_label}",
-        "signals": sigs, "playbook": play,
+        "signals": sigs, "playbook": play, "evidence": evidence,
     }
 
 
@@ -207,9 +222,18 @@ def _merge_llm(series: list[dict], phase: str, phase_label: str, llm_out: dict |
     if len(playbook) < 3:
         playbook = _heuristic_brief(series, out_phase, out_label)["playbook"]
 
+    evidence: list[str] = []
+    for raw in (llm_out.get("evidence") or [])[:3]:
+        s = (str(raw) if not isinstance(raw, str) else raw).strip()[:40]
+        if s:
+            evidence.append(s)
+    if not evidence:
+        evidence = _heuristic_brief(series, out_phase, out_label).get("evidence", [])
+
     return {
         "phase": out_phase, "phase_label": out_label,
         "judgment": judgment, "signals": signals, "playbook": playbook,
+        "evidence": evidence,
     }
 
 
@@ -230,6 +254,7 @@ async def generate_sentiment_brief(
         "judgment": "",
         "signals": [],
         "playbook": [],
+        "evidence": [],
         "trend_5d": series[-5:] if series else [],
     }
 

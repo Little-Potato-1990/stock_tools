@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { Sparkles, RefreshCw, Activity, MessageSquare } from "lucide-react";
 import { useUIStore } from "@/stores/ui-store";
+import { EvidenceBadge } from "./EvidenceBadge";
 
 interface TrendPoint {
   date: string;
@@ -23,6 +24,7 @@ interface SentimentBrief {
   signals: Array<{ label: string; text: string }>;
   playbook: Array<{ label: string; action: string }>;
   trend_5d: TrendPoint[];
+  evidence?: string[];
 }
 
 const PHASE_COLOR: Record<SentimentBrief["phase"], string> = {
@@ -140,14 +142,17 @@ export function SentimentAiCard({ hero = false }: Props = {}) {
         <span style={{ fontSize: "var(--font-xs)", color: "var(--text-muted)" }}>
           {data.trade_date} · {data.model}
         </span>
-        <button
-          onClick={() => load(true)}
-          className="ml-auto p-1 transition-opacity hover:opacity-70"
-          title="重新生成"
-          style={{ color: "var(--text-muted)" }}
-        >
-          <RefreshCw size={hero ? 13 : 11} />
-        </button>
+        <div className="ml-auto flex items-center gap-1.5">
+          <EvidenceBadge evidence={data.evidence} accent={PHASE_COLOR[data.phase]} />
+          <button
+            onClick={() => load(true)}
+            className="p-1 transition-opacity hover:opacity-70"
+            title="重新生成"
+            style={{ color: "var(--text-muted)" }}
+          >
+            <RefreshCw size={hero ? 13 : 11} />
+          </button>
+        </div>
       </div>
 
       <div

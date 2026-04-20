@@ -30,6 +30,7 @@ from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
 
 from app.ai.brief_generator import _call_llm, _latest_trade_date_with_data
+from app.ai.cross_context import NO_FLUFF_RULES, build_cross_context_block
 from app.config import get_settings
 from app.models.snapshot import DailySnapshot
 
@@ -141,18 +142,27 @@ def _summarize_lhb_struct(lhb: dict | None) -> dict[str, Any]:
     }
 
 
-def _build_prompt(trade_date: str, struct: dict[str, Any]) -> tuple[str, str]:
+def _build_prompt(
+    trade_date: str,
+    struct: dict[str, Any],
+    cross_ctx: str = "",
+) -> tuple[str, str]:
     system = (
         "你是 A 股短线复盘助手, 专门做龙虎榜资金面拆解。"
         "请基于给定数据, 用中文输出 JSON。"
         "**严格要求**: name/code 必须从给定数据中选, 不得编造。"
         "判断要直接、口语化、有信息量, 不要套话。"
+        "若上游主线/核心龙头已知, 'tag' 与 'note' 必须呼应: "
+        "买入主线龙头的游资 = '游资接力', 出货主线/高度龙头的机构 = '机构出货', "
+        "封单远不足 / 跟风票 = '资金分歧 / 高位接力风险'。"
+        + NO_FLUFF_RULES
     )
 
     user = (
         f"今日 {trade_date} 龙虎榜数据如下:\n\n"
-        f"```json\n{json.dumps(struct, ensure_ascii=False)[:3500]}\n```\n\n"
-        "请输出 JSON, 严格按以下 schema:\n"
+        f"```json\n{json.dumps(struct, ensure_ascii=False)[:3500]}\n```\n"
+        f"{cross_ctx}"
+        "\n请输出 JSON, 严格按以下 schema:\n"
         "```json\n"
         "{\n"
         '  "headline": "一句话定调今日游资 / 机构动向 (≤40 字)",\n'
@@ -166,6 +176,11 @@ def _build_prompt(trade_date: str, struct: dict[str, Any]) -> tuple[str, str]:
         "  ],\n"
         '  "key_stocks": [\n'
         '    {"code": "(必须从 top_stocks 选)", "tag": "游资抢筹|机构出货|对手盘激烈|资金分歧 之一", "note": "1 句点评 ≤30 字"}\n'
+        "  ],\n"
+        '  "evidence": [\n'
+        '    "1-3 条 ≤30 字 关键数字证据, 必须引用 struct 里的真实数字",\n'
+        '    "示例: \'top_stocks 净买 +3.2 亿, 全部主线光模块\'",\n'
+        '    "示例: \'章盟主席位净买 1.8 亿, 同时上 3 票\'"\n'
         "  ]\n"
         "}\n```\n"
         "key_offices 输出 3-4 条; key_stocks 输出 2-3 条。"
@@ -210,7 +225,22 @@ def _heuristic_brief(struct: dict[str, Any]) -> dict[str, Any]:
         "tag": "资金分歧",
         "note": "暂无 LLM 点评",
     } for s in top_stocks[:3]]
-    return {"headline": headline, "structure": structure, "key_offices": key_offices, "key_stocks": key_stocks}
+
+    evidence: list[str] = [f"上榜 {sc} 只, 净买入 {total_net / 1e8:+.1f} 亿"]
+    if top_stocks:
+        s0 = top_stocks[0]
+        evidence.append(f"领涨 {s0['name']} {s0['pct_change']:+.1f}%, 净 {s0['net_amount'] / 1e8:+.2f}亿")
+    if top_offices:
+        o0 = top_offices[0]
+        kind = "机构" if o0.get("is_inst") else "游资"
+        evidence.append(f"{kind}首席 {o0['name'][:8]} 净 {o0['net_buy'] / 1e8:+.2f}亿")
+    return {
+        "headline": headline,
+        "structure": structure,
+        "key_offices": key_offices,
+        "key_stocks": key_stocks,
+        "evidence": evidence,
+    }
 
 
 def _merge_llm(struct: dict[str, Any], llm_out: dict | None) -> dict[str, Any]:
@@ -275,11 +305,20 @@ def _merge_llm(struct: dict[str, Any], llm_out: dict | None) -> dict[str, Any]:
     if not key_stocks:
         key_stocks = fallback["key_stocks"]
 
+    evidence: list[str] = []
+    for raw in (llm_out.get("evidence") or [])[:3]:
+        s = (str(raw) if not isinstance(raw, str) else raw).strip()[:40]
+        if s:
+            evidence.append(s)
+    if not evidence:
+        evidence = fallback.get("evidence", [])
+
     return {
         "headline": headline,
         "structure": structure,
         "key_offices": key_offices,
         "key_stocks": key_stocks,
+        "evidence": evidence,
     }
 
 
@@ -300,6 +339,7 @@ async def generate_lhb_brief(
         "structure": [],
         "key_offices": [],
         "key_stocks": [],
+        "evidence": [],
     }
 
     if not lhb:
@@ -312,7 +352,10 @@ async def generate_lhb_brief(
         base["headline"] = f"{trade_date.isoformat()} 当日无个股上榜"
         return base
 
-    system, user = _build_prompt(trade_date.isoformat(), struct)
+    cross_ctx = build_cross_context_block(
+        trade_date, model_id, include_theme=True, include_ladder=True
+    )
+    system, user = _build_prompt(trade_date.isoformat(), struct, cross_ctx)
     llm_out = await _call_llm(system, user, model_id)
     merged = _merge_llm(struct, llm_out)
     base.update(merged)

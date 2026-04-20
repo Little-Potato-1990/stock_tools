@@ -226,10 +226,10 @@ export function AiTrackPage() {
                       </span>
                     </div>
                     <span
+                      className="tabular-nums"
                       style={{
                         fontSize: 9,
                         color: "var(--text-muted)",
-                        tabularNums: "tabular-nums" as never,
                       }}
                     >
                       {v?.verified ?? 0}/{v?.total ?? 0}
