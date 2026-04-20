@@ -18,6 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.ai.brief_generator import generate_brief
 from app.ai.debate import run_debate, stream_debate
 from app.ai.ladder_brief import generate_ladder_brief
+from app.ai.lhb_brief import generate_lhb_brief
 from app.ai.prediction_tracker import get_stats, snapshot_predictions, verify_pending
 from app.ai.sentiment_brief import generate_sentiment_brief
 from app.ai.theme_brief import generate_theme_brief
@@ -123,6 +124,25 @@ async def get_theme_brief(
     return await cached_brief(
         key, generate_theme_brief, td, model,
         action="theme_brief", model=model, trade_date=td,
+        pg_ttl_h=PG_TTL_H, refresh=bool(refresh),
+    )
+
+
+@router.get("/lhb-brief")
+async def get_lhb_brief(
+    trade_date: date = Query(None),
+    model: str = Query("deepseek-v3"),
+    refresh: int = Query(0),
+):
+    """龙虎榜 AI 拆解 (P1): 资金方向 / 接力线 / 警示 + 核心席位/个股."""
+    td = _resolve_td(trade_date)
+    key = f"lhb_brief:{td.isoformat()}:{model}"
+    if refresh:
+        invalidate("lhb_brief")
+        invalidate_pg(key)
+    return await cached_brief(
+        key, generate_lhb_brief, td, model,
+        action="lhb_brief", model=model, trade_date=td,
         pg_ttl_h=PG_TTL_H, refresh=bool(refresh),
     )
 

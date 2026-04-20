@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useUIStore, type LhbScope } from "@/stores/ui-store";
 import { PageHeader } from "@/components/layout/PageHeader";
+import { LhbAiCard } from "@/components/market/LhbAiCard";
 import { api } from "@/lib/api";
 
 const SUB_TABS: { key: LhbScope; label: string }[] = [
@@ -1011,6 +1012,9 @@ export function LhbPage() {
         title="龙虎榜分析"
         subtitle={SUB_TABS.find((t) => t.key === scope)?.label}
       />
+
+      {/* P1: AI 资金面拆解卡 — 跨所有 tab 始终展示, 让"游资意图"先进入视野 */}
+      <LhbAiCard />
 
       <div
         className="flex items-center px-3"
