@@ -1,9 +1,12 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useUIStore, type CapitalScope } from "@/stores/ui-store";
+import { useUIStore } from "@/stores/ui-store";
 import { api } from "@/lib/api";
 import { PageHeader } from "@/components/layout/PageHeader";
+
+// P0 改造: 砍掉"行业资金/题材资金/每日成交前排"3 个占位 tab,
+// 只保留已经接通数据的"风向标个股". 待后端补齐后再恢复.
 
 interface CellStock {
   rank: number;
@@ -19,13 +22,6 @@ interface CellStock {
   continuous_days: number;
   primary_theme: string | null;
 }
-
-const SUB_TABS: { key: CapitalScope; label: string }[] = [
-  { key: "wind", label: "风向标个股" },
-  { key: "industry", label: "行业资金分析" },
-  { key: "theme", label: "题材资金分析" },
-  { key: "front_volume", label: "每日成交前排" },
-];
 
 function cellBg(chg: number): string {
   if (chg >= 9.8) return "var(--cell-red-5)";
@@ -200,104 +196,14 @@ function WindGrid() {
   );
 }
 
-function PlaceholderTab({ label, desc }: { label: string; desc: string }) {
-  return (
-    <div className="flex items-center justify-center" style={{ minHeight: 360 }}>
-      <div
-        className="rounded-lg px-6 py-8 text-center"
-        style={{
-          background: "var(--bg-card)",
-          border: "1px solid var(--border-color)",
-          maxWidth: 360,
-        }}
-      >
-        <div
-          className="font-bold mb-2"
-          style={{ color: "var(--text-primary)", fontSize: "var(--font-lg)" }}
-        >
-          {label}
-        </div>
-        <div
-          style={{ color: "var(--text-muted)", fontSize: "var(--font-md)", lineHeight: 1.6 }}
-        >
-          {desc}
-        </div>
-        <div
-          className="mt-3 inline-block px-3 py-1 rounded"
-          style={{
-            background: "var(--bg-tertiary)",
-            color: "var(--text-secondary)",
-            fontSize: "var(--font-sm)",
-          }}
-        >
-          数据源对接中
-        </div>
-      </div>
-    </div>
-  );
-}
-
 export function CapitalPage() {
-  const scope = useUIStore((s) => s.capitalScope);
-  const setScope = useUIStore((s) => s.setCapitalScope);
-
   return (
     <div>
       <PageHeader
-        title="资金分析"
-        subtitle={SUB_TABS.find((t) => t.key === scope)?.label}
+        title="资金 & 风向标"
+        subtitle="近 7 日强势风向标个股 (按场内资金集中度排序)"
       />
-
-      <div
-        className="flex items-center px-3"
-        style={{
-          borderBottom: "1px solid var(--border-color)",
-          background: "var(--bg-secondary)",
-          height: 36,
-        }}
-      >
-        {SUB_TABS.map(({ key, label }) => (
-          <button
-            key={key}
-            onClick={() => setScope(key)}
-            className="font-medium transition-colors relative"
-            style={{
-              padding: "0 14px",
-              height: 36,
-              fontSize: "var(--font-md)",
-              color: scope === key ? "var(--text-primary)" : "var(--text-muted)",
-            }}
-          >
-            {label}
-            {scope === key && (
-              <div
-                className="absolute bottom-0 left-2 right-2"
-                style={{ height: 2, background: "var(--accent-orange)" }}
-              />
-            )}
-          </button>
-        ))}
-      </div>
-
-      {scope === "wind" && <WindGrid />}
-      {scope === "industry" && (
-        <PlaceholderTab
-          label="行业资金分析"
-          desc="按行业聚合资金净流入/流出, 找到当前最强势的行业及其内部资金分布。"
-        />
-      )}
-      {scope === "theme" && (
-        <PlaceholderTab
-          label="题材资金分析"
-          desc="按概念题材聚合资金净流入/流出, 监控游资追逐的热点题材。"
-        />
-      )}
-      {scope === "front_volume" && (
-        <PlaceholderTab
-          label="每日成交前排"
-          desc="按日成交金额排序的标的列表 (Top50), 反映当日最受关注的个股资金集中度。"
-        />
-      )}
+      <WindGrid />
     </div>
   );
 }
