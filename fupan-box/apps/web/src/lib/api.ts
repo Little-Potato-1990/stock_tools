@@ -85,8 +85,16 @@ export interface Anomaly {
 class ApiClient {
   private token: string | null = null;
 
-  setToken(token: string | null) {
-    this.token = token;
+  /** 给原生 fetch / SSE 用 — 拼完整 URL */
+  buildUrl(path: string): string {
+    return `${API_BASE}${path}`;
+  }
+
+  /** 给原生 fetch / SSE 用 — 拿带 token 的 headers */
+  authHeaders(extra?: Record<string, string>): Record<string, string> {
+    const h: Record<string, string> = { ...(extra || {}) };
+    if (this.token) h["Authorization"] = `Bearer ${this.token}`;
+    return h;
   }
 
   private async request<T>(path: string, options?: RequestInit): Promise<T> {
@@ -116,13 +124,6 @@ class ApiClient {
 
   delete<T>(path: string) {
     return this.request<T>(path, { method: "DELETE" });
-  }
-
-  getSnapshot(type: string, date?: string) {
-    const q = date ? `?trade_date=${date}` : "";
-    return this.get<{ trade_date: string; type: string; data: Record<string, unknown> }>(
-      `/api/snapshot/${type}${q}`
-    );
   }
 
   getSnapshotRange(type: string, days = 5) {
@@ -205,10 +206,6 @@ class ApiClient {
     }>>(`/api/market/news?count=${count}&enrich=${e}`);
   }
 
-  getBigdataRank(dimension: string) {
-    return this.get<Record<string, unknown>>(`/api/market/bigdata-rank?dimension=${encodeURIComponent(dimension)}`);
-  }
-
   getThemeDetail(name: string) {
     return this.get<Record<string, unknown>>(`/api/market/theme-detail?name=${encodeURIComponent(name)}`);
   }
@@ -228,13 +225,6 @@ class ApiClient {
       kind: string;
       groups: Array<{ letter: string; items: Array<{ name: string; code: string; change_pct: number }> }>;
     }>(`/api/market/all-boards?kind=${kind}`);
-  }
-
-  getIndustriesGrid(days = 7, rows = 20) {
-    return this.get<{
-      rows: number;
-      days: Array<{ trade_date: string; items: Array<Record<string, unknown>> }>;
-    }>(`/api/market/industries-grid?days=${days}&rows=${rows}`);
   }
 
   getStrongStocksGrid(scope: string = "recent", days = 8, rows = 5) {
@@ -292,6 +282,54 @@ class ApiClient {
     return this.get<AiBrief>(`/api/ai/brief${q}`);
   }
 
+  postFeedback(payload: {
+    brief_kind: "today" | "sentiment" | "theme" | "ladder" | "lhb";
+    trade_date: string;
+    rating: 1 | -1;
+    model?: string | null;
+    reason?: string | null;
+    evidence_correct?: boolean | null;
+    snapshot?: Record<string, unknown> | null;
+  }) {
+    return this.post<{ ok: boolean; id: number; created_at: string }>(
+      "/api/ai/feedback",
+      payload,
+    );
+  }
+
+  getFeedbackStats(days = 30) {
+    return this.get<{
+      days: number;
+      by_kind: Record<string, {
+        up: number; down: number; total: number;
+        evidence_yes: number; evidence_no: number;
+        up_rate: number; evidence_correct_rate: number | null;
+      }>;
+      overall: {
+        total: number; up: number; down: number;
+        up_rate: number; evidence_correct_rate: number | null;
+      };
+      recent: Array<{
+        kind: string; rating: number; trade_date: string;
+        model: string | null; reason: string | null;
+        evidence_correct: boolean | null; headline: string | null;
+        created_at: string;
+      }>;
+    }>(`/api/ai/feedback/stats?days=${days}`);
+  }
+
+  getThemeBriefSummary(tradeDate?: string) {
+    const q = tradeDate ? `?trade_date=${tradeDate}` : "";
+    return this.get<{
+      trade_date: string;
+      generated_at: string;
+      model: string;
+      leading: Array<{ name: string; ai_note: string }>;
+      fading: Array<{ name: string; ai_note: string }>;
+      emerging: Array<{ name: string; ai_note: string }>;
+    }>(`/api/ai/theme-brief${q}`);
+  }
+
   getWatchlistBrief(tradeDate?: string, refresh = false) {
     const params = new URLSearchParams();
     if (tradeDate) params.set("trade_date", tradeDate);
@@ -319,8 +357,11 @@ class ApiClient {
     }>(`/api/ai/watchlist-brief${q}`);
   }
 
-  getLadderBrief(tradeDate?: string) {
-    const q = tradeDate ? `?trade_date=${tradeDate}` : "";
+  getLadderBrief(tradeDate?: string, refresh = false) {
+    const params = new URLSearchParams();
+    if (tradeDate) params.set("trade_date", tradeDate);
+    if (refresh) params.set("refresh", "1");
+    const q = params.toString() ? `?${params}` : "";
     return this.get<{
       trade_date: string;
       generated_at: string;
@@ -328,7 +369,32 @@ class ApiClient {
       headline: string;
       structure: Array<{ label: string; text: string }>;
       key_stocks: Array<{ code: string; name: string; board: number; tag: string; note: string }>;
+      evidence?: string[];
     }>(`/api/ai/ladder-brief${q}`);
+  }
+
+  getSentimentBrief(tradeDate?: string, refresh = false) {
+    const params = new URLSearchParams();
+    if (tradeDate) params.set("trade_date", tradeDate);
+    if (refresh) params.set("refresh", "1");
+    const q = params.toString() ? `?${params}` : "";
+    return this.get<Record<string, unknown>>(`/api/ai/sentiment-brief${q}`);
+  }
+
+  getThemeBrief(tradeDate?: string, refresh = false) {
+    const params = new URLSearchParams();
+    if (tradeDate) params.set("trade_date", tradeDate);
+    if (refresh) params.set("refresh", "1");
+    const q = params.toString() ? `?${params}` : "";
+    return this.get<Record<string, unknown>>(`/api/ai/theme-brief${q}`);
+  }
+
+  getLhbBrief(tradeDate?: string, refresh = false) {
+    const params = new URLSearchParams();
+    if (tradeDate) params.set("trade_date", tradeDate);
+    if (refresh) params.set("refresh", "1");
+    const q = params.toString() ? `?${params}` : "";
+    return this.get<Record<string, unknown>>(`/api/ai/lhb-brief${q}`);
   }
 
   getWhyRose(code: string, tradeDate?: string, refresh = false) {
@@ -487,10 +553,6 @@ class ApiClient {
 
   markAnomaliesSeen(ids?: number[], allToday = false) {
     return this.post<{ ok: boolean }>("/api/intraday/anomalies/seen", { ids, all_today: allToday });
-  }
-
-  triggerAnomalyScan(fake = false) {
-    return this.post<{ status: string; saved: number }>(`/api/intraday/scan${fake ? "?fake=1" : ""}`, {});
   }
 
   getDataHealth() {

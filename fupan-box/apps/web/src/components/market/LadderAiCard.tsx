@@ -4,20 +4,12 @@ import { useEffect, useState } from "react";
 import { Sparkles, RefreshCw, MessageSquare } from "lucide-react";
 import { api } from "@/lib/api";
 import { useUIStore } from "@/stores/ui-store";
+import { AiCardError, AiCardFooter, AiCardLoading } from "./AiCardChrome";
 import { EvidenceBadge } from "./EvidenceBadge";
 import { StreamHeadlineControl } from "./StreamHeadlineControl";
 import { useStreamingHeadline } from "@/hooks/useStreamingHeadline";
-import { FeedbackThumbs } from "./FeedbackThumbs";
 
-interface LadderBrief {
-  trade_date: string;
-  generated_at: string;
-  model: string;
-  headline: string;
-  structure: Array<{ label: string; text: string }>;
-  key_stocks: Array<{ code: string; name: string; board: number; tag: string; note: string }>;
-  evidence?: string[];
-}
+type LadderBrief = Awaited<ReturnType<typeof api.getLadderBrief>>;
 
 const TAG_COLOR: Record<string, string> = {
   "高度龙头": "var(--accent-red)",
@@ -39,10 +31,7 @@ export function LadderAiCard() {
     setLoading(true);
     setError(null);
     try {
-      const url = refresh ? "/api/ai/ladder-brief?refresh=1" : "/api/ai/ladder-brief";
-      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000"}${url}`);
-      if (!res.ok) throw new Error(`${res.status}`);
-      const d = (await res.json()) as LadderBrief;
+      const d = await api.getLadderBrief(undefined, refresh);
       setData(d);
     } catch (e) {
       setError(e instanceof Error ? e.message : "load failed");
@@ -52,41 +41,11 @@ export function LadderAiCard() {
   };
 
   useEffect(() => {
-    api.getLadderBrief().then(setData).catch((e) => setError(String(e))).finally(() => setLoading(false));
+    load();
   }, []);
 
-  if (loading) {
-    return (
-      <div
-        className="px-3 py-2 flex items-center gap-2"
-        style={{
-          background: "var(--bg-secondary)",
-          borderBottom: "1px solid var(--border-color)",
-          fontSize: "var(--font-sm)",
-          color: "var(--text-muted)",
-        }}
-      >
-        <Sparkles size={14} style={{ color: "var(--accent-purple)" }} />
-        AI 正在拆解梯队...
-      </div>
-    );
-  }
-
-  if (error || !data) {
-    return (
-      <div
-        className="px-3 py-2 flex items-center gap-2"
-        style={{
-          background: "var(--bg-secondary)",
-          borderBottom: "1px solid var(--border-color)",
-          fontSize: "var(--font-sm)",
-          color: "var(--accent-red)",
-        }}
-      >
-        AI 拆解暂不可用 {error ? `(${error})` : ""}
-      </div>
-    );
-  }
+  if (loading) return <AiCardLoading message="AI 正在拆解梯队..." />;
+  if (error || !data) return <AiCardError error={error} />;
 
   return (
     <div
@@ -255,14 +214,12 @@ export function LadderAiCard() {
           </div>
         ))}
       </div>
-      <div className="mt-2 pt-2" style={{ borderTop: "1px dashed var(--border-color)" }}>
-        <FeedbackThumbs
-          kind="ladder"
-          tradeDate={data.trade_date}
-          model={data.model}
-          snapshot={{ headline: data.headline, evidence: data.evidence, key_stocks: data.key_stocks }}
-        />
-      </div>
+      <AiCardFooter
+        kind="ladder"
+        tradeDate={data.trade_date}
+        model={data.model}
+        snapshot={{ headline: data.headline, evidence: data.evidence, key_stocks: data.key_stocks }}
+      />
     </div>
   );
 }

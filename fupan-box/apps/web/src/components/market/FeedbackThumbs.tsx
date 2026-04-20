@@ -2,8 +2,7 @@
 
 import { useState } from "react";
 import { ThumbsUp, ThumbsDown, CheckCheck, X } from "lucide-react";
-
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
+import { api } from "@/lib/api";
 
 export type FeedbackKind = "today" | "sentiment" | "theme" | "ladder" | "lhb";
 
@@ -51,23 +50,15 @@ export function FeedbackThumbs({
     setState("submitting");
     setErrMsg(null);
     try {
-      const res = await fetch(`${API_BASE}/api/ai/feedback`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify({
-          brief_kind: kind,
-          trade_date: tradeDate,
-          rating,
-          model: model || null,
-          reason: extra?.reason ?? reason ?? null,
-          evidence_correct: extra?.evidence_correct ?? evidenceCorrect ?? null,
-          snapshot: snapshot ?? null,
-        }),
+      await api.postFeedback({
+        brief_kind: kind,
+        trade_date: tradeDate,
+        rating,
+        model: model || null,
+        reason: extra?.reason ?? reason ?? null,
+        evidence_correct: extra?.evidence_correct ?? evidenceCorrect ?? null,
+        snapshot: snapshot ?? null,
       });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const j = await res.json();
-      if (j.ok === false) throw new Error(j.error || "submit failed");
       setState("ok");
     } catch (e) {
       setState("error");

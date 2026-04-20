@@ -2,11 +2,12 @@
 
 import { useEffect, useState } from "react";
 import { Sparkles, RefreshCw, MessageSquare, Building2 } from "lucide-react";
+import { api } from "@/lib/api";
 import { useUIStore } from "@/stores/ui-store";
+import { AiCardError, AiCardFooter, AiCardLoading } from "./AiCardChrome";
 import { EvidenceBadge } from "./EvidenceBadge";
 import { StreamHeadlineControl } from "./StreamHeadlineControl";
 import { useStreamingHeadline } from "@/hooks/useStreamingHeadline";
-import { FeedbackThumbs } from "./FeedbackThumbs";
 
 interface KeyOffice {
   name: string;
@@ -34,8 +35,6 @@ interface LhbBrief {
   key_stocks: KeyStock[];
   evidence?: string[];
 }
-
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
 
 const TAG_COLOR: Record<string, string> = {
   "知名游资": "var(--accent-orange)",
@@ -71,11 +70,8 @@ export function LhbAiCard() {
     setLoading(true);
     setError(null);
     try {
-      const url = `${API_BASE}/api/ai/lhb-brief${refresh ? "?refresh=1" : ""}`;
-      const res = await fetch(url);
-      if (!res.ok) throw new Error(`${res.status}`);
-      const d = (await res.json()) as LhbBrief;
-      setData(d);
+      const d = await api.getLhbBrief(undefined, refresh);
+      setData(d as unknown as LhbBrief);
     } catch (e) {
       setError(e instanceof Error ? e.message : "load failed");
     } finally {
@@ -87,38 +83,8 @@ export function LhbAiCard() {
     load();
   }, []);
 
-  if (loading) {
-    return (
-      <div
-        className="px-3 py-2 flex items-center gap-2"
-        style={{
-          background: "var(--bg-secondary)",
-          borderBottom: "1px solid var(--border-color)",
-          fontSize: "var(--font-sm)",
-          color: "var(--text-muted)",
-        }}
-      >
-        <Sparkles size={14} style={{ color: "var(--accent-purple)" }} />
-        AI 正在拆解游资动向...
-      </div>
-    );
-  }
-
-  if (error || !data) {
-    return (
-      <div
-        className="px-3 py-2"
-        style={{
-          background: "var(--bg-secondary)",
-          borderBottom: "1px solid var(--border-color)",
-          fontSize: "var(--font-sm)",
-          color: "var(--accent-red)",
-        }}
-      >
-        AI 龙虎榜拆解暂不可用 {error ? `(${error})` : ""}
-      </div>
-    );
-  }
+  if (loading) return <AiCardLoading message="AI 正在拆解游资动向..." />;
+  if (error || !data) return <AiCardError error={error} />;
 
   const jumpToOffice = (name: string) => {
     setLhbOfficeQuery(name);
@@ -346,14 +312,12 @@ export function LhbAiCard() {
           })}
         </div>
       )}
-      <div className="mt-2 pt-2" style={{ borderTop: "1px dashed var(--border-color)" }}>
-        <FeedbackThumbs
-          kind="lhb"
-          tradeDate={data.trade_date}
-          model={data.model}
-          snapshot={{ headline: data.headline, evidence: data.evidence, key_offices: data.key_offices }}
-        />
-      </div>
+      <AiCardFooter
+        kind="lhb"
+        tradeDate={data.trade_date}
+        model={data.model}
+        snapshot={{ headline: data.headline, evidence: data.evidence, key_offices: data.key_offices }}
+      />
     </div>
   );
 }

@@ -15,8 +15,6 @@ const COL_WIDTH = 150;
 /** 每列展示的强势行业/题材条数 */
 const ROWS = 22;
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
-
 // P1: ThemeAiCard 已判定的 AI 主线/退潮/新晋, 在网格 cell 上叠 1 个小角标,
 // 让用户不用扫文字就知道 AI 怎么看这条题材
 type AiThemeKind = "leading" | "fading" | "emerging";
@@ -26,17 +24,6 @@ const AI_KIND_META: Record<AiThemeKind, { label: string; color: string }> = {
   fading: { label: "退潮", color: "var(--accent-green)" },
   emerging: { label: "新晋", color: "var(--accent-orange)" },
 };
-
-interface ThemeBriefItem {
-  name: string;
-  ai_note: string;
-}
-
-interface ThemeBrief {
-  leading: ThemeBriefItem[];
-  fading: ThemeBriefItem[];
-  emerging: ThemeBriefItem[];
-}
 
 type SnapshotRow = { trade_date: string; data: Record<string, unknown> };
 
@@ -224,9 +211,9 @@ export function ThemesPage() {
 
   useEffect(() => {
     let cancel = false;
-    fetch(`${API_BASE}/api/ai/theme-brief`)
-      .then((r) => (r.ok ? r.json() : null))
-      .then((d: ThemeBrief | null) => {
+    api
+      .getThemeBriefSummary()
+      .then((d) => {
         if (cancel || !d) return;
         const m = new Map<string, { kind: AiThemeKind; note: string }>();
         // 优先级: leading > emerging > fading (主线/新晋更值得高亮)

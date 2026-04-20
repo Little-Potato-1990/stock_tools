@@ -2,42 +2,9 @@
 
 import { useEffect, useState } from "react";
 import { ThumbsUp, ThumbsDown, MessageSquare, Activity } from "lucide-react";
+import { api } from "@/lib/api";
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
-
-interface KindStats {
-  up: number;
-  down: number;
-  evidence_yes: number;
-  evidence_no: number;
-  total: number;
-  up_rate: number;
-  evidence_correct_rate: number | null;
-}
-
-interface RecentRow {
-  kind: string;
-  rating: 1 | -1;
-  trade_date: string | null;
-  model: string | null;
-  reason: string | null;
-  evidence_correct: boolean | null;
-  headline: string | null;
-  created_at: string;
-}
-
-interface FeedbackStats {
-  days: number;
-  by_kind: Record<string, KindStats>;
-  overall: {
-    total?: number;
-    up?: number;
-    down?: number;
-    up_rate?: number | null;
-    evidence_correct_rate?: number | null;
-  };
-  recent: RecentRow[];
-}
+type FeedbackStats = Awaited<ReturnType<typeof api.getFeedbackStats>>;
 
 const KIND_LABEL: Record<string, string> = {
   today: "今日定调",
@@ -64,12 +31,7 @@ export function FeedbackStatsPanel({ days }: Props) {
       setLoading(true);
       setError(null);
       try {
-        const res = await fetch(
-          `${API_BASE}/api/ai/feedback/stats?days=${days}`,
-          { credentials: "include" },
-        );
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const j = (await res.json()) as FeedbackStats;
+        const j = await api.getFeedbackStats(days);
         if (!cancelled) setStats(j);
       } catch (e) {
         if (!cancelled)

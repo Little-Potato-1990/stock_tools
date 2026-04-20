@@ -3,8 +3,8 @@
 import { useEffect, useState, useCallback } from "react";
 import { Sparkles, RotateCcw, Loader2 } from "lucide-react";
 import { api } from "@/lib/api";
+import { AiCardFooter } from "./AiCardChrome";
 import { EvidenceBadge } from "./EvidenceBadge";
-import { FeedbackThumbs } from "./FeedbackThumbs";
 
 type WatchlistBrief = Awaited<ReturnType<typeof api.getWatchlistBrief>>;
 
@@ -141,14 +141,12 @@ export function WatchlistAiCard({ itemCount }: Props) {
             </p>
           )}
 
-          <div className="pt-1" style={{ borderTop: "1px dashed var(--border-color)" }}>
-            <FeedbackThumbs
-              kind="today"
-              tradeDate={data.trade_date}
-              model={data.model}
-              snapshot={{ headline: data.headline, focus: data.focus, evidence: data.evidence }}
-            />
-          </div>
+          <AiCardFooter
+            kind="today"
+            tradeDate={data.trade_date}
+            model={data.model}
+            snapshot={{ headline: data.headline, focus: data.focus, evidence: data.evidence }}
+          />
         </>
       )}
     </div>

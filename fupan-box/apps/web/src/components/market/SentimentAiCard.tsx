@@ -2,11 +2,12 @@
 
 import { useEffect, useState } from "react";
 import { Sparkles, RefreshCw, Activity, MessageSquare } from "lucide-react";
+import { api } from "@/lib/api";
 import { useUIStore } from "@/stores/ui-store";
+import { AiCardError, AiCardFooter, AiCardLoading } from "./AiCardChrome";
 import { EvidenceBadge } from "./EvidenceBadge";
 import { StreamHeadlineControl } from "./StreamHeadlineControl";
 import { useStreamingHeadline } from "@/hooks/useStreamingHeadline";
-import { FeedbackThumbs } from "./FeedbackThumbs";
 
 interface TrendPoint {
   date: string;
@@ -38,8 +39,6 @@ const PHASE_COLOR: Record<SentimentBrief["phase"], string> = {
   repair: "var(--accent-blue)",
 };
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
-
 interface Props {
   /** hero 模式: 字号更大, padding 更宽, 用作页面顶部主视觉 */
   hero?: boolean;
@@ -56,11 +55,8 @@ export function SentimentAiCard({ hero = false }: Props = {}) {
     setLoading(true);
     setError(null);
     try {
-      const url = `${API_BASE}/api/ai/sentiment-brief${refresh ? "?refresh=1" : ""}`;
-      const res = await fetch(url);
-      if (!res.ok) throw new Error(`${res.status}`);
-      const d = (await res.json()) as SentimentBrief;
-      setData(d);
+      const d = await api.getSentimentBrief(undefined, refresh);
+      setData(d as unknown as SentimentBrief);
     } catch (e) {
       setError(e instanceof Error ? e.message : "load failed");
     } finally {
@@ -73,36 +69,11 @@ export function SentimentAiCard({ hero = false }: Props = {}) {
   }, []);
 
   if (loading) {
-    return (
-      <div
-        className="px-3 py-2 flex items-center gap-2"
-        style={{
-          background: "var(--bg-secondary)",
-          borderBottom: "1px solid var(--border-color)",
-          fontSize: "var(--font-sm)",
-          color: "var(--text-muted)",
-        }}
-      >
-        <Sparkles size={14} style={{ color: "var(--accent-purple)" }} />
-        AI 正在判断当前情绪阶段...
-      </div>
-    );
+    return <AiCardLoading message="AI 正在判断当前情绪阶段..." />;
   }
 
   if (error || !data) {
-    return (
-      <div
-        className="px-3 py-2"
-        style={{
-          background: "var(--bg-secondary)",
-          borderBottom: "1px solid var(--border-color)",
-          fontSize: "var(--font-sm)",
-          color: "var(--accent-red)",
-        }}
-      >
-        AI 旁白暂不可用 {error ? `(${error})` : ""}
-      </div>
-    );
+    return <AiCardError error={error} />;
   }
 
   return (
@@ -309,14 +280,12 @@ export function SentimentAiCard({ hero = false }: Props = {}) {
           </button>
         </div>
       )}
-      <div className="mt-2 pt-2" style={{ borderTop: "1px dashed var(--border-color)" }}>
-        <FeedbackThumbs
-          kind="sentiment"
-          tradeDate={data.trade_date}
-          model={data.model}
-          snapshot={{ headline: data.judgment, phase: data.phase, evidence: data.evidence }}
-        />
-      </div>
+      <AiCardFooter
+        kind="sentiment"
+        tradeDate={data.trade_date}
+        model={data.model}
+        snapshot={{ headline: data.judgment, phase: data.phase, evidence: data.evidence }}
+      />
     </div>
   );
 }

@@ -1,8 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
+import { api } from "@/lib/api";
 
 export type HeadlineKind = "today" | "sentiment" | "theme" | "ladder" | "lhb";
 
@@ -65,8 +64,8 @@ export function useStreamingHeadline(
       const params = new URLSearchParams({ kind, model: modelId });
       if (tradeDate) params.set("trade_date", tradeDate);
       const res = await fetch(
-        `${API_BASE}/api/ai/brief/headline-stream?${params.toString()}`,
-        { signal: ctrl.signal, credentials: "include" },
+        api.buildUrl(`/api/ai/brief/headline-stream?${params.toString()}`),
+        { signal: ctrl.signal, headers: api.authHeaders() },
       );
       if (!res.ok || !res.body) {
         throw new Error(`HTTP ${res.status}`);

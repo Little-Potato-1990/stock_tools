@@ -22,9 +22,7 @@ const MODULE_LABELS: Record<NavModule, string> = {
   today: "今日复盘",
   sentiment: "大盘情绪",
   ladder: "连板天梯",
-  strong: "强势股",
   themes: "题材",
-  industries: "行业",
   capital: "资金分析",
   lhb: "龙虎榜",
   search: "搜索",
@@ -33,8 +31,6 @@ const MODULE_LABELS: Record<NavModule, string> = {
   ai_track: "AI 预测追踪",
   my_review: "我的复盘",
   account: "账户套餐",
-  dashboard: "仪表盘",
-  bigdata: "大数据",
 };
 
 export function AiPanel() {

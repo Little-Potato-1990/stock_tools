@@ -1,16 +1,12 @@
 import { create } from "zustand";
 
-export type StrongScope = "recent" | "main" | "gem" | "star" | "bj";
-export type CapitalScope = "wind" | "industry" | "theme" | "front_volume";
 export type LhbScope = "daily" | "office_history" | "hot_money";
 
 export type NavModule =
   | "today"
   | "sentiment"
   | "ladder"
-  | "strong"
   | "themes"
-  | "industries"
   | "capital"
   | "lhb"
   | "search"
@@ -18,9 +14,7 @@ export type NavModule =
   | "watchlist"
   | "ai_track"
   | "my_review"
-  | "account"
-  | "dashboard"
-  | "bigdata";
+  | "account";
 
 /** 浮动徽章里展示的股票 (用户最近聚焦的) */
 interface FocusedStock {
@@ -68,14 +62,6 @@ interface UIState {
   activeModule: NavModule;
   setActiveModule: (m: NavModule) => void;
 
-  /** 强势股子模块 */
-  strongScope: StrongScope;
-  setStrongScope: (s: StrongScope) => void;
-
-  /** 资金分析子模块 */
-  capitalScope: CapitalScope;
-  setCapitalScope: (s: CapitalScope) => void;
-
   /** 龙虎榜子模块 */
   lhbScope: LhbScope;
   setLhbScope: (s: LhbScope) => void;
@@ -86,7 +72,6 @@ interface UIState {
 
   aiPanelOpen: boolean;
   toggleAiPanel: () => void;
-  openAiPanel: () => void;
   closeAiPanel: () => void;
 
   selectedModel: string;
@@ -134,7 +119,6 @@ interface UIState {
   recentInteractions: RecentInteraction[];
   /** 推入一条交互记录, 自动去重 + 截断 */
   pushInteraction: (it: Omit<RecentInteraction, "ts">) => void;
-  clearInteractions: () => void;
 }
 
 const getStoredModel = () => {
@@ -146,12 +130,6 @@ export const useUIStore = create<UIState>((set) => ({
   activeModule: "today",
   setActiveModule: (m) => set({ activeModule: m }),
 
-  strongScope: "recent",
-  setStrongScope: (s) => set({ strongScope: s }),
-
-  capitalScope: "wind",
-  setCapitalScope: (s) => set({ capitalScope: s }),
-
   lhbScope: "daily",
   setLhbScope: (s) => set({ lhbScope: s }),
 
@@ -160,7 +138,6 @@ export const useUIStore = create<UIState>((set) => ({
 
   aiPanelOpen: false,
   toggleAiPanel: () => set((s) => ({ aiPanelOpen: !s.aiPanelOpen })),
-  openAiPanel: () => set({ aiPanelOpen: true }),
   closeAiPanel: () => set({ aiPanelOpen: false }),
 
   selectedModel: getStoredModel(),
@@ -238,9 +215,5 @@ export const useUIStore = create<UIState>((set) => ({
       persistRecent(next);
       return { recentInteractions: next };
     });
-  },
-  clearInteractions: () => {
-    persistRecent([]);
-    set({ recentInteractions: [] });
   },
 }));
