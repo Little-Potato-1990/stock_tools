@@ -35,7 +35,12 @@ const PHASE_COLOR: Record<SentimentBrief["phase"], string> = {
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
 
-export function SentimentAiCard() {
+interface Props {
+  /** hero 模式: 字号更大, padding 更宽, 用作页面顶部主视觉 */
+  hero?: boolean;
+}
+
+export function SentimentAiCard({ hero = false }: Props = {}) {
   const [data, setData] = useState<SentimentBrief | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -96,32 +101,38 @@ export function SentimentAiCard() {
 
   return (
     <div
-      className="px-3 py-2.5"
+      className={hero ? "px-5 py-4" : "px-3 py-2.5"}
       style={{
-        background: "linear-gradient(180deg, var(--bg-secondary) 0%, var(--bg-tertiary) 100%)",
+        background: hero
+          ? `linear-gradient(135deg, ${PHASE_COLOR[data.phase]}12 0%, var(--bg-tertiary) 60%)`
+          : "linear-gradient(180deg, var(--bg-secondary) 0%, var(--bg-tertiary) 100%)",
         borderBottom: "1px solid var(--border-color)",
+        borderLeft: hero ? `3px solid ${PHASE_COLOR[data.phase]}` : undefined,
       }}
     >
-      <div className="flex items-center gap-2 mb-2">
-        <Sparkles size={14} style={{ color: "var(--accent-purple)" }} />
+      <div className={hero ? "flex items-center gap-2 mb-3" : "flex items-center gap-2 mb-2"}>
+        <Sparkles
+          size={hero ? 16 : 14}
+          style={{ color: "var(--accent-purple)" }}
+        />
         <span
           className="font-bold"
           style={{
             color: "var(--accent-purple)",
-            fontSize: "var(--font-sm)",
+            fontSize: hero ? "var(--font-md)" : "var(--font-sm)",
             letterSpacing: 1,
           }}
         >
-          AI 情绪旁白
+          AI 今日情绪定调
         </span>
         <span
           className="font-bold"
           style={{
-            padding: "1px 8px",
+            padding: hero ? "2px 12px" : "1px 8px",
             background: PHASE_COLOR[data.phase],
             color: "#fff",
             borderRadius: 3,
-            fontSize: "var(--font-xs)",
+            fontSize: hero ? "var(--font-sm)" : "var(--font-xs)",
           }}
         >
           {data.phase_label}
@@ -135,16 +146,17 @@ export function SentimentAiCard() {
           title="重新生成"
           style={{ color: "var(--text-muted)" }}
         >
-          <RefreshCw size={11} />
+          <RefreshCw size={hero ? 13 : 11} />
         </button>
       </div>
 
       <div
-        className="font-bold mb-2"
+        className={hero ? "font-bold mb-3" : "font-bold mb-2"}
         style={{
-          fontSize: "var(--font-md)",
+          fontSize: hero ? 22 : "var(--font-md)",
           color: "var(--text-primary)",
-          lineHeight: 1.5,
+          lineHeight: hero ? 1.45 : 1.5,
+          letterSpacing: hero ? 0.3 : 0,
         }}
       >
         {data.judgment}

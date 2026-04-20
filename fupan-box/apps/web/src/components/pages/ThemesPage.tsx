@@ -1,14 +1,16 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback } from "react";
+import { ChevronRight, MoreHorizontal } from "lucide-react";
 import { api } from "@/lib/api";
 import { useUIStore } from "@/stores/ui-store";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { ThemeAiCard } from "@/components/market/ThemeAiCard";
 
+// P0 改造: 默认只显示近 7 天题材热力, 历史 60 天改为用户主动展开,
+// 移除原"内容未撑满即自动追加"和"横向滚轮自动加载"两个静默副作用
 const PAGE_SIZE = 7;
 const MAX_DAYS = 60;
-const SCROLL_THRESHOLD = 140;
 const COL_WIDTH = 150;
 /** 每列展示的强势行业/题材条数 */
 const ROWS = 22;
@@ -186,41 +188,15 @@ export function ThemesPage() {
     };
   }, [reqDays]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const triggerLoadMore = useCallback(() => {
+  const loadMore7 = useCallback(() => {
     if (!hasMore || loadingMore) return;
-    setReqDays((d) => (d >= MAX_DAYS ? d : Math.min(d + PAGE_SIZE, MAX_DAYS)));
+    setReqDays((d) => Math.min(d + PAGE_SIZE, MAX_DAYS));
   }, [hasMore, loadingMore]);
 
-  const handleScroll = useCallback(() => {
-    const el = scrollerRef.current;
-    if (!el) return;
-    const dist = el.scrollWidth - el.clientWidth - el.scrollLeft;
-    if (dist < SCROLL_THRESHOLD) triggerLoadMore();
-  }, [triggerLoadMore]);
-
-  /** 内容没占满容器时自动加载下一批 */
-  useEffect(() => {
-    const el = scrollerRef.current;
-    if (!el || loadingMore || !hasMore) return;
-    if (el.scrollWidth <= el.clientWidth + SCROLL_THRESHOLD) {
-      const id = setTimeout(triggerLoadMore, 80);
-      return () => clearTimeout(id);
-    }
-  }, [days, hasMore, loadingMore, triggerLoadMore]);
-
-  /** 触控板横向手势 */
-  useEffect(() => {
-    const el = scrollerRef.current;
-    if (!el) return;
-    const onWheel = (e: WheelEvent) => {
-      const horiz = Math.abs(e.deltaX) > Math.abs(e.deltaY);
-      if (!horiz) return;
-      const dist = el.scrollWidth - el.clientWidth - el.scrollLeft;
-      if (dist < SCROLL_THRESHOLD && e.deltaX > 0) triggerLoadMore();
-    };
-    el.addEventListener("wheel", onWheel, { passive: true });
-    return () => el.removeEventListener("wheel", onWheel);
-  }, [triggerLoadMore]);
+  const loadAll60 = useCallback(() => {
+    if (!hasMore || loadingMore) return;
+    setReqDays(MAX_DAYS);
+  }, [hasMore, loadingMore]);
 
   function consecutiveDays(name: string, dayIdx: number): number {
     let count = 0;
@@ -248,11 +224,7 @@ export function ThemesPage() {
         title="题材追踪"
         subtitle={
           dates.length > 0
-            ? `${d0} 共 ${
-                industriesByDate.get(d0)?.length ?? 0
-              } 个题材 · 已加载 ${dates.length} 天${
-                hasMore ? " · 左划加载更多" : ""
-              }`
+            ? `${d0} 共 ${industriesByDate.get(d0)?.length ?? 0} 个题材 · 已加载 ${dates.length} 天`
             : undefined
         }
       />
@@ -282,7 +254,6 @@ export function ThemesPage() {
       ) : (
         <div
           ref={scrollerRef}
-          onScroll={handleScroll}
           className="overflow-x-auto"
         >
           <div style={{ width: totalWidth }}>
@@ -388,31 +359,72 @@ export function ThemesPage() {
               })}
             </div>
 
-            {loadingMore && (
-              <div
-                className="text-center"
-                style={{
-                  color: "var(--text-muted)",
-                  fontSize: 11,
-                  padding: "8px 0",
-                }}
-              >
-                加载更多历史…
-              </div>
-            )}
-            {!hasMore && days.length >= PAGE_SIZE && (
-              <div
-                className="text-center"
-                style={{
-                  color: "var(--text-muted)",
-                  fontSize: 11,
-                  padding: "8px 0",
-                }}
-              >
-                已到最早一天
-              </div>
-            )}
           </div>
+        </div>
+      )}
+
+      {/* 显式展开历史按钮 (取代静默 auto-load) */}
+      {days.length > 0 && hasMore && (
+        <div
+          className="flex items-center justify-center gap-2 px-4 py-3"
+          style={{
+            background: "var(--bg-secondary)",
+            borderTop: "1px solid var(--border-color)",
+          }}
+        >
+          <button
+            onClick={loadMore7}
+            disabled={loadingMore}
+            className="inline-flex items-center gap-1 rounded transition-opacity hover:opacity-80"
+            style={{
+              padding: "5px 12px",
+              background: "var(--bg-tertiary)",
+              border: "1px solid var(--border-color)",
+              color: "var(--text-secondary)",
+              fontSize: 11,
+              fontWeight: 600,
+              opacity: loadingMore ? 0.5 : 1,
+            }}
+          >
+            <ChevronRight size={11} />
+            再加载 7 天
+          </button>
+          <button
+            onClick={loadAll60}
+            disabled={loadingMore}
+            className="inline-flex items-center gap-1 rounded transition-opacity hover:opacity-80"
+            style={{
+              padding: "5px 12px",
+              background: "var(--bg-tertiary)",
+              border: "1px solid var(--border-color)",
+              color: "var(--text-secondary)",
+              fontSize: 11,
+              fontWeight: 600,
+              opacity: loadingMore ? 0.5 : 1,
+            }}
+          >
+            <MoreHorizontal size={11} />
+            展开全部 60 天
+          </button>
+          {loadingMore && (
+            <span style={{ color: "var(--text-muted)", fontSize: 11 }}>
+              加载中…
+            </span>
+          )}
+        </div>
+      )}
+      {!hasMore && days.length >= PAGE_SIZE && (
+        <div
+          className="text-center"
+          style={{
+            color: "var(--text-muted)",
+            fontSize: 11,
+            padding: "8px 0",
+            background: "var(--bg-secondary)",
+            borderTop: "1px solid var(--border-color)",
+          }}
+        >
+          已到最早一天 ({days.length} 天)
         </div>
       )}
     </div>
