@@ -9,6 +9,7 @@
     refresh: =1 强制重新生成 (跳过缓存)
 """
 
+import logging
 from datetime import date
 
 from fastapi import APIRouter, Depends, Query
@@ -30,6 +31,8 @@ from app.api.quota import check_and_log_quota
 from app.database import get_db
 from app.models.user import User
 
+logger = logging.getLogger(__name__)
+
 router = APIRouter()
 
 BRIEF_TTL = 3600.0
@@ -41,7 +44,8 @@ async def _generate_brief_with_track(trade_date, model):
     try:
         snapshot_predictions(brief)
     except Exception:
-        pass
+        # P3-A: 不再静默吞异常 — 命中率统计依赖此处, 失败要看到
+        logger.warning("snapshot_predictions failed", exc_info=True)
     return brief
 
 

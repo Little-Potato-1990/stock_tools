@@ -180,7 +180,7 @@ function Tiers({ list, currentTier }: { list: TierInfo[]; currentTier?: string }
           升级方案
         </span>
         <span style={{ fontSize: 10, color: "var(--text-muted)" }}>
-          PS: 当前为前端 mock, 实际付费走微信支付 / 支付宝 (TODO)
+          支付通道开发中 · 当前展示为方案预览
         </span>
       </div>
       <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
@@ -243,20 +243,18 @@ function Tiers({ list, currentTier }: { list: TierInfo[]; currentTier?: string }
                 ))}
               </ul>
               <button
-                disabled={isCurrent}
+                disabled
                 className="mt-3 w-full py-1.5 rounded font-bold"
                 style={{
-                  background: isCurrent ? "var(--bg-tertiary)" : meta.color,
-                  color: isCurrent ? "var(--text-muted)" : "#fff",
+                  background: isCurrent ? "var(--bg-tertiary)" : "var(--bg-tertiary)",
+                  color: isCurrent ? "var(--text-muted)" : "var(--text-muted)",
                   fontSize: 12,
-                  border: "none",
-                  cursor: isCurrent ? "default" : "pointer",
+                  border: "1px dashed var(--border-color)",
+                  cursor: "not-allowed",
                 }}
-                onClick={() => {
-                  if (!isCurrent) alert(`升级到 ${t.tier_label} — 支付通道待接入 (微信/支付宝)`);
-                }}
+                title={isCurrent ? "已订阅" : "支付通道开发中"}
               >
-                {isCurrent ? "已订阅" : `升级到 ${t.tier_label}`}
+                {isCurrent ? "已订阅" : "敬请期待"}
               </button>
             </div>
           );
