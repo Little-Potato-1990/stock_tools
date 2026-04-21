@@ -5,10 +5,19 @@ import { Newspaper, RefreshCw, Star, TrendingUp, TrendingDown, Minus, Sparkles, 
 import { api } from "@/lib/api";
 import { useUIStore } from "@/stores/ui-store";
 import { PageHeader } from "@/components/layout/PageHeader";
+import { NewsAiCard, type NewsDialAnchor } from "@/components/market/NewsAiCard";
 
 type NewsItem = Awaited<ReturnType<typeof api.getNews>>[number];
 
 type Filt = "all" | "important" | "watch" | "bullish" | "bearish";
+
+function filtToAnchor(f: Filt): NewsDialAnchor | null {
+  if (f === "all") return "total";
+  if (f === "important") return "important";
+  if (f === "watch") return "watch";
+  if (f === "bullish" || f === "bearish") return "net_sentiment";
+  return null;
+}
 
 const SENTIMENT_META: Record<NonNullable<NewsItem["sentiment"]>, { label: string; color: string; icon: typeof TrendingUp }> = {
   bullish: { label: "利好", color: "var(--accent-red)", icon: TrendingUp },
@@ -97,6 +106,18 @@ export function NewsPage() {
     ? `${decorated.length} 条 · AI 已打标 · 命中自选 ${counts.watch}`
     : undefined;
 
+  const handleDialClick = (anchor: NewsDialAnchor) => {
+    if (anchor === "total") setFilt("all");
+    else if (anchor === "important") setFilt((p) => (p === "important" ? "all" : "important"));
+    else if (anchor === "watch") setFilt((p) => (p === "watch" ? "all" : "watch"));
+    else if (anchor === "net_sentiment") {
+      const tilt = counts.bullish >= counts.bearish ? "bullish" : "bearish";
+      setFilt((p) => (p === tilt ? "all" : tilt));
+    }
+  };
+
+  const activeAnchor = filtToAnchor(filt);
+
   return (
     <div>
       <PageHeader
@@ -120,6 +141,16 @@ export function NewsPage() {
             刷新
           </button>
         }
+      />
+
+      {/* L1: AI 主视觉 (headline + 4 dial), 数据由前端聚合 */}
+      <NewsAiCard
+        hero
+        news={decorated}
+        watchHits={counts.watch}
+        loading={loading}
+        activeAnchor={activeAnchor}
+        onDialClick={handleDialClick}
       />
 
       <div className="px-3 pt-2">

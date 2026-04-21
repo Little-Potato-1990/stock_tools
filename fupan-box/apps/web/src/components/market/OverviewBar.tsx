@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useMemo, useState, useEffect, useRef, useCallback } from "react";
+import { Sparkles } from "lucide-react";
 import { api } from "@/lib/api";
 import { getCellColor, type ColorScaleType } from "@/lib/colorScale";
 
@@ -264,12 +265,22 @@ const PAGE_SIZE = 9;
 const MAX_DAYS = 60;
 const SCROLL_THRESHOLD = 120; // px from right edge to trigger load
 
-export function OverviewBar() {
+interface OverviewBarProps {
+  /** AI 关注的指标 label 列表; 命中的行会在指标名旁加紫色 Sparkles 角标. */
+  aiHighlightFields?: string[];
+}
+
+export function OverviewBar({ aiHighlightFields = [] }: OverviewBarProps = {}) {
   const [extDays, setExtDays] = useState<ExtendedDay[]>([]);
   const [days, setDays] = useState(PAGE_SIZE);
   const [hasMore, setHasMore] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const scrollerRef = useRef<HTMLDivElement | null>(null);
+
+  const highlightSet = useMemo(
+    () => new Set(aiHighlightFields),
+    [aiHighlightFields],
+  );
 
   // 拉取数据 (随 days 增加而增加)
   useEffect(() => {
@@ -463,9 +474,34 @@ export function OverviewBar() {
                 </tr>
               );
             }
+            const isHighlight = highlightSet.has(m.label);
             return (
               <tr key={`m-${idx}`}>
-                <td className="label-cell">{m.label}</td>
+                <td
+                  className="label-cell"
+                  style={
+                    isHighlight
+                      ? { color: "var(--accent-purple)", fontWeight: 700 }
+                      : undefined
+                  }
+                  title={
+                    isHighlight
+                      ? "AI 关注: 这是当前 AI 仪表盘引用的核心证据字段"
+                      : undefined
+                  }
+                >
+                  {isHighlight ? (
+                    <span className="inline-flex items-center gap-1">
+                      <Sparkles
+                        size={9}
+                        style={{ color: "var(--accent-purple)" }}
+                      />
+                      {m.label}
+                    </span>
+                  ) : (
+                    m.label
+                  )}
+                </td>
                 {extDays.map((d) => {
                   const val = m.get(d);
                   if (!m.colored) {

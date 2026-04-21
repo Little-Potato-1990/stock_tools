@@ -1,10 +1,18 @@
 "use client";
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { Sparkles } from "lucide-react";
 import { useUIStore, type LhbScope } from "@/stores/ui-store";
 import { PageHeader } from "@/components/layout/PageHeader";
-import { LhbAiCard } from "@/components/market/LhbAiCard";
+import {
+  LhbAiCard,
+  type LhbDialAnchor,
+  type LhbTrendPoint,
+} from "@/components/market/LhbAiCard";
+import { LhbEvidenceGrid } from "@/components/market/LhbEvidenceGrid";
 import { api } from "@/lib/api";
+import { fmtSignedAmount, fmtPctChange, fmtAmountRate } from "@/lib/format";
+import { flashGlow } from "@/lib/scrollGlow";
 
 const SUB_TABS: { key: LhbScope; label: string }[] = [
   { key: "daily", label: "每日龙虎榜" },
@@ -14,24 +22,8 @@ const SUB_TABS: { key: LhbScope; label: string }[] = [
 
 const OFFICE_DAY_OPTIONS = [30, 60, 90, 120] as const;
 
-// —— 金额 / 数字展示 ——
-
-function fmtAmount(v: number): string {
-  const a = Math.abs(v);
-  const sign = v < 0 ? "-" : "+";
-  if (a >= 1e8) return `${sign}${(a / 1e8).toFixed(2)}亿`;
-  if (a >= 1e4) return `${sign}${(a / 1e4).toFixed(0)}万`;
-  return `${sign}${a.toFixed(0)}`;
-}
-
-function fmtPctChange(pct: number): string {
-  const sign = pct > 0 ? "+" : "";
-  return `${sign}${pct.toFixed(2)}%`;
-}
-
-function fmtAmountRate(rate: number): string {
-  return `${rate.toFixed(1)}%`;
-}
+/** id of LhbDailyTab summary bar — used by stock_count dial flashGlow target. */
+const DAILY_SUMMARY_ID = "lhb-daily-summary";
 
 // —— snapshot 解析 ——
 
@@ -243,7 +235,14 @@ function HitChip({ count, days }: { count: number; days: number }) {
 
 // —— Tab: 每日龙虎榜 ——
 
-function LhbDailyTab() {
+/** 行级高亮规则只识别 total_net / inst_net 两个 anchor.
+ *  hot_money 走 hot_money tab, stock_count 走摘要栏 flashGlow, 不在此处理. */
+const HIGHLIGHT_LABEL: Partial<Record<LhbDialAnchor, string>> = {
+  total_net: "净流入主力",
+  inst_net: "含机构买方",
+};
+
+function LhbDailyTab({ highlight }: { highlight: LhbDialAnchor | null }) {
   const openStockDetail = useUIStore((s) => s.openStockDetail);
   const setLhbScope = useUIStore((s) => s.setLhbScope);
   const setLhbOfficeQuery = useUIStore((s) => s.setLhbOfficeQuery);
@@ -366,8 +365,9 @@ function LhbDailyTab() {
 
   return (
     <div className="p-3" style={{ background: "var(--bg-primary)" }}>
-      {/* 摘要栏 */}
+      {/* 摘要栏 — stock_count dial flashGlow 目标 */}
       <div
+        id={DAILY_SUMMARY_ID}
         className="flex items-center gap-2 mb-2 px-2 py-2 rounded"
         style={{
           background: "var(--bg-card)",
@@ -433,7 +433,7 @@ function LhbDailyTab() {
               fontWeight: 700,
             }}
           >
-            {fmtAmount(totalNet)}
+            {fmtSignedAmount(totalNet)}
           </span>
         </div>
       </div>
@@ -476,12 +476,20 @@ function LhbDailyTab() {
               const netColor =
                 stock.net_amount >= 0 ? "var(--accent-red)" : "var(--accent-green)";
 
+              const isHighlight =
+                highlight === "total_net"
+                  ? stock.net_amount > 0
+                  : highlight === "inst_net"
+                  ? buyers.some((b) => b.is_inst)
+                  : false;
+
               return (
                 <div
                   key={code}
                   style={{
                     borderBottom: "1px solid var(--border-color)",
-                    background: "var(--bg-card)",
+                    background: isHighlight ? "rgba(168,85,247,0.06)" : "var(--bg-card)",
+                    borderLeft: isHighlight ? "2px solid var(--accent-purple)" : undefined,
                   }}
                 >
                   <div
@@ -511,6 +519,23 @@ function LhbDailyTab() {
                           {stock.stock_name}
                         </button>
                         <HitChip count={stockHitsMap.get(code) ?? 0} days={STATS_WINDOW} />
+                        {isHighlight && highlight && (
+                          <span
+                            className="inline-flex items-center gap-0.5 ml-1 font-bold"
+                            title={`AI 仪表盘"${HIGHLIGHT_LABEL[highlight] ?? highlight}"命中此行`}
+                            style={{
+                              padding: "0 5px",
+                              background: "rgba(168,85,247,0.18)",
+                              color: "var(--accent-purple)",
+                              border: "1px solid rgba(168,85,247,0.4)",
+                              fontSize: 9,
+                              borderRadius: 2,
+                            }}
+                          >
+                            <Sparkles size={9} />
+                            AI
+                          </span>
+                        )}
                       </span>
                       <button
                         type="button"
@@ -528,7 +553,7 @@ function LhbDailyTab() {
                       {fmtPctChange(stock.pct_change)}
                     </div>
                     <div className="text-right tabular-nums font-bold" style={{ flex: "0.85 1 0", color: netColor }}>
-                      {fmtAmount(stock.net_amount)}
+                      {fmtSignedAmount(stock.net_amount)}
                     </div>
                     <div
                       className="text-right tabular-nums"
@@ -576,7 +601,7 @@ function LhbDailyTab() {
                                     <HitChip count={exalterHitsMap.get(row.exalter) ?? 0} days={STATS_WINDOW} />
                                   </button>
                                   <span className="tabular-nums shrink-0 font-medium" style={{ color: nc }}>
-                                    {fmtAmount(row.net_buy)}
+                                    {fmtSignedAmount(row.net_buy)}
                                   </span>
                                 </div>
                               );
@@ -612,7 +637,7 @@ function LhbDailyTab() {
                                     <HitChip count={exalterHitsMap.get(row.exalter) ?? 0} days={STATS_WINDOW} />
                                   </button>
                                   <span className="tabular-nums shrink-0 font-medium" style={{ color: nc }}>
-                                    {fmtAmount(row.net_buy)}
+                                    {fmtSignedAmount(row.net_buy)}
                                   </span>
                                 </div>
                               );
@@ -751,7 +776,7 @@ function LhbOfficeHistoryTab() {
                 fontWeight: 700,
               }}
             >
-              {fmtAmount(result.total_net_buy)}
+              {fmtSignedAmount(result.total_net_buy)}
             </span>{" "}
             / 涉及{" "}
             <span style={{ color: "var(--text-primary)", fontWeight: 600 }}>{distinctStocks}</span> 只股票
@@ -825,7 +850,7 @@ function LhbOfficeHistoryTab() {
                         <SideTag side={rec.side} />
                       </div>
                       <div className="text-right font-bold" style={{ flex: "0.7 1 0", color: netColor, minWidth: 64 }}>
-                        {fmtAmount(rec.net_buy)}
+                        {fmtSignedAmount(rec.net_buy)}
                       </div>
                       <div style={{ flex: "1.2 1 0", minWidth: 0, paddingLeft: 6, fontSize: 11, color: "var(--text-muted)", lineHeight: 1.35 }}>
                         {rec.reason}
@@ -848,7 +873,7 @@ function LhbOfficeHistoryTab() {
 
 // —— Tab: 游资追踪 ——
 
-function LhbHotMoneyTab() {
+function LhbHotMoneyTab({ highlight }: { highlight: LhbDialAnchor | null }) {
   const setLhbScope = useUIStore((s) => s.setLhbScope);
   const setLhbOfficeQuery = useUIStore((s) => s.setLhbOfficeQuery);
 
@@ -901,11 +926,30 @@ function LhbHotMoneyTab() {
 
   return (
     <div className="p-3" style={{ background: "var(--bg-primary)" }}>
+      {highlight === "hot_money" && (
+        <div
+          className="flex items-center gap-2 mb-2 px-3 py-2 rounded"
+          style={{
+            background: "rgba(168,85,247,0.10)",
+            border: "1px solid rgba(168,85,247,0.4)",
+            fontSize: 12,
+            color: "var(--text-primary)",
+          }}
+        >
+          <Sparkles size={12} style={{ color: "var(--accent-purple)" }} />
+          <span className="font-bold" style={{ color: "var(--accent-purple)" }}>
+            AI 关注
+          </span>
+          <span style={{ color: "var(--text-secondary)" }}>
+            · AI 仪表盘「游资席位」指向此页, 下方游资榜按累计净买入排序, 点击席位查看历史
+          </span>
+        </div>
+      )}
       <div
         className="flex flex-wrap items-center gap-3 mb-2 px-2 py-2 rounded"
         style={{
           background: "var(--bg-card)",
-          border: "1px solid var(--border-color)",
+          border: highlight === "hot_money" ? "1px solid rgba(168,85,247,0.4)" : "1px solid var(--border-color)",
           fontSize: 13,
         }}
       >
@@ -992,7 +1036,7 @@ function LhbHotMoneyTab() {
                 {row.stock_count}
               </div>
               <div className="text-right font-bold" style={{ flex: "0.75 1 0", color: netColor, minWidth: 72 }}>
-                {fmtAmount(row.net_buy_total)}
+                {fmtSignedAmount(row.net_buy_total)}
               </div>
             </div>
           );
@@ -1005,6 +1049,24 @@ function LhbHotMoneyTab() {
 export function LhbPage() {
   const scope = useUIStore((s) => s.lhbScope);
   const setScope = useUIStore((s) => s.setLhbScope);
+  const [highlight, setHighlight] = useState<LhbDialAnchor | null>(null);
+  const [trend5d, setTrend5d] = useState<LhbTrendPoint[]>([]);
+
+  const handleEvidenceClick = (anchor: LhbDialAnchor) => {
+    // hot_money dial 切到 hot_money tab, 其它都在 daily tab.
+    // stock_count 仅切到 daily tab 并 flashGlow 摘要栏 (无行级 highlight 规则).
+    if (anchor === "hot_money") {
+      setScope("hot_money");
+      setHighlight((prev) => (prev === anchor ? null : anchor));
+      return;
+    }
+    if (scope !== "daily") setScope("daily");
+    setHighlight((prev) => (prev === anchor ? null : anchor));
+    if (anchor === "stock_count") {
+      // 等 scope 切换 + LhbDailyTab 渲染完再 glow
+      setTimeout(() => flashGlow(DAILY_SUMMARY_ID), 80);
+    }
+  };
 
   return (
     <div>
@@ -1013,8 +1075,15 @@ export function LhbPage() {
         subtitle={SUB_TABS.find((t) => t.key === scope)?.label}
       />
 
-      {/* P1: AI 资金面拆解卡 — 跨所有 tab 始终展示, 让"游资意图"先进入视野 */}
-      <LhbAiCard />
+      {/* L1: AI 主视觉 (headline + 4 仪表盘 + structure + key_offices/key_stocks) */}
+      <LhbAiCard
+        hero
+        onEvidenceClick={handleEvidenceClick}
+        onTrendLoad={setTrend5d}
+      />
+
+      {/* L2: AI 引用证据 (4 张精选 sparkline) */}
+      <LhbEvidenceGrid trendData={trend5d} highlight={highlight} />
 
       <div
         className="flex items-center px-3"
@@ -1048,9 +1117,9 @@ export function LhbPage() {
         ))}
       </div>
 
-      {scope === "daily" && <LhbDailyTab />}
+      {scope === "daily" && <LhbDailyTab highlight={highlight} />}
       {scope === "office_history" && <LhbOfficeHistoryTab />}
-      {scope === "hot_money" && <LhbHotMoneyTab />}
+      {scope === "hot_money" && <LhbHotMoneyTab highlight={highlight} />}
     </div>
   );
 }

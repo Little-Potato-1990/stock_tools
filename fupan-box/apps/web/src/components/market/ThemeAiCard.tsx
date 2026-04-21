@@ -16,8 +16,10 @@ import { AiCardError, AiCardFooter, AiCardLoading } from "./AiCardChrome";
 import { EvidenceBadge } from "./EvidenceBadge";
 import { StreamHeadlineControl } from "./StreamHeadlineControl";
 import { useStreamingHeadline } from "@/hooks/useStreamingHeadline";
+import { Dial } from "./dial/Dial";
+import type { DialItem } from "./dial/types";
 
-interface ThemeItem {
+export interface ThemeItem {
   name: string;
   ai_note: string;
   today_rank?: number | null;
@@ -25,7 +27,7 @@ interface ThemeItem {
   chg_today?: number;
 }
 
-interface ThemeBrief {
+export interface ThemeBriefData {
   trade_date: string;
   generated_at: string;
   model: string;
@@ -35,6 +37,80 @@ interface ThemeBrief {
   emerging: ThemeItem[];
   next_bet: { name: string; reason: string };
   evidence?: string[];
+}
+
+export type ThemeDialAnchor = "leading" | "emerging" | "fading" | "next_bet";
+
+function deriveThemeDials(d: ThemeBriefData): DialItem<ThemeDialAnchor>[] {
+  const leadCount = d.leading.length;
+  const emCount = d.emerging.length;
+  const fadeCount = d.fading.length;
+
+  const leadName = d.leading[0]?.name ?? "无";
+  const emName = d.emerging[0]?.name ?? "无";
+  const fadeName = d.fading[0]?.name ?? "无";
+
+  // 主线强度 (越多越强)
+  const leadColor =
+    leadCount >= 2 ? "var(--accent-red)" : leadCount === 1 ? "var(--accent-orange)" : "var(--accent-green)";
+  const leadCaption = leadCount > 0 ? `龙头: ${leadName}` : "无主线在位, 杂题材";
+
+  // 新晋活跃度
+  const emColor =
+    emCount >= 2 ? "var(--accent-orange)" : emCount === 1 ? "var(--accent-yellow)" : "var(--text-muted)";
+  const emCaption = emCount > 0 ? `首发: ${emName}` : "无新热点冒头";
+
+  // 退潮风险 (越多越偏退潮 — 反向, 红色警告)
+  const fadeColor =
+    fadeCount >= 2 ? "var(--accent-red)" : fadeCount === 1 ? "var(--accent-orange)" : "var(--accent-green)";
+  const fadeCaption = fadeCount > 0 ? `退潮: ${fadeName}` : "无退潮迹象";
+
+  // 下注信心
+  const hasBet = !!d.next_bet?.name;
+  const betColor = hasBet ? "var(--accent-purple)" : "var(--text-muted)";
+  const betCaption = hasBet ? `${d.next_bet.name}` : "未给下注建议";
+
+  return [
+    {
+      anchor: "leading",
+      icon: TrendingUp,
+      label: "主线强度",
+      value: `${leadCount}`,
+      unit: "条",
+      trend: "flat",
+      caption: leadCaption,
+      color: leadColor,
+    },
+    {
+      anchor: "emerging",
+      icon: Zap,
+      label: "新晋活跃",
+      value: `${emCount}`,
+      unit: "条",
+      trend: "flat",
+      caption: emCaption,
+      color: emColor,
+    },
+    {
+      anchor: "fading",
+      icon: TrendingDown,
+      label: "退潮风险",
+      value: `${fadeCount}`,
+      unit: "条",
+      trend: "flat",
+      caption: fadeCaption,
+      color: fadeColor,
+    },
+    {
+      anchor: "next_bet",
+      icon: Target,
+      label: "明日下注",
+      value: hasBet ? "✓" : "—",
+      trend: "flat",
+      caption: betCaption,
+      color: betColor,
+    },
+  ];
 }
 
 function MiniTrend({ trend }: { trend: number[] }) {
@@ -135,12 +211,19 @@ function ThemeRow({
   );
 }
 
-export function ThemeAiCard() {
-  const [data, setData] = useState<ThemeBrief | null>(null);
+interface Props {
+  hero?: boolean;
+  onEvidenceClick?: (anchor: ThemeDialAnchor) => void;
+  onBriefLoad?: (brief: ThemeBriefData) => void;
+}
+
+export function ThemeAiCard({ hero = false, onEvidenceClick, onBriefLoad }: Props = {}) {
+  const [data, setData] = useState<ThemeBriefData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const askAI = useUIStore((s) => s.askAI);
   const openThemeDetail = useUIStore((s) => s.openThemeDetail);
+  const aiStyle = useUIStore((s) => s.aiStyle);
   const stream = useStreamingHeadline("theme", data?.trade_date, data?.model);
 
   const load = async (refresh = false) => {
@@ -148,7 +231,9 @@ export function ThemeAiCard() {
     setError(null);
     try {
       const d = await api.getThemeBrief(undefined, refresh);
-      setData(d as unknown as ThemeBrief);
+      const brief = d as unknown as ThemeBriefData;
+      setData(brief);
+      if (onBriefLoad) onBriefLoad(brief);
     } catch (e) {
       setError(e instanceof Error ? e.message : "load failed");
     } finally {
@@ -158,6 +243,7 @@ export function ThemeAiCard() {
 
   useEffect(() => {
     load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   if (loading) return <AiCardLoading message="AI 正在拆解题材轮动..." />;
@@ -169,22 +255,29 @@ export function ThemeAiCard() {
     );
   };
 
+  const dials = deriveThemeDials(data);
+
   return (
     <div
-      className="px-3 py-2.5"
+      className={hero ? "px-6 py-5" : "px-3 py-2.5"}
       style={{
-        background:
-          "linear-gradient(180deg, var(--bg-secondary) 0%, var(--bg-tertiary) 100%)",
+        background: hero
+          ? "linear-gradient(135deg, rgba(168,85,247,0.10) 0%, var(--bg-tertiary) 60%)"
+          : "linear-gradient(180deg, var(--bg-secondary) 0%, var(--bg-tertiary) 100%)",
         borderBottom: "1px solid var(--border-color)",
+        borderLeft: hero ? "3px solid var(--accent-purple)" : undefined,
       }}
     >
-      <div className="flex items-center gap-2 mb-2">
-        <Sparkles size={14} style={{ color: "var(--accent-purple)" }} />
+      <div className={hero ? "flex items-center gap-2 mb-3" : "flex items-center gap-2 mb-2"}>
+        <Sparkles
+          size={hero ? 16 : 14}
+          style={{ color: "var(--accent-purple)" }}
+        />
         <span
           className="font-bold"
           style={{
             color: "var(--accent-purple)",
-            fontSize: "var(--font-sm)",
+            fontSize: hero ? "var(--font-md)" : "var(--font-sm)",
             letterSpacing: 1,
           }}
         >
@@ -202,6 +295,7 @@ export function ThemeAiCard() {
             hasOverride={stream.hasOverride}
             onStart={stream.start}
             onReset={stream.reset}
+            size={hero ? 13 : 11}
           />
           <button
             onClick={() => load(true)}
@@ -209,17 +303,18 @@ export function ThemeAiCard() {
             title="重新生成 (走完整 brief 缓存)"
             style={{ color: "var(--text-muted)" }}
           >
-            <RefreshCw size={11} />
+            <RefreshCw size={hero ? 13 : 11} />
           </button>
         </div>
       </div>
 
       <div
-        className="font-bold mb-2"
+        className={hero ? "font-bold mb-3" : "font-bold mb-2"}
         style={{
-          fontSize: "var(--font-md)",
+          fontSize: hero ? 26 : "var(--font-md)",
           color: "var(--text-primary)",
-          lineHeight: 1.5,
+          lineHeight: hero ? 1.4 : 1.5,
+          letterSpacing: hero ? 0.3 : 0,
         }}
       >
         {stream.hasOverride ? (
@@ -239,101 +334,122 @@ export function ThemeAiCard() {
         )}
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-2 mb-2">
-        {data.leading.length > 0 && (
-          <div
-            style={{
-              padding: "6px 10px",
-              background: "var(--bg-card)",
-              borderRadius: 4,
-              border: "1px solid var(--border-color)",
-            }}
-          >
+      {/* L1.A: 4 仪表盘 */}
+      {aiStyle !== "headline" && (
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mb-3">
+          {dials.map((d) => (
+            <Dial
+              key={d.anchor}
+              d={d}
+              hero={hero}
+              onClick={() => onEvidenceClick?.(d.anchor)}
+            />
+          ))}
+        </div>
+      )}
+
+      {/* L1.B: 主线 / 退潮 / 新晋 三段 (concise & detailed 都展示) */}
+      {aiStyle !== "headline" && (
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-2 mb-2">
+          {data.leading.length > 0 && (
             <div
-              className="flex items-center gap-1 mb-1.5"
               style={{
-                fontSize: 10,
-                color: "var(--accent-red)",
-                fontWeight: 700,
+                padding: "6px 10px",
+                background: "var(--bg-card)",
+                borderRadius: 4,
+                border: "1px solid var(--border-color)",
+                borderLeft: "3px solid var(--accent-red)",
               }}
             >
-              <TrendingUp size={10} />
-              主线在位
+              <div
+                className="flex items-center gap-1 mb-1.5"
+                style={{
+                  fontSize: 10,
+                  color: "var(--accent-red)",
+                  fontWeight: 700,
+                }}
+              >
+                <TrendingUp size={10} />
+                主线在位
+              </div>
+              {data.leading.map((it) => (
+                <ThemeRow
+                  key={`l-${it.name}`}
+                  item={it}
+                  color="var(--accent-red)"
+                  onAsk={() => askAboutTheme(it.name, it.ai_note)}
+                />
+              ))}
             </div>
-            {data.leading.map((it) => (
-              <ThemeRow
-                key={`l-${it.name}`}
-                item={it}
-                color="var(--accent-red)"
-                onAsk={() => askAboutTheme(it.name, it.ai_note)}
-              />
-            ))}
-          </div>
-        )}
+          )}
 
-        {data.fading.length > 0 && (
-          <div
-            style={{
-              padding: "6px 10px",
-              background: "var(--bg-card)",
-              borderRadius: 4,
-              border: "1px solid var(--border-color)",
-            }}
-          >
+          {data.fading.length > 0 && (
             <div
-              className="flex items-center gap-1 mb-1.5"
               style={{
-                fontSize: 10,
-                color: "var(--accent-green)",
-                fontWeight: 700,
+                padding: "6px 10px",
+                background: "var(--bg-card)",
+                borderRadius: 4,
+                border: "1px solid var(--border-color)",
+                borderLeft: "3px solid var(--accent-green)",
               }}
             >
-              <TrendingDown size={10} />
-              退潮中
+              <div
+                className="flex items-center gap-1 mb-1.5"
+                style={{
+                  fontSize: 10,
+                  color: "var(--accent-green)",
+                  fontWeight: 700,
+                }}
+              >
+                <TrendingDown size={10} />
+                退潮中
+              </div>
+              {data.fading.map((it) => (
+                <ThemeRow
+                  key={`f-${it.name}`}
+                  item={it}
+                  color="var(--accent-green)"
+                  onAsk={() => askAboutTheme(it.name, it.ai_note)}
+                />
+              ))}
             </div>
-            {data.fading.map((it) => (
-              <ThemeRow
-                key={`f-${it.name}`}
-                item={it}
-                color="var(--accent-green)"
-                onAsk={() => askAboutTheme(it.name, it.ai_note)}
-              />
-            ))}
-          </div>
-        )}
+          )}
 
-        {data.emerging.length > 0 && (
-          <div
-            style={{
-              padding: "6px 10px",
-              background: "var(--bg-card)",
-              borderRadius: 4,
-              border: "1px solid var(--border-color)",
-            }}
-          >
+          {data.emerging.length > 0 && (
             <div
-              className="flex items-center gap-1 mb-1.5"
               style={{
-                fontSize: 10,
-                color: "var(--accent-orange)",
-                fontWeight: 700,
+                padding: "6px 10px",
+                background: "var(--bg-card)",
+                borderRadius: 4,
+                border: "1px solid var(--border-color)",
+                borderLeft: "3px solid var(--accent-orange)",
               }}
             >
-              <Zap size={10} />
-              新晋热点
+              <div
+                className="flex items-center gap-1 mb-1.5"
+                style={{
+                  fontSize: 10,
+                  color: "var(--accent-orange)",
+                  fontWeight: 700,
+                }}
+              >
+                <Zap size={10} />
+                新晋热点
+              </div>
+              {data.emerging.map((it) => (
+                <ThemeRow
+                  key={`e-${it.name}`}
+                  item={it}
+                  color="var(--accent-orange)"
+                  onAsk={() => askAboutTheme(it.name, it.ai_note)}
+                />
+              ))}
             </div>
-            {data.emerging.map((it) => (
-              <ThemeRow
-                key={`e-${it.name}`}
-                item={it}
-                color="var(--accent-orange)"
-                onAsk={() => askAboutTheme(it.name, it.ai_note)}
-              />
-            ))}
-          </div>
-        )}
-      </div>
+          )}
+        </div>
+      )}
 
+      {/* L1.C: 明日重点 (始终展示, 是 AI 决策结论) */}
       {data.next_bet?.name && (
         <div
           className="flex items-center gap-2"

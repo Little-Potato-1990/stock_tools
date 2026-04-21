@@ -15,6 +15,14 @@ import {
   X,
   Scale,
   Star,
+  ChevronDown,
+  type LucideIcon,
+  Layers,
+  AlertOctagon,
+  Activity,
+  CircleDollarSign,
+  Repeat,
+  Clock,
 } from "lucide-react";
 import { api } from "@/lib/api";
 import { useUIStore } from "@/stores/ui-store";
@@ -25,6 +33,8 @@ import { useStreamingHeadline } from "@/hooks/useStreamingHeadline";
 import { FeedbackThumbs } from "@/components/market/FeedbackThumbs";
 import { AiDensitySwitch } from "@/components/market/AiDensitySwitch";
 import { AiActionBar } from "@/components/market/AiActionBar";
+import { colorFromTrend } from "@/lib/format";
+import { flashGlow } from "@/lib/scrollGlow";
 import type {
   AiBrief,
   KeyMetric,
@@ -249,46 +259,128 @@ function HeroBlock({ brief }: { brief: AiBrief }) {
   );
 }
 
+/** anchor → 页面 section id, MetricBadge dial 点击后滚动 + glow 该区块 */
+const ANCHOR_TO_SECTION_ID: Record<string, string> = {
+  limit_up_count: "section-mainline",
+  broken_rate: "section-leaders",
+  max_height: "section-leaders",
+  total_amount: "section-hero",
+  yesterday_lu_up_rate: "section-plan",
+};
+
+const ANCHOR_TO_ICON: Record<string, LucideIcon> = {
+  limit_up_count: Flame,
+  broken_rate: AlertOctagon,
+  max_height: Layers,
+  total_amount: CircleDollarSign,
+  yesterday_lu_up_rate: Repeat,
+};
+
+/** anchor → 跳转区块的人话标签 (用于 dial caption / hover hint). */
+const ANCHOR_TO_HINT: Record<string, string> = {
+  limit_up_count: "→ 主线",
+  broken_rate: "→ 龙头",
+  max_height: "→ 龙头",
+  total_amount: "→ 顶部",
+  yesterday_lu_up_rate: "→ 候选池",
+};
+
 function MetricBadge({ metric }: { metric: KeyMetric }) {
+  const Icon: LucideIcon = (metric.anchor && ANCHOR_TO_ICON[metric.anchor]) || Activity;
+  const targetId = metric.anchor ? ANCHOR_TO_SECTION_ID[metric.anchor] : undefined;
+  const valueColor = colorFromTrend(metric.trend);
+  const subCaption = metric.delta || "持平";
+  const jumpHint = (metric.anchor && ANCHOR_TO_HINT[metric.anchor]) || "→ 顶部";
+
   return (
     <button
-      className="flex items-center gap-2 transition-colors"
-      title={metric.anchor ? `点击跳转到 ${metric.anchor}` : undefined}
+      onClick={() => {
+        if (targetId) flashGlow(targetId);
+      }}
+      className="flex flex-col text-left transition-colors group"
+      title={
+        targetId
+          ? `点击滚动到下方区块: ${subCaption} · 点击 ${jumpHint}`
+          : "无对应区块, 仅展示数据"
+      }
       style={{
-        padding: "6px 10px",
+        padding: "8px 10px",
         background: "var(--bg-card)",
         border: "1px solid var(--border-color)",
         borderRadius: 4,
-        cursor: metric.anchor ? "pointer" : "default",
+        cursor: targetId ? "pointer" : "default",
+        minWidth: 130,
       }}
     >
-      <span style={{ fontSize: "var(--font-xs)", color: "var(--text-muted)" }}>
-        {metric.label}
-      </span>
-      <span
-        className="font-bold tabular-nums"
-        style={{ fontSize: "var(--font-md)", color: "var(--text-primary)" }}
-      >
-        {metric.value}
-      </span>
-      <span className="flex items-center gap-0.5">
-        <TrendIcon trend={metric.trend} />
+      <div className="flex items-center justify-between gap-1 mb-1">
         <span
-          className="tabular-nums"
+          className="flex items-center gap-1"
+          style={{ fontSize: 10, color: "var(--text-muted)", fontWeight: 600 }}
+        >
+          <Icon size={11} style={{ color: valueColor }} />
+          {metric.label}
+        </span>
+        <span
+          className="flex items-center gap-0.5 tabular-nums"
           style={{
-            fontSize: "var(--font-xs)",
-            color:
-              metric.trend === "up"
-                ? "var(--accent-red)"
-                : metric.trend === "down"
-                ? "var(--accent-green)"
-                : "var(--text-muted)",
+            fontSize: 9,
+            color: valueColor,
+            fontWeight: 600,
           }}
         >
+          <TrendIcon trend={metric.trend} size={10} />
           {metric.delta}
         </span>
-      </span>
+      </div>
+      <div
+        className="font-bold tabular-nums"
+        style={{
+          fontSize: 18,
+          color: valueColor,
+          lineHeight: 1.1,
+        }}
+      >
+        {metric.value}
+      </div>
+      <div
+        style={{
+          marginTop: 3,
+          fontSize: 10,
+          color: "var(--text-secondary)",
+          lineHeight: 1.35,
+        }}
+      >
+        {subCaption}
+      </div>
+      {targetId && (
+        <div
+          className="flex items-center gap-0.5 mt-1.5 transition-opacity opacity-60 group-hover:opacity-100"
+          style={{ fontSize: 9, color: "var(--accent-purple)", fontWeight: 600 }}
+        >
+          {jumpHint}
+          <ChevronDown size={9} />
+        </div>
+      )}
     </button>
+  );
+}
+
+function SectionEmptyHint({ message }: { message: string }) {
+  return (
+    <div
+      className="flex items-center gap-2"
+      style={{
+        background: "var(--bg-card)",
+        border: "1px dashed var(--border-color)",
+        borderRadius: 4,
+        padding: "14px 16px",
+        color: "var(--text-muted)",
+        fontSize: "var(--font-sm)",
+      }}
+    >
+      <Clock size={14} style={{ color: "var(--text-muted)", flexShrink: 0 }} />
+      <span>{message}</span>
+    </div>
   );
 }
 
@@ -303,6 +395,9 @@ function MainLineBlock({ lines }: { lines: MainLine[] }) {
         title="今日主线"
         hint="AI 综合涨停密度、资金流向、新闻催化判定"
       />
+      {lines.length === 0 ? (
+        <SectionEmptyHint message="今日尚无涨停板数据，主线题材待盘后 17:30 后 Tushare 涨停接口更新；点击侧栏「数据已就绪」可手动触发刷新。" />
+      ) : (
       <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
         {lines.map((line) => (
           <div
@@ -437,6 +532,7 @@ function MainLineBlock({ lines }: { lines: MainLine[] }) {
           </div>
         ))}
       </div>
+      )}
     </div>
   );
 }
@@ -524,6 +620,9 @@ function LeadersBlock({ leaders }: { leaders: Leader[] }) {
         title="高度龙头 + AI 盘口注解"
         hint="时间轴叠加 AI 标记的关键拐点"
       />
+      {leaders.length === 0 ? (
+        <SectionEmptyHint message="今日尚无龙头股 — 涨停板数据为 0，待盘后 17:30 后 Tushare 数据更新自动补齐。" />
+      ) : (
       <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
         {leaders.map((leader) => (
           <div
@@ -633,6 +732,7 @@ function LeadersBlock({ leaders }: { leaders: Leader[] }) {
           </div>
         ))}
       </div>
+      )}
     </div>
   );
 }
@@ -777,6 +877,11 @@ function PlanBlock({
   onPickSimilar: (d: SimilarDay) => void;
   marks: UserMarksData;
 }) {
+  const planEmpty =
+    plan.promotion.length === 0 &&
+    plan.first_board.length === 0 &&
+    plan.reseal.length === 0 &&
+    plan.avoid.length === 0;
   return (
     <div className="grid grid-cols-1 lg:grid-cols-3 gap-2">
       <div className="lg:col-span-2">
@@ -785,12 +890,16 @@ function PlanBlock({
           title="明日候选池"
           hint="AI 给出触发条件，盘口直接对照"
         />
+        {planEmpty ? (
+          <SectionEmptyHint message="明日 4 类候选池全部派生自当日涨停盘口数据 — 涨停板暂未更新，候选池待 17:30 后自动补齐。" />
+        ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
           <PromotionCard items={plan.promotion} marks={marks} />
           <FirstBoardCard items={plan.first_board} marks={marks} />
           <ResealCard items={plan.reseal} marks={marks} />
           <AvoidCard items={plan.avoid} marks={marks} />
         </div>
+        )}
       </div>
 
       <div>
@@ -1483,16 +1592,24 @@ export function TodayReviewPage() {
       className="p-3 space-y-3"
       style={{ background: "var(--bg-primary)", minHeight: "100%" }}
     >
-      <HeroBlock brief={brief} />
-      <MainLineBlock lines={brief.main_lines} />
-      <LeadersBlock leaders={brief.leaders} />
-      <PlanBlock
-        plan={brief.tomorrow_plan}
-        similar={brief.similar_days}
-        judgment={brief.similar_judgment}
-        onPickSimilar={setPicked}
-        marks={marks}
-      />
+      <div id="section-hero" style={{ borderRadius: 6 }}>
+        <HeroBlock brief={brief} />
+      </div>
+      <div id="section-mainline" style={{ borderRadius: 6 }}>
+        <MainLineBlock lines={brief.main_lines} />
+      </div>
+      <div id="section-leaders" style={{ borderRadius: 6 }}>
+        <LeadersBlock leaders={brief.leaders} />
+      </div>
+      <div id="section-plan" style={{ borderRadius: 6 }}>
+        <PlanBlock
+          plan={brief.tomorrow_plan}
+          similar={brief.similar_days}
+          judgment={brief.similar_judgment}
+          onPickSimilar={setPicked}
+          marks={marks}
+        />
+      </div>
       {picked && (
         <CompareModal
           current={brief}

@@ -51,21 +51,45 @@ interface PrivateNavItem extends NavItem {
   highlight?: number;
 }
 
-function SectionTitle({ children }: { children: string }) {
+function SectionTitle({
+  children,
+  hint,
+}: {
+  children: string;
+  hint?: string;
+}) {
   return (
     <div
       className="px-3"
       style={{
         marginTop: 12,
         marginBottom: 4,
-        fontSize: 9,
-        letterSpacing: "0.12em",
-        color: "var(--text-tertiary)",
-        textTransform: "uppercase",
-        fontWeight: 700,
       }}
     >
-      {children}
+      <div
+        style={{
+          fontSize: 9,
+          letterSpacing: "0.12em",
+          color: "var(--text-tertiary)",
+          textTransform: "uppercase",
+          fontWeight: 700,
+        }}
+      >
+        {children}
+      </div>
+      {hint && (
+        <div
+          style={{
+            marginTop: 2,
+            fontSize: 9,
+            color: "var(--text-muted)",
+            opacity: 0.75,
+            letterSpacing: 0,
+          }}
+        >
+          {hint}
+        </div>
+      )}
     </div>
   );
 }
@@ -145,7 +169,7 @@ export function Sidebar() {
           fontSize: "var(--font-md)",
           fontWeight: isActive ? 700 : 500,
           textAlign: "left",
-          opacity: dimmed ? 0.65 : 1,
+          opacity: dimmed ? 0.5 : 1,
         }}
         onMouseEnter={(e) => {
           if (!isActive)
@@ -230,7 +254,7 @@ export function Sidebar() {
         <SectionTitle>公共复盘</SectionTitle>
         {PUBLIC_NAV.map((item) => renderItem(item))}
 
-        <SectionTitle>我的</SectionTitle>
+        <SectionTitle hint="登录可解锁个性化">可选增强</SectionTitle>
         {privateNav.map((item) =>
           renderItem(item, {
             unlocked: item.unlocked,

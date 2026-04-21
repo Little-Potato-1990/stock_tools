@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useMemo, useState, useEffect, useRef, useCallback } from "react";
 import { Sparkles } from "lucide-react";
 import { api } from "@/lib/api";
 import { useUIStore } from "@/stores/ui-store";
@@ -333,8 +333,19 @@ function stockCodeKey(code: string): string {
   return d.length > 6 ? d.slice(-6) : d.padStart(6, "0");
 }
 
-export function LadderMatrix() {
+interface LadderMatrixProps {
+  /** 与 LadderAiCard L1 dial 联动 — 命中行 label 旁加紫色 Sparkles 角标 */
+  aiHighlightRowLabels?: string[];
+}
+
+export function LadderMatrix({
+  aiHighlightRowLabels = [],
+}: LadderMatrixProps = {}) {
   const [data, setData] = useState<DayLadder[]>([]);
+  const highlightSet = useMemo(
+    () => new Set(aiHighlightRowLabels),
+    [aiHighlightRowLabels],
+  );
   const [themesByDate, setThemesByDate] = useState<Map<string, KplTheme[]>>(
     () => new Map()
   );
@@ -568,12 +579,15 @@ export function LadderMatrix() {
           </div>
 
           {/* 板级矩阵行 */}
-          {ROWS.map((row) => (
+          {ROWS.map((row) => {
+            const isHighlight = highlightSet.has(row.label);
+            return (
             <div
               key={row.label}
               className="flex"
               style={{
                 borderBottom: "1px solid var(--border-color)",
+                background: isHighlight ? "rgba(168,85,247,0.05)" : undefined,
               }}
             >
               <div
@@ -583,9 +597,27 @@ export function LadderMatrix() {
                   borderRight: "1px solid var(--border-color)",
                   padding: "8px 10px",
                   fontSize: 12,
-                  color: "var(--text-secondary)",
+                  color: isHighlight
+                    ? "var(--accent-purple)"
+                    : "var(--text-secondary)",
+                  fontWeight: isHighlight ? 700 : undefined,
                 }}
+                title={
+                  isHighlight
+                    ? "AI 关注: 这是当前 AI 仪表盘引用的核心证据维度"
+                    : undefined
+                }
               >
+                {isHighlight && (
+                  <Sparkles
+                    size={9}
+                    style={{
+                      color: "var(--accent-purple)",
+                      marginRight: 3,
+                      verticalAlign: "middle",
+                    }}
+                  />
+                )}
                 {row.label.includes("晋级") ? (
                   <>
                     {row.label.split(" ")[0]}{" "}
@@ -653,7 +685,8 @@ export function LadderMatrix() {
                 );
               })}
             </div>
-          ))}
+            );
+          })}
 
           {/* 热点题材行 — KPL 涨停题材聚合, 点击弹窗, hover 跨日期高亮 */}
           <div

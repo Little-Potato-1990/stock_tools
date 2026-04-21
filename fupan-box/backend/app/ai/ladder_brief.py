@@ -36,7 +36,15 @@ def _summarize_ladder_struct(ladder: dict | None) -> dict[str, Any]:
     """派生板梯结构指标 (无 LLM)."""
     stocks = _flatten_ladder_stocks(ladder)
     if not stocks:
-        return {"by_level": {}, "max_board": 0, "total": 0, "themes": []}
+        return {
+            "by_level": {},
+            "level_counts": {},
+            "levels_present": [],
+            "missing_levels": [],
+            "max_board": 0,
+            "total": 0,
+            "themes": [],
+        }
 
     by_level: dict[int, list[dict]] = {}
     for s in stocks:
@@ -256,6 +264,15 @@ async def generate_ladder_brief(
 
     struct = _summarize_ladder_struct(ladder)
     pool = _derive_key_stock_pool(struct)
+
+    if struct["total"] == 0:
+        base["headline"] = f"{trade_date.isoformat()} 涨停板数据尚未生成 (盘后 17:30 后更新)"
+        base["structure"] = [
+            {"label": "高度", "text": "数据待更新"},
+            {"label": "主线", "text": "数据待更新"},
+            {"label": "情绪", "text": "数据待更新"},
+        ]
+        return base
 
     llm_struct = {
         "max_board": struct["max_board"],
