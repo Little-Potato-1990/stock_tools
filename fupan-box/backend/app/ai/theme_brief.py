@@ -155,11 +155,48 @@ def _derive_pools(agg: dict[str, Any]) -> dict[str, list[dict]]:
     return {"leading": leading, "fading": fading, "emerging": emerging}
 
 
+def _load_theme_news(pools: dict[str, list[dict]], hours: int = 36, per_theme: int = 4) -> dict[str, list[dict]]:
+    """给 leading/fading/emerging 每个题材拉最近相关新闻。
+
+    返回 {theme_name: [{id, title, sentiment, importance, pub_time}, ...]}.
+    单个题材最多 per_theme 条, 跨池子去重.
+    """
+    from app.news.ingest import fetch_news_for_themes
+
+    names: list[str] = []
+    for k in ("leading", "emerging", "fading"):
+        for p in pools.get(k) or []:
+            n = p.get("name")
+            if n and n not in names:
+                names.append(n)
+    out: dict[str, list[dict]] = {}
+    for name in names[:12]:
+        try:
+            rows = fetch_news_for_themes([name], hours=hours, limit=per_theme)
+        except Exception as exc:
+            logger.debug("[theme-news] %s err=%s", name, exc)
+            rows = []
+        if not rows:
+            continue
+        out[name] = [
+            {
+                "id": r["id"],
+                "title": (r.get("title") or "")[:80],
+                "sentiment": r.get("sentiment"),
+                "importance": int(r.get("importance") or 0),
+                "pub_time": r.get("pub_time"),
+            }
+            for r in rows
+        ]
+    return out
+
+
 def _build_prompt(
     trade_date: str,
     agg: dict[str, Any],
     pools: dict[str, list[dict]],
     cross_ctx: str = "",
+    theme_news: dict[str, list[dict]] | None = None,
 ) -> tuple[str, str]:
     system = (
         "你是 A 股短线复盘专家, 专门做题材轮动节奏判断。"
@@ -185,22 +222,37 @@ def _build_prompt(
         "emerging": [{"name": p["name"], "today_rank": p["today_rank"], "is_new": p["is_new"]} for p in pools["emerging"]],
     }
 
+    news_block = ""
+    if theme_news:
+        news_lite = {
+            n: [
+                {"id": x["id"], "t": x["title"], "s": x.get("sentiment") or "neutral"}
+                for x in lst[:3]
+            ]
+            for n, lst in theme_news.items()
+        }
+        news_block = (
+            "\n相关新闻 (近 36h, 用于校验主线/退潮逻辑, 必要时在 ai_note 里引用 news_id):\n"
+            f"```json\n{json.dumps(news_lite, ensure_ascii=False)[:1800]}\n```\n"
+        )
+
     user = (
         f"今日 {trade_date} 题材排名/涨幅/涨停数据如下:\n\n"
         f"```json\n{json.dumps({'profiles': profile_brief, 'pools': pool_brief}, ensure_ascii=False)[:3500]}\n```\n"
+        f"{news_block}"
         f"{cross_ctx}"
         "\n请输出 JSON, 严格按以下 schema:\n"
         "```json\n"
         "{\n"
         '  "headline": "一句话概括今日轮动 (≤40字), 突出主线/退潮/新晋焦点",\n'
         '  "leading": [\n'
-        '    {"name": "(从 leading 中选)", "ai_note": "≤40字, 写明持续性判断"}\n'
+        '    {"name": "(从 leading 中选)", "ai_note": "≤40字, 写明持续性判断, 若有新闻支撑可写明", "news_ids": [可选, 引用相关新闻id最多2个]}\n'
         "  ],\n"
         '  "fading": [\n'
-        '    {"name": "(从 fading 中选)", "ai_note": "≤40字, 写明退潮原因或后续"}\n'
+        '    {"name": "(从 fading 中选)", "ai_note": "≤40字, 写明退潮原因或后续", "news_ids": []}\n'
         "  ],\n"
         '  "emerging": [\n'
-        '    {"name": "(从 emerging 中选)", "ai_note": "≤40字, 写明潜力点"}\n'
+        '    {"name": "(从 emerging 中选)", "ai_note": "≤40字, 写明潜力点, 若有催化新闻请引用", "news_ids": []}\n'
         "  ],\n"
         '  "next_bet": {"name": "(可选, 从 emerging 或 leading 选)", "reason": "≤50字, 明日重点关注的逻辑"},\n'
         '  "evidence": [\n'
@@ -239,7 +291,12 @@ def _heuristic_brief(agg: dict[str, Any], pools: dict[str, list[dict]]) -> dict[
     }
 
 
-def _merge_llm(agg: dict[str, Any], pools: dict[str, list[dict]], llm_out: dict | None) -> dict[str, Any]:
+def _merge_llm(
+    agg: dict[str, Any],
+    pools: dict[str, list[dict]],
+    llm_out: dict | None,
+    theme_news: dict[str, list[dict]] | None = None,
+) -> dict[str, Any]:
     if not llm_out:
         return _heuristic_brief(agg, pools)
 
@@ -247,6 +304,13 @@ def _merge_llm(agg: dict[str, Any], pools: dict[str, list[dict]], llm_out: dict 
     fading_set = {p["name"] for p in pools["fading"]}
     emerging_set = {p["name"] for p in pools["emerging"]}
     all_set = leading_set | fading_set | emerging_set | {p["name"] for p in agg["profiles"]}
+
+    valid_news_ids: set[int] = set()
+    if theme_news:
+        for lst in theme_news.values():
+            for it in lst:
+                if it.get("id") is not None:
+                    valid_news_ids.add(int(it["id"]))
 
     def _clean_list(arr_in, valid_set, max_n=3):
         out = []
@@ -257,7 +321,16 @@ def _merge_llm(agg: dict[str, Any], pools: dict[str, list[dict]], llm_out: dict 
             note = (it.get("ai_note") or "").strip()[:50]
             if not note:
                 continue
-            out.append({"name": name, "ai_note": note})
+            ids_in = it.get("news_ids") or []
+            news_ids: list[int] = []
+            for nid in ids_in[:3]:
+                try:
+                    nid_int = int(nid)
+                except (TypeError, ValueError):
+                    continue
+                if nid_int in valid_news_ids and nid_int not in news_ids:
+                    news_ids.append(nid_int)
+            out.append({"name": name, "ai_note": note, "news_ids": news_ids})
             if len(out) >= max_n:
                 break
         return out
@@ -287,6 +360,7 @@ def _merge_llm(agg: dict[str, Any], pools: dict[str, list[dict]], llm_out: dict 
         next_bet = _heuristic_brief(agg, pools)["next_bet"]
 
     profile_map = {p["name"]: p for p in agg["profiles"]}
+    theme_news = theme_news or {}
     for arr in (leading, fading, emerging):
         for it in arr:
             p = profile_map.get(it["name"])
@@ -294,6 +368,7 @@ def _merge_llm(agg: dict[str, Any], pools: dict[str, list[dict]], llm_out: dict 
                 it["today_rank"] = p["today_rank"]
                 it["lu_trend"] = p["lu_trend"]
                 it["chg_today"] = round(p["chgs"][-1] if p["chgs"] else 0.0, 2)
+            it["news_refs"] = theme_news.get(it["name"], [])[:3]
 
     evidence: list[str] = []
     for raw in (llm_out.get("evidence") or [])[:3]:
@@ -303,6 +378,20 @@ def _merge_llm(agg: dict[str, Any], pools: dict[str, list[dict]], llm_out: dict 
     if not evidence:
         evidence = _heuristic_brief(agg, pools).get("evidence", [])
 
+    news_pool: dict[int, dict] = {}
+    for lst in theme_news.values():
+        for it in lst:
+            nid = it.get("id")
+            if nid is None:
+                continue
+            news_pool[int(nid)] = {
+                "id": int(nid),
+                "title": it.get("title") or "",
+                "sentiment": it.get("sentiment"),
+                "importance": int(it.get("importance") or 0),
+                "pub_time": it.get("pub_time"),
+            }
+
     return {
         "headline": headline,
         "leading": leading,
@@ -310,6 +399,7 @@ def _merge_llm(agg: dict[str, Any], pools: dict[str, list[dict]], llm_out: dict 
         "emerging": emerging,
         "next_bet": next_bet,
         "evidence": evidence,
+        "news_pool": list(news_pool.values()),
     }
 
 
@@ -333,6 +423,7 @@ async def generate_theme_brief(
         "emerging": [],
         "next_bet": {"name": "", "reason": ""},
         "evidence": [],
+        "news_pool": [],
     }
 
     if not themes_series:
@@ -341,12 +432,13 @@ async def generate_theme_brief(
 
     agg = _aggregate_themes(themes_series, ladder_series)
     pools = _derive_pools(agg)
+    theme_news = _load_theme_news(pools, hours=36, per_theme=4)
 
     cross_ctx = build_cross_context_block(
         trade_date, model_id, include_sentiment=True
     )
-    system, user = _build_prompt(trade_date.isoformat(), agg, pools, cross_ctx)
+    system, user = _build_prompt(trade_date.isoformat(), agg, pools, cross_ctx, theme_news)
     llm_out = await _call_llm(system, user, model_id)
-    merged = _merge_llm(agg, pools, llm_out)
+    merged = _merge_llm(agg, pools, llm_out, theme_news)
     base.update(merged)
     return base

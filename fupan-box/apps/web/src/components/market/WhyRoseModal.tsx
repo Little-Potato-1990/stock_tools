@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
-import { X, RefreshCw, Sparkles, MessageSquare, ExternalLink, Zap, ChevronRight, AlertTriangle } from "lucide-react";
+import { X, RefreshCw, Sparkles, MessageSquare, ExternalLink, Zap, ChevronRight, AlertTriangle, Newspaper, TrendingUp, TrendingDown } from "lucide-react";
 import { useUIStore } from "@/stores/ui-store";
 import { api } from "@/lib/api";
 
@@ -284,6 +284,11 @@ export function WhyRoseModal() {
               <FieldCard label={data.position.label} text={data.position.text} accent="var(--accent-blue)" />
               <FieldCard label={data.height.label} text={data.height.text} accent="var(--accent-orange)" />
               <FieldCard label={data.tomorrow.label} text={data.tomorrow.text} accent={accent} />
+
+              <NewsRefSection
+                refs={data.news_refs || []}
+                pickedIds={(data.drivers || []).flatMap((d) => d.news_ids || [])}
+              />
             </div>
           ) : null}
         </div>
@@ -325,6 +330,87 @@ export function WhyRoseModal() {
         </div>
       </div>
     </>
+  );
+}
+
+function NewsRefSection({
+  refs,
+  pickedIds,
+}: {
+  refs: NonNullable<WhyRose["news_refs"]>;
+  pickedIds: number[];
+}) {
+  if (!refs || refs.length === 0) return null;
+  const pickedSet = new Set(pickedIds);
+  const ordered = [...refs].sort((a, b) => {
+    const ap = pickedSet.has(a.id) ? 0 : 1;
+    const bp = pickedSet.has(b.id) ? 0 : 1;
+    if (ap !== bp) return ap - bp;
+    return (b.importance || 0) - (a.importance || 0);
+  });
+  return (
+    <div>
+      <div
+        className="flex items-center gap-1 mb-1.5"
+        style={{ color: "var(--text-muted)", fontSize: 10 }}
+      >
+        <Newspaper size={10} style={{ color: "var(--accent-purple)" }} />
+        相关新闻
+        <span style={{ color: "var(--text-muted)" }}>· 高亮 = AI 在驱动里引用</span>
+      </div>
+      <div className="space-y-1">
+        {ordered.slice(0, 5).map((n) => {
+          const isPicked = pickedSet.has(n.id);
+          const sentColor =
+            n.sentiment === "bullish" ? "var(--accent-red)" :
+            n.sentiment === "bearish" ? "var(--accent-green)" :
+            "var(--text-muted)";
+          const SentIcon = n.sentiment === "bullish" ? TrendingUp : n.sentiment === "bearish" ? TrendingDown : null;
+          return (
+            <button
+              key={n.id}
+              onClick={() => {
+                if (typeof window !== "undefined") window.location.hash = `#/news?focus=${n.id}`;
+              }}
+              className="w-full text-left flex items-start gap-2 px-2 py-1.5 rounded"
+              style={{
+                background: isPicked ? "rgba(168,85,247,0.12)" : "var(--bg-card)",
+                border: isPicked ? "1px solid rgba(168,85,247,0.5)" : "1px solid var(--border-color)",
+              }}
+              title={n.title}
+            >
+              {SentIcon ? <SentIcon size={11} style={{ color: sentColor, marginTop: 2, flexShrink: 0 }} /> : <span style={{ width: 11, flexShrink: 0 }} />}
+              <span
+                style={{
+                  fontSize: 11,
+                  color: "var(--text-secondary)",
+                  lineHeight: 1.4,
+                  flex: 1,
+                }}
+              >
+                {n.title}
+              </span>
+              {n.match && (
+                <span
+                  style={{
+                    fontSize: 9,
+                    padding: "0 4px",
+                    borderRadius: 2,
+                    background: n.match === "code" ? "rgba(245,158,11,0.18)" : "var(--bg-tertiary)",
+                    color: n.match === "code" ? "var(--accent-orange)" : "var(--text-muted)",
+                    flexShrink: 0,
+                    alignSelf: "center",
+                  }}
+                  title={n.match === "code" ? "命中本股" : "命中所属题材"}
+                >
+                  {n.match === "code" ? "本股" : "题材"}
+                </span>
+              )}
+            </button>
+          );
+        })}
+      </div>
+    </div>
   );
 }
 

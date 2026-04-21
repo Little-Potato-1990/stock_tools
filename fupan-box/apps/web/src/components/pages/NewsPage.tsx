@@ -1,15 +1,32 @@
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
-import { Newspaper, RefreshCw, Star, TrendingUp, TrendingDown, Minus, Sparkles, Filter, Zap } from "lucide-react";
+import { useState, useEffect, useMemo, useRef } from "react";
+import { Newspaper, RefreshCw, Star, TrendingUp, TrendingDown, Minus, Sparkles, Filter, Zap, Search, X as XIcon } from "lucide-react";
 import { api } from "@/lib/api";
 import { useUIStore } from "@/stores/ui-store";
 import { PageHeader } from "@/components/layout/PageHeader";
-import { NewsAiCard, type NewsDialAnchor } from "@/components/market/NewsAiCard";
+import {
+  NewsAiCard,
+  type NewsDialAnchor,
+  type NewsBriefPayload,
+  type NewsBriefThread,
+  type NewsBriefBucket,
+} from "@/components/market/NewsAiCard";
 
 type NewsItem = Awaited<ReturnType<typeof api.getNews>>[number];
 
 type Filt = "all" | "important" | "watch" | "bullish" | "bearish";
+
+interface ThreadFocus {
+  kind: "thread";
+  name: string;
+  ids: Set<number>;
+}
+interface BucketFocus {
+  kind: "policy" | "shock" | "earnings";
+  ids: Set<number>;
+}
+type Focus = ThreadFocus | BucketFocus | null;
 
 function filtToAnchor(f: Filt): NewsDialAnchor | null {
   if (f === "all") return "total";
@@ -48,49 +65,203 @@ export function NewsPage() {
   const [filt, setFilt] = useState<Filt>("all");
   const [watch, setWatch] = useState<Set<string>>(new Set());
 
+  // Phase 2: brief + SSE headline
+  const [brief, setBrief] = useState<NewsBriefPayload | null>(null);
+  const [briefLoading, setBriefLoading] = useState(false);
+  const [briefStreaming, setBriefStreaming] = useState<string>("");
+  const [focus, setFocus] = useState<Focus>(null);
+  const sseRef = useRef<EventSource | null>(null);
+
   const openThemeDetail = useUIStore((s) => s.openThemeDetail);
   const openStockDetail = useUIStore((s) => s.openStockDetail);
   const askAI = useUIStore((s) => s.askAI);
 
-  const fetchNews = async () => {
+  const fetchNews = async (refresh = false) => {
     setLoading(true);
     try {
-      const res = await api.getNews(50, true);
+      const watchCsv = watch.size > 0 ? Array.from(watch).join(",") : undefined;
+      const res = await api.getNews(80, true, {
+        hours: 24,
+        sort: "smart",
+        watch: watchCsv,
+      });
       setNews(res);
     } catch (e) {
       console.error(e);
     } finally {
       setLoading(false);
     }
+    void refresh;
   };
 
+  const fetchBrief = async (refresh = false) => {
+    setBriefLoading(true);
+    try {
+      const b = await api.getNewsBrief({ hours: 24, refresh });
+      setBrief(b);
+    } catch (e) {
+      console.error("[news-brief]", e);
+    } finally {
+      setBriefLoading(false);
+    }
+  };
+
+  const startStream = () => {
+    if (sseRef.current) {
+      try { sseRef.current.close(); } catch { /* noop */ }
+      sseRef.current = null;
+    }
+    setBriefStreaming("");
+    try {
+      const url = api.newsBriefStreamUrl({ hours: 24 });
+      const es = new EventSource(url, { withCredentials: false });
+      sseRef.current = es;
+      let acc = "";
+      es.onmessage = (ev) => {
+        try {
+          const data = JSON.parse(ev.data);
+          if (data.token) {
+            acc += data.token;
+            setBriefStreaming(acc);
+          } else if (data.full_text) {
+            setBriefStreaming(data.full_text);
+          } else if (data.fallback) {
+            setBriefStreaming(data.fallback);
+          }
+          if (data.done || data.error) {
+            es.close();
+            sseRef.current = null;
+          }
+        } catch { /* noop */ }
+      };
+      es.onerror = () => {
+        es.close();
+        sseRef.current = null;
+      };
+    } catch (e) {
+      console.error("[news-stream]", e);
+    }
+  };
+
+  // RAG 语义检索 (Phase 4)
+  const [searchQ, setSearchQ] = useState("");
+  const [searchResults, setSearchResults] = useState<NewsItem[] | null>(null);
+  const [searching, setSearching] = useState(false);
+  const [searchErr, setSearchErr] = useState<string | null>(null);
+
+  const runSearch = async () => {
+    const q = searchQ.trim();
+    if (q.length < 2) return;
+    setSearching(true);
+    setSearchErr(null);
+    try {
+      const rows = await api.searchNews({ q, limit: 30, hours: 24 * 14 });
+      setSearchResults(rows as unknown as NewsItem[]);
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : "检索失败";
+      setSearchErr(msg);
+      setSearchResults([]);
+    } finally {
+      setSearching(false);
+    }
+  };
+
+  const clearSearch = () => {
+    setSearchQ("");
+    setSearchResults(null);
+    setSearchErr(null);
+  };
+
+  // 跨页携带的 focus=ID (如 ThemeAiCard 点了某条新闻跳过来)
+  const [focusId, setFocusId] = useState<number | null>(null);
   useEffect(() => {
-    fetchNews();
+    if (typeof window === "undefined") return;
+    const parseHash = () => {
+      const m = window.location.hash.match(/focus=(\d+)/);
+      setFocusId(m ? Number(m[1]) : null);
+    };
+    parseHash();
+    window.addEventListener("hashchange", parseHash);
+    return () => window.removeEventListener("hashchange", parseHash);
+  }, []);
+
+  // focus 变化 → 滚到对应新闻
+  useEffect(() => {
+    if (focusId == null) return;
+    const id = `news-item-${focusId}`;
+    const el = document.getElementById(id);
+    if (el) {
+      el.scrollIntoView({ behavior: "smooth", block: "center" });
+      el.style.transition = "background 1.5s ease";
+      const orig = el.style.background;
+      el.style.background = "rgba(168,85,247,0.18)";
+      setTimeout(() => {
+        el.style.background = orig;
+      }, 1800);
+    }
+  }, [focusId, news]);
+
+  // 1) 首屏加载: brief + 自选 (新闻在 watch 就位后再拉, 走 sort=smart)
+  useEffect(() => {
+    fetchBrief();
     if (api.isLoggedIn()) {
       api.getWatchlist()
         .then((rows) => setWatch(new Set(rows.map((r) => r.stock_code))))
-        .catch(() => {});
+        .catch(() => setWatch(new Set()));
+    } else {
+      setWatch(new Set());  // 触发 fetchNews
     }
+    return () => {
+      if (sseRef.current) {
+        try { sseRef.current.close(); } catch { /* noop */ }
+        sseRef.current = null;
+      }
+    };
   }, []);
 
+  // 2) 自选就位 → 拉新闻 (含 smart ranking)
+  // watch 是 Set, 用 size+JSON 串触发依赖
+  const watchKey = useMemo(() => Array.from(watch).sort().join(","), [watch]);
+  const watchInitedRef = useRef(false);
+  useEffect(() => {
+    if (!watchInitedRef.current) {
+      // 第一次 watch 设置 (即使是空 set 也算就位) 后, 才 fetchNews
+      watchInitedRef.current = true;
+    }
+    fetchNews();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [watchKey]);
+
+  const handleRefresh = async () => {
+    startStream();             // 先启 SSE 拉打字机 headline
+    await Promise.all([fetchNews(true), fetchBrief(true)]);
+  };
+
   const decorated = useMemo(() => {
-    return news.map((it) => {
+    const base = searchResults != null ? searchResults : news;
+    return base.map((it) => {
       const watchHit = (it.rel_codes || []).some((c) => watch.has(c));
       return { ...it, _watchHit: watchHit };
     });
-  }, [news, watch]);
+  }, [news, searchResults, watch]);
 
   const filtered = useMemo(() => {
+    // 检索模式: 按相关度 (后端返回顺序), 跳过本地 filt/focus
+    if (searchResults != null) return decorated;
     let arr = decorated;
-    if (filt === "important") arr = arr.filter((it) => (it.importance || 0) >= 3);
-    else if (filt === "watch") arr = arr.filter((it) => it._watchHit);
-    else if (filt === "bullish") arr = arr.filter((it) => it.sentiment === "bullish");
-    else if (filt === "bearish") arr = arr.filter((it) => it.sentiment === "bearish");
+    if (focus) {
+      arr = arr.filter((it) => it.id != null && focus.ids.has(it.id as number));
+    } else {
+      if (filt === "important") arr = arr.filter((it) => (it.importance || 0) >= 3);
+      else if (filt === "watch") arr = arr.filter((it) => it._watchHit);
+      else if (filt === "bullish") arr = arr.filter((it) => it.sentiment === "bullish");
+      else if (filt === "bearish") arr = arr.filter((it) => it.sentiment === "bearish");
+    }
     return arr.slice().sort((a, b) => {
       if (a._watchHit !== b._watchHit) return a._watchHit ? -1 : 1;
       return (b.importance || 0) - (a.importance || 0);
     });
-  }, [decorated, filt]);
+  }, [decorated, filt, focus, searchResults]);
 
   const counts = useMemo(() => {
     return {
@@ -103,10 +274,11 @@ export function NewsPage() {
   }, [decorated]);
 
   const subtitle = decorated.length > 0
-    ? `${decorated.length} 条 · AI 已打标 · 命中自选 ${counts.watch}`
+    ? `${decorated.length} 条 · ${brief?.model || "AI"} 已总结 · 命中自选 ${counts.watch}`
     : undefined;
 
   const handleDialClick = (anchor: NewsDialAnchor) => {
+    setFocus(null);  // 清掉 main_thread 聚焦
     if (anchor === "total") setFilt("all");
     else if (anchor === "important") setFilt((p) => (p === "important" ? "all" : "important"));
     else if (anchor === "watch") setFilt((p) => (p === "watch" ? "all" : "watch"));
@@ -116,7 +288,31 @@ export function NewsPage() {
     }
   };
 
+  const handleThreadClick = (t: NewsBriefThread) => {
+    if (focus?.kind === "thread" && focus.name === t.name) {
+      setFocus(null);
+      return;
+    }
+    setFilt("all");
+    setFocus({ kind: "thread", name: t.name, ids: new Set(t.news_ids) });
+  };
+
+  const handleBucketClick = (kind: "policy" | "shock" | "earnings", b: NewsBriefBucket) => {
+    if (focus?.kind === kind && areSetsEqual(focus.ids, new Set(b.news_ids))) {
+      setFocus(null);
+      return;
+    }
+    setFilt("all");
+    setFocus({ kind, ids: new Set(b.news_ids) });
+  };
+
   const activeAnchor = filtToAnchor(filt);
+  const focusLabel = focus?.kind === "thread"
+    ? `主线: ${focus.name}`
+    : focus?.kind === "policy" ? "政策聚焦"
+    : focus?.kind === "shock" ? "突发风险聚焦"
+    : focus?.kind === "earnings" ? "业绩/公告聚焦"
+    : null;
 
   return (
     <div>
@@ -125,8 +321,8 @@ export function NewsPage() {
         subtitle={subtitle}
         actions={
           <button
-            onClick={fetchNews}
-            disabled={loading}
+            onClick={handleRefresh}
+            disabled={loading || briefLoading}
             className="rounded transition-colors flex items-center gap-1"
             style={{
               padding: "4px 10px",
@@ -135,42 +331,135 @@ export function NewsPage() {
               fontSize: "var(--font-sm)",
               border: "1px solid var(--border-color)",
             }}
-            title="刷新 + 重新打标"
+            title="刷新 + 重跑 AI brief"
           >
-            <RefreshCw size={12} className={loading ? "animate-spin" : ""} />
+            <RefreshCw size={12} className={loading || briefLoading ? "animate-spin" : ""} />
             刷新
           </button>
         }
       />
 
-      {/* L1: AI 主视觉 (headline + 4 dial), 数据由前端聚合 */}
       <NewsAiCard
         hero
         news={decorated}
+        brief={brief}
+        briefLoading={briefLoading}
+        briefStreaming={briefStreaming}
         watchHits={counts.watch}
         loading={loading}
-        activeAnchor={activeAnchor}
+        activeAnchor={focus ? null : activeAnchor}
         onDialClick={handleDialClick}
+        onThreadClick={handleThreadClick}
+        onBucketClick={handleBucketClick}
+        onCodeClick={openStockDetail}
+        onThemeClick={openThemeDetail}
       />
 
-      <div className="px-3 pt-2">
+      <div className="px-3 pt-2 space-y-1.5">
+        {/* RAG 语义检索条 */}
         <div
-          className="flex items-center gap-1 mb-2 px-2 py-1.5"
+          className="flex items-center gap-1.5 px-2 py-1.5"
+          style={{
+            background: "var(--bg-card)",
+            border: `1px solid ${searchResults != null ? "rgba(168,85,247,0.45)" : "var(--border-color)"}`,
+            borderRadius: 4,
+          }}
+        >
+          <Search size={12} style={{ color: searchResults != null ? "var(--accent-purple)" : "var(--text-muted)" }} />
+          <input
+            value={searchQ}
+            onChange={(e) => setSearchQ(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") runSearch();
+              if (e.key === "Escape") clearSearch();
+            }}
+            placeholder="语义检索 14 天内新闻 (例如: 算力、固态电池量产、中东局势, ↵)"
+            className="flex-1 bg-transparent outline-none"
+            style={{
+              fontSize: "var(--font-sm)",
+              color: "var(--text-primary)",
+            }}
+          />
+          {searching && <RefreshCw size={11} className="animate-spin" style={{ color: "var(--accent-purple)" }} />}
+          {searchResults != null && (
+            <button
+              onClick={clearSearch}
+              className="flex items-center gap-0.5 rounded transition-colors"
+              style={{
+                padding: "2px 6px",
+                fontSize: 10,
+                background: "rgba(168,85,247,0.14)",
+                color: "var(--accent-purple)",
+                border: "1px solid rgba(168,85,247,0.35)",
+              }}
+              title="退出检索"
+            >
+              <XIcon size={9} />
+              退出检索
+            </button>
+          )}
+          <button
+            onClick={runSearch}
+            disabled={searching || searchQ.trim().length < 2}
+            className="rounded transition-colors"
+            style={{
+              padding: "2px 8px",
+              fontSize: 11,
+              background: "var(--accent-purple)",
+              color: "#fff",
+              border: "1px solid var(--accent-purple)",
+              opacity: searching || searchQ.trim().length < 2 ? 0.5 : 1,
+              fontWeight: 600,
+            }}
+            title="语义检索 (pgvector)"
+          >
+            检索
+          </button>
+        </div>
+
+        {searchErr && (
+          <div
+            className="px-2 py-1"
+            style={{
+              fontSize: 10,
+              color: "var(--accent-red)",
+              background: "rgba(239,68,68,0.08)",
+              border: "1px solid rgba(239,68,68,0.3)",
+              borderRadius: 4,
+            }}
+          >
+            检索失败: {searchErr}
+          </div>
+        )}
+
+        <div
+          className="flex items-center gap-1 px-2 py-1.5"
           style={{
             background: "var(--bg-card)",
             border: "1px solid var(--border-color)",
             borderRadius: 4,
+            opacity: searchResults != null ? 0.45 : 1,
+            pointerEvents: searchResults != null ? "none" : "auto",
           }}
+          title={searchResults != null ? "检索模式下,本地筛选已停用" : undefined}
         >
           <Filter size={11} style={{ color: "var(--text-muted)" }} />
-          <FilterChip active={filt === "all"} onClick={() => setFilt("all")} label={`全部 ${counts.all}`} />
-          <FilterChip active={filt === "important"} onClick={() => setFilt("important")} label={`重磅 ${counts.important}`} icon="⭐" />
-          <FilterChip active={filt === "watch"} onClick={() => setFilt("watch")} label={`命中自选 ${counts.watch}`} accent="orange" />
-          <FilterChip active={filt === "bullish"} onClick={() => setFilt("bullish")} label={`利好 ${counts.bullish}`} accent="red" />
-          <FilterChip active={filt === "bearish"} onClick={() => setFilt("bearish")} label={`利空 ${counts.bearish}`} accent="green" />
+          <FilterChip active={!focus && filt === "all"} onClick={() => { setFocus(null); setFilt("all"); }} label={`全部 ${counts.all}`} />
+          <FilterChip active={!focus && filt === "important"} onClick={() => { setFocus(null); setFilt("important"); }} label={`重磅 ${counts.important}`} icon="⭐" />
+          <FilterChip active={!focus && filt === "watch"} onClick={() => { setFocus(null); setFilt("watch"); }} label={`命中自选 ${counts.watch}`} accent="orange" />
+          <FilterChip active={!focus && filt === "bullish"} onClick={() => { setFocus(null); setFilt("bullish"); }} label={`利好 ${counts.bullish}`} accent="red" />
+          <FilterChip active={!focus && filt === "bearish"} onClick={() => { setFocus(null); setFilt("bearish"); }} label={`利空 ${counts.bearish}`} accent="green" />
+          {focus && focusLabel && (
+            <FilterChip
+              active={true}
+              onClick={() => setFocus(null)}
+              label={`${focusLabel} (${filtered.length}) ✕`}
+              accent="orange"
+            />
+          )}
           <span className="ml-auto flex items-center gap-1" style={{ fontSize: 10, color: "var(--text-muted)" }}>
             <Sparkles size={9} style={{ color: "var(--accent-purple)" }} />
-            AI 标签可点击
+            点 AI 主线下钻
           </span>
         </div>
       </div>
@@ -200,9 +489,11 @@ export function NewsPage() {
           filtered.map((item, i) => {
             const sent = item.sentiment ? SENTIMENT_META[item.sentiment] : null;
             const SentIcon = sent?.icon;
+            const themesArr = item.themes || item.related_concepts || [];
             return (
               <div
-                key={`${item.pub_time}-${i}`}
+                key={`${item.id ?? item.pub_time}-${i}`}
+                id={item.id != null ? `news-item-${item.id}` : undefined}
                 className="px-3 py-2"
                 style={{
                   background: item._watchHit ? "rgba(245,158,11,0.06)" : "var(--bg-card)",
@@ -213,6 +504,21 @@ export function NewsPage() {
                 <div className="flex items-start gap-3">
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-1.5 flex-wrap mb-1">
+                      {item.source && (
+                        <span
+                          style={{
+                            padding: "1px 5px",
+                            background: "var(--bg-tertiary)",
+                            color: "var(--text-muted)",
+                            fontSize: 10,
+                            borderRadius: 2,
+                            border: "1px solid var(--border-color)",
+                          }}
+                          title="新闻源"
+                        >
+                          {item.source}
+                        </span>
+                      )}
                       {item._watchHit && (
                         <span
                           className="flex items-center gap-0.5 font-bold"
@@ -278,7 +584,7 @@ export function NewsPage() {
                       </p>
                     )}
                     <div className="flex flex-wrap gap-1 mt-1.5 items-center">
-                      {(item.themes || item.related_concepts || []).slice(0, 6).map((concept) => (
+                      {themesArr.slice(0, 6).map((concept) => (
                         <button
                           key={concept}
                           onClick={() => openThemeDetail(concept)}
@@ -380,4 +686,10 @@ function FilterChip({
       {label}
     </button>
   );
+}
+
+function areSetsEqual<T>(a: Set<T>, b: Set<T>): boolean {
+  if (a.size !== b.size) return false;
+  for (const v of a) if (!b.has(v)) return false;
+  return true;
 }

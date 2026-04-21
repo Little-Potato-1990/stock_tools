@@ -32,7 +32,15 @@ export interface TrendPoint {
   max_height?: number;
 }
 
-interface SentimentBrief {
+export interface SentimentNewsRef {
+  id: number;
+  title: string;
+  sentiment?: "bullish" | "neutral" | "bearish" | null;
+  importance?: number;
+  tags?: string[];
+}
+
+export interface SentimentBrief {
   trade_date: string;
   generated_at: string;
   model: string;
@@ -43,6 +51,8 @@ interface SentimentBrief {
   playbook: Array<{ label: string; action: string }>;
   trend_5d: TrendPoint[];
   evidence?: string[];
+  news_ids?: number[];
+  news_pool?: SentimentNewsRef[];
 }
 
 const PHASE_COLOR: Record<SentimentBrief["phase"], string> = {
@@ -260,9 +270,11 @@ interface Props {
   onEvidenceClick?: (anchor: DialAnchor) => void;
   /** brief 加载完成后, 把 trend_5d 抛给页面共享 (避免 L2 重复请求). */
   onTrendLoad?: (trend: TrendPoint[]) => void;
+  /** brief 加载完成后, 把整份 brief 抛给页面 (供 L2 显示 news 驱动). */
+  onBriefLoad?: (brief: SentimentBrief) => void;
 }
 
-export function SentimentAiCard({ hero = false, onEvidenceClick, onTrendLoad }: Props = {}) {
+export function SentimentAiCard({ hero = false, onEvidenceClick, onTrendLoad, onBriefLoad }: Props = {}) {
   const [data, setData] = useState<SentimentBrief | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -277,6 +289,7 @@ export function SentimentAiCard({ hero = false, onEvidenceClick, onTrendLoad }: 
       const brief = d as unknown as SentimentBrief;
       setData(brief);
       if (onTrendLoad) onTrendLoad(brief.trend_5d ?? []);
+      if (onBriefLoad) onBriefLoad(brief);
     } catch (e) {
       setError(e instanceof Error ? e.message : "load failed");
     } finally {

@@ -18,6 +18,7 @@ from app.ai.brief_cache import sync_run_async
 from app.services.prewarm_service import (
     DEFAULT_MODEL,
     prewarm_market_briefs as _market_briefs_async,
+    prewarm_news_brief as _news_brief_async,
     prewarm_why_rose as _why_rose_async,
     prewarm_debate as _debate_async,
 )
@@ -51,11 +52,18 @@ def prewarm_debate(
     return sync_run_async(_debate_async(td, model, top_n_themes, concurrency))
 
 
+@celery.task(name="app.tasks.prewarm.prewarm_news_brief")
+def prewarm_news_brief(trade_date_str: str | None = None, model: str = DEFAULT_MODEL):
+    td = date_type.fromisoformat(trade_date_str) if trade_date_str else None
+    return sync_run_async(_news_brief_async(td, model))
+
+
 @celery.task(name="app.tasks.prewarm.prewarm_all")
 def prewarm_all(trade_date_str: str | None = None, model: str = DEFAULT_MODEL):
-    """串行跑完三个: 用于手动触发 / 失败重跑."""
+    """串行跑完所有: 用于手动触发 / 失败重跑."""
     out = {}
     out["market_briefs"] = prewarm_market_briefs(trade_date_str, model)
+    out["news_brief"] = prewarm_news_brief(trade_date_str, model)
     out["why_rose"] = prewarm_why_rose(trade_date_str, model)
     out["debate"] = prewarm_debate(trade_date_str, model)
     return out

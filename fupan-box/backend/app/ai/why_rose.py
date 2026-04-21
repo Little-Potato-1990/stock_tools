@@ -143,6 +143,69 @@ def _load_lhb(session: Session, code: str, trade_date: date) -> dict[str, Any] |
     }
 
 
+def _load_stock_news(
+    code: str,
+    primary_theme: str | None,
+    all_themes: list[str] | None = None,
+    hours: int = 72,
+    per_source_limit: int = 6,
+) -> list[dict]:
+    """拉个股+主题相关新闻 (近 72h, 去重, 总量上限 6)."""
+    from app.news.ingest import fetch_news_for_codes, fetch_news_for_themes
+
+    out: list[dict] = []
+    seen_ids: set[int] = set()
+
+    try:
+        rows = fetch_news_for_codes([code], hours=hours, limit=per_source_limit)
+    except Exception as exc:
+        logger.debug("[why-rose-news/code] %s err=%s", code, exc)
+        rows = []
+    for r in rows:
+        nid = r.get("id")
+        if nid is None or nid in seen_ids:
+            continue
+        seen_ids.add(nid)
+        out.append({
+            "id": nid,
+            "title": (r.get("title") or "")[:80],
+            "sentiment": r.get("sentiment"),
+            "importance": int(r.get("importance") or 0),
+            "pub_time": r.get("pub_time"),
+            "match": "code",
+        })
+
+    theme_pool = []
+    if primary_theme:
+        theme_pool.append(primary_theme)
+    for t in (all_themes or [])[:2]:
+        if t and t not in theme_pool:
+            theme_pool.append(t)
+    if theme_pool and len(out) < 6:
+        try:
+            t_rows = fetch_news_for_themes(theme_pool, hours=hours, limit=per_source_limit)
+        except Exception as exc:
+            logger.debug("[why-rose-news/theme] %s err=%s", theme_pool, exc)
+            t_rows = []
+        for r in t_rows:
+            nid = r.get("id")
+            if nid is None or nid in seen_ids:
+                continue
+            seen_ids.add(nid)
+            out.append({
+                "id": nid,
+                "title": (r.get("title") or "")[:80],
+                "sentiment": r.get("sentiment"),
+                "importance": int(r.get("importance") or 0),
+                "pub_time": r.get("pub_time"),
+                "match": "theme",
+            })
+            if len(out) >= 6:
+                break
+
+    return out
+
+
 def _build_context(code: str, trade_date: date) -> dict[str, Any] | None:
     settings = get_settings()
     engine = create_engine(settings.database_url_sync)
@@ -202,9 +265,11 @@ def _build_context(code: str, trade_date: date) -> dict[str, Any] | None:
 
             peers = _theme_peers_today(session, primary_theme, trade_date, code) if primary_theme else None
             lhb = _load_lhb(session, code, trade_date)
+            news_refs = _load_stock_news(code, primary_theme, lu_today.theme_names if lu_today else None)
 
             return {
                 "code": code,
+                "news_refs": news_refs,
                 "name": meta.name if meta else (lu_today.stock_name if lu_today else code),
                 "industry": (meta.industry if meta else None) or (lu_today.industry if lu_today else None),
                 "trade_date": trade_date.isoformat(),
@@ -321,7 +386,7 @@ def _build_prompt(ctx: dict[str, Any]) -> tuple[str, str]:
         "{\n"
         '  "headline": "<=30字 一句话总结今日表现",\n'
         '  "drivers": [\n'
-        '    {"label": "<=4字 (如题材催化/资金共识/同板带动)", "text": "<=50字 真实驱动逻辑, 必须基于给定数据"}\n'
+        '    {"label": "<=4字 (如题材催化/资金共识/同板带动)", "text": "<=50字 真实驱动逻辑, 必须基于给定数据 (含 news_refs)", "news_ids": [可选, 引用的 news_refs.id 数组, 最多2]}\n'
         "  ],\n"
         '  "position": {"label": "卡位", "text": "<=60字 当前卡位评估 (封板时间/炸板/封单/同板地位)"},\n'
         '  "height": {"label": "高度", "text": "<=60字 高度评估 (历史同结构/分歧风险/突破空间)"},\n'
@@ -330,6 +395,7 @@ def _build_prompt(ctx: dict[str, Any]) -> tuple[str, str]:
         '  "verdict_label": "罕见龙头|典型龙头|标准龙头|偏弱"\n'
         "}\n```\n"
         "drivers 输出 2-3 条, 每条 label 不同。"
+        "若 ctx.news_refs 非空且与今日盘口逻辑相关, 至少有 1 条 driver 在 text 引用 news 标题/含义并填 news_ids。"
         "verdict 标准: S=罕见龙头(题材主升+高度+人气三全), A=典型龙头(主线+高度), "
         "B=标准跟风(中规中矩), C=偏弱(高位炸板/边缘题材/无量)。"
     )
@@ -345,6 +411,8 @@ def _merge_llm(ctx: dict[str, Any], llm_out: dict | None) -> dict[str, Any]:
     if headline:
         base["headline"] = headline
 
+    valid_news_ids = {int(n["id"]) for n in (ctx.get("news_refs") or []) if n.get("id") is not None}
+
     drivers_raw = llm_out.get("drivers") or []
     drivers_clean = []
     for d in drivers_raw[:3]:
@@ -352,10 +420,21 @@ def _merge_llm(ctx: dict[str, Any], llm_out: dict | None) -> dict[str, Any]:
             continue
         label = (d.get("label") or "").strip()[:8]
         text = (d.get("text") or "").strip()[:80]
-        if label and text:
-            drivers_clean.append({"label": label, "text": text})
+        if not (label and text):
+            continue
+        nids: list[int] = []
+        for nid in (d.get("news_ids") or [])[:3]:
+            try:
+                ni = int(nid)
+            except (TypeError, ValueError):
+                continue
+            if ni in valid_news_ids and ni not in nids:
+                nids.append(ni)
+        drivers_clean.append({"label": label, "text": text, "news_ids": nids})
     if drivers_clean:
         base["drivers"] = drivers_clean
+
+    base["news_refs"] = ctx.get("news_refs") or []
 
     for key in ("position", "height", "tomorrow"):
         v = llm_out.get(key)
@@ -401,6 +480,7 @@ async def generate_why_rose(
             "tomorrow": {"label": "明日策略", "text": "无数据"},
             "verdict": "C",
             "verdict_label": "偏弱",
+            "news_refs": [],
         }
 
     system, user = _build_prompt(ctx)

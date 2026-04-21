@@ -19,7 +19,7 @@ from app.models.ai import AIBriefFeedback
 logger = logging.getLogger(__name__)
 
 
-_VALID_KINDS = {"today", "sentiment", "theme", "ladder", "lhb"}
+_VALID_KINDS = {"today", "sentiment", "theme", "ladder", "lhb", "news"}
 
 
 def _engine():

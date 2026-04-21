@@ -1,3 +1,4 @@
+import asyncio
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
@@ -224,78 +225,77 @@ async def get_yesterday_limit_up_performance(
 
 @router.get("/news")
 async def get_financial_news(
-    count: int = Query(30, ge=5, le=100),
-    enrich: int = Query(1, ge=0, le=1, description="是否启用 AI 打标 (1 启用 / 0 关闭)"),
+    count: int = Query(50, ge=5, le=200),
+    hours: int = Query(24, ge=1, le=168, description="时间窗 (小时)"),
+    min_importance: int = Query(0, ge=0, le=5, description="最小重要级 0=不限"),
+    sources: str = Query("", description="过滤源, 多个逗号分隔. e.g. cls,ak_global,tushare_wallstreet"),
+    sentiment: str = Query("", description="过滤倾向: bullish | neutral | bearish"),
+    code: str = Query("", description="只返回命中此股票代码的"),
+    theme: str = Query("", description="只返回命中此题材的"),
+    sort: str = Query("default", regex="^(default|time|smart)$"),
+    fallback_live: int = Query(1, ge=0, le=1, description="DB 没数据时, 是否实时拉一次 ingest 兜底"),
+    watch: str = Query("", description="逗号分隔自选股代码, sort=smart 时给加成"),
+    hot_themes: str = Query("", description="逗号分隔当前热点题材, sort=smart 时给加成"),
+    debug_score: int = Query(0, ge=0, le=1, description="sort=smart 时返回 _score / _score_breakdown"),
     db: AsyncSession = Depends(get_db),
 ):
-    """财经要闻: 拉取最新财经新闻 + AI 打标 (题材/重要级/利好利空) + 自选股命中"""
-    import akshare as ak
-    from app.pipeline.akshare_adapter import AKShareAdapter
-    from app.pipeline.runner import get_adapter
+    """多源财经新闻 (Phase 1 后改为读 news_summaries 表).
 
-    primary = get_adapter()
-    fallback = AKShareAdapter() if not isinstance(primary, AKShareAdapter) else None
-    concept_names: set[str] = set()
-    for adapter in (primary, fallback):
-        if adapter is None:
-            continue
-        try:
-            concept_data = adapter.fetch_concept_board_daily() or []
-            if concept_data:
-                concept_names = {c["name"] for c in concept_data if c.get("name")}
-                break
-        except Exception:
-            continue
+    数据通路: celery beat 每 30 分钟拉所有源 + AI 打标 → news_summaries
+    本接口仅做查询 / 过滤; 兜底情况下 (DB 空) 触发一次 ingest_once.
+    """
+    from app.news.ingest import (
+        fetch_news_for_codes,
+        fetch_news_for_themes,
+        fetch_recent_news,
+        ingest_once,
+    )
 
-    try:
-        df = ak.stock_news_em(symbol="财联社")
-        if df is None or df.empty:
-            df = ak.stock_info_global_em()
-    except Exception:
-        try:
-            df = ak.stock_info_global_em()
-        except Exception:
-            return []
+    src_list: list[str] | None = None
+    if sources.strip():
+        src_list = [s.strip() for s in sources.split(",") if s.strip()]
 
-    if df is None or df.empty:
-        return []
-
-    raw: list[dict] = []
-    for _, row in df.head(count).iterrows():
-        title = str(row.get("新闻标题", row.get("标题", row.get("title", ""))))
-        content = str(row.get("新闻内容", row.get("内容", row.get("content", ""))))
-        pub_time = str(row.get("发布时间", row.get("时间", row.get("datetime", ""))))
-        if not title:
-            continue
-        related = []
-        text = title + content
-        for cn in concept_names:
-            if len(cn) >= 2 and cn in text:
-                related.append(cn)
-        raw.append({
-            "title": title,
-            "content": content[:300] if content else "",
-            "pub_time": pub_time,
-            "related_concepts": related[:8],
-        })
-
-    if not raw:
-        return []
-
-    enriched: list[dict] = []
-    if enrich:
-        from app.ai.news_tagger import tag_news_batch
-        try:
-            tags_arr = await tag_news_batch(raw, theme_pool=concept_names)
-        except Exception:
-            tags_arr = [{} for _ in raw]
-        for it, tg in zip(raw, tags_arr):
-            it = {**it, **tg}
-            enriched.append(it)
+    if code.strip():
+        items = await asyncio.to_thread(
+            fetch_news_for_codes, [code.strip()], hours, count
+        )
+    elif theme.strip():
+        items = await asyncio.to_thread(
+            fetch_news_for_themes, [theme.strip()], hours, count
+        )
     else:
-        enriched = raw
+        items = await asyncio.to_thread(
+            fetch_recent_news,
+            hours, count, (min_importance or None), src_list,
+        )
 
-    return enriched
+    if sentiment in ("bullish", "neutral", "bearish"):
+        items = [it for it in items if it.get("sentiment") == sentiment]
+
+    if not items and fallback_live:
+        # DB 空 → 实时跑一次轻量 ingest (不打标, 防阻塞 API)
+        try:
+            await ingest_once(window_hours=12.0, do_tag=False)
+            items = await asyncio.to_thread(
+                fetch_recent_news, hours, count, (min_importance or None), src_list,
+            )
+        except Exception:
+            items = []
+
+    if sort == "time":
+        items.sort(key=lambda x: x.get("pub_time") or "", reverse=True)
+    elif sort == "smart":
+        from app.news.ranker import rank_news
+        wc = [c.strip() for c in watch.split(",") if c.strip()]
+        ht = [t.strip() for t in hot_themes.split(",") if t.strip()]
+        items = rank_news(
+            items,
+            watch_codes=wc,
+            hot_themes=ht,
+            top_k=count,
+            attach_score=bool(debug_score),
+        )
+    return items
 
 
 @router.get("/bigdata-rank")

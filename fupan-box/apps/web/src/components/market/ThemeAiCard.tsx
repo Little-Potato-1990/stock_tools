@@ -19,12 +19,30 @@ import { useStreamingHeadline } from "@/hooks/useStreamingHeadline";
 import { Dial } from "./dial/Dial";
 import type { DialItem } from "./dial/types";
 
+export interface ThemeNewsRef {
+  id: number;
+  title: string;
+  sentiment?: "bullish" | "neutral" | "bearish" | null;
+  importance?: number;
+  pub_time?: string | null;
+}
+
 export interface ThemeItem {
   name: string;
   ai_note: string;
   today_rank?: number | null;
   lu_trend?: number[];
   chg_today?: number;
+  news_ids?: number[];      // LLM 引用的 news_pool id
+  news_refs?: ThemeNewsRef[]; // 后端拼好的相关新闻 (该题材命中)
+}
+
+export interface ThemeBriefNewsPoolItem {
+  id: number;
+  title: string;
+  sentiment?: "bullish" | "neutral" | "bearish" | null;
+  importance?: number;
+  pub_time?: string | null;
 }
 
 export interface ThemeBriefData {
@@ -37,6 +55,7 @@ export interface ThemeBriefData {
   emerging: ThemeItem[];
   next_bet: { name: string; reason: string };
   evidence?: string[];
+  news_pool?: ThemeBriefNewsPoolItem[];
 }
 
 export type ThemeDialAnchor = "leading" | "emerging" | "fading" | "next_bet";

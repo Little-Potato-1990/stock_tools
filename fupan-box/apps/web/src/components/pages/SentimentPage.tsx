@@ -8,6 +8,7 @@ import {
   SentimentAiCard,
   type DialAnchor,
   type TrendPoint,
+  type SentimentBrief,
 } from "@/components/market/SentimentAiCard";
 import { SentimentEvidenceGrid } from "@/components/market/SentimentEvidenceGrid";
 
@@ -71,6 +72,14 @@ function CollapseSection({
 export function SentimentPage() {
   const [highlight, setHighlight] = useState<DialAnchor | null>(null);
   const [trend5d, setTrend5d] = useState<TrendPoint[]>([]);
+  const [brief, setBrief] = useState<SentimentBrief | null>(null);
+
+  const handleNewsClick = (id: number) => {
+    // 点击 news → 跳到 news 页 (用 hash route, 由 NewsPage 自行解析)
+    if (typeof window !== "undefined") {
+      window.location.hash = `#/news?focus=${id}`;
+    }
+  };
 
   // L1 → L2 联动:
   // - 同一 anchor 二次点击则取消高亮 (toggle)
@@ -91,10 +100,17 @@ export function SentimentPage() {
         hero
         onEvidenceClick={handleEvidenceClick}
         onTrendLoad={setTrend5d}
+        onBriefLoad={setBrief}
       />
 
-      {/* L2: AI 引用证据 (4 张精选 sparkline, 与 L1 仪表盘联动) */}
-      <SentimentEvidenceGrid trendData={trend5d} highlight={highlight} />
+      {/* L2: AI 引用证据 (4 张精选 sparkline + 消息面驱动新闻 — 与 L1 仪表盘联动) */}
+      <SentimentEvidenceGrid
+        trendData={trend5d}
+        highlight={highlight}
+        newsPool={brief?.news_pool}
+        pickedIds={brief?.news_ids}
+        onNewsClick={handleNewsClick}
+      />
 
       {/* L3: 详细图表 (情绪周期主图 + 5 张折叠子图) */}
       <SentimentChart />

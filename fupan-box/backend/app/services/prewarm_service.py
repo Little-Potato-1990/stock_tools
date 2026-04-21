@@ -27,6 +27,7 @@ from app.config import get_settings
 from app.ai.brief_cache import pg_get, pg_set
 from app.ai.brief_generator import generate_brief, _latest_trade_date_with_data
 from app.ai.ladder_brief import generate_ladder_brief
+from app.ai.news_brief import generate_news_brief
 from app.ai.sentiment_brief import generate_sentiment_brief
 from app.ai.theme_brief import generate_theme_brief
 from app.ai.why_rose import generate_why_rose
@@ -80,6 +81,22 @@ async def _gen_and_cache(
     except Exception as e:
         logger.warning(f"prewarm {key} failed: {e}")
         return {"key": key, "status": "error", "error": str(e)[:120]}
+
+
+async def prewarm_news_brief(
+    trade_date: date_type | None, model: str = DEFAULT_MODEL,
+) -> dict[str, Any]:
+    """新闻 brief 预热. 用 watch_codes=None (公共版本); 用户私有版本走 ondemand."""
+    td = resolve_trade_date(trade_date)
+    td_s = _td_str(td)
+    # 公共 cache_key: watch_hash="_", hours=24
+    key = f"news_brief:{td_s}:24:_:{model}"
+    return await _gen_and_cache(
+        key,
+        lambda: generate_news_brief(td, model, hours=24, watch_codes=None),
+        action="news_brief", model=model, trade_date=td,
+        skip_if_exists=False,  # 新闻刷新频次高, 直接覆盖
+    )
 
 
 async def prewarm_market_briefs(

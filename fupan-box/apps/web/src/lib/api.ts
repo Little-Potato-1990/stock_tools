@@ -268,19 +268,188 @@ class ApiClient {
     return this.get<Array<Record<string, unknown>>>(`/api/market/search?q=${encodeURIComponent(q)}`);
   }
 
-  getNews(count = 30, enrich = true) {
-    const e = enrich ? 1 : 0;
+  getNews(count = 50, enrich = true, params?: {
+    hours?: number;
+    min_importance?: number;
+    sources?: string;
+    sentiment?: "bullish" | "neutral" | "bearish";
+    code?: string;
+    theme?: string;
+    sort?: "default" | "time" | "smart";
+    watch?: string;        // sort=smart: 自选股代码列表(逗号分隔)
+    hot_themes?: string;   // sort=smart: 当前热点题材
+    debug_score?: boolean;
+  }) {
+    void enrich; // 兼容旧签名: 后端总是返回打标后字段
+    const sp = new URLSearchParams();
+    sp.set("count", String(count));
+    if (params?.hours) sp.set("hours", String(params.hours));
+    if (params?.min_importance) sp.set("min_importance", String(params.min_importance));
+    if (params?.sources) sp.set("sources", params.sources);
+    if (params?.sentiment) sp.set("sentiment", params.sentiment);
+    if (params?.code) sp.set("code", params.code);
+    if (params?.theme) sp.set("theme", params.theme);
+    if (params?.sort) sp.set("sort", params.sort);
+    if (params?.watch) sp.set("watch", params.watch);
+    if (params?.hot_themes) sp.set("hot_themes", params.hot_themes);
+    if (params?.debug_score) sp.set("debug_score", "1");
     return this.get<Array<{
+      id?: number;
       title: string;
       content: string;
       pub_time: string;
-      related_concepts: string[];
+      source?: string;
+      source_url?: string | null;
+      source_urls?: Record<string, string>;
+      related_concepts?: string[];
       tags?: string[];
       themes?: string[];
       rel_codes?: string[];
+      raw_tags?: string[];
       importance?: number;
       sentiment?: "bullish" | "neutral" | "bearish";
-    }>>(`/api/market/news?count=${count}&enrich=${e}`);
+    }>>(`/api/market/news?${sp.toString()}`);
+  }
+
+  getNewsBrief(opts?: { tradeDate?: string; hours?: number; refresh?: boolean }) {
+    const sp = new URLSearchParams();
+    if (opts?.tradeDate) sp.set("trade_date", opts.tradeDate);
+    if (opts?.hours) sp.set("hours", String(opts.hours));
+    if (opts?.refresh) sp.set("refresh", "1");
+    const q = sp.toString();
+    return this.get<{
+      trade_date: string;
+      generated_at: string;
+      model: string;
+      stats: { total: number; important: number; bullish: number; bearish: number; neutral: number; watch: number };
+      headline: string;
+      main_threads: Array<{
+        name: string;
+        summary: string;
+        themes?: string[];
+        stock_codes: string[];
+        news_ids: number[];
+        sentiment: "bullish" | "neutral" | "bearish";
+      }>;
+      policy: Array<{ summary: string; news_ids: number[] }>;
+      shock: Array<{ summary: string; news_ids: number[] }>;
+      earnings: Array<{ summary: string; news_ids: number[] }>;
+      tomorrow_brief: string;
+      watchlist_alerts?: Array<{
+        news_id: number; title: string; codes: string[];
+        importance: number; sentiment: string; pub_time: string;
+      }>;
+    }>(`/api/ai/news-brief${q ? `?${q}` : ""}`);
+  }
+
+  newsBriefStreamUrl(opts?: { tradeDate?: string; hours?: number }) {
+    const sp = new URLSearchParams();
+    if (opts?.tradeDate) sp.set("trade_date", opts.tradeDate);
+    if (opts?.hours) sp.set("hours", String(opts.hours));
+    return `${API_BASE}/api/ai/news-brief/stream${sp.toString() ? `?${sp.toString()}` : ""}`;
+  }
+
+  // ===== Phase 4 RAG =====
+
+  searchNews(opts: {
+    q: string;
+    limit?: number;
+    hours?: number;
+    min_importance?: number;
+    sentiment?: "bullish" | "neutral" | "bearish";
+    code?: string;
+    theme?: string;
+  }) {
+    const sp = new URLSearchParams();
+    sp.set("q", opts.q);
+    if (opts.limit) sp.set("limit", String(opts.limit));
+    if (opts.hours) sp.set("hours", String(opts.hours));
+    if (opts.min_importance) sp.set("min_importance", String(opts.min_importance));
+    if (opts.sentiment) sp.set("sentiment", opts.sentiment);
+    if (opts.code) sp.set("code", opts.code);
+    if (opts.theme) sp.set("theme", opts.theme);
+    return this.get<Array<{
+      id: number;
+      title: string;
+      content: string;
+      pub_time: string;
+      source?: string;
+      sentiment?: "bullish" | "neutral" | "bearish";
+      importance?: number;
+      tags?: string[];
+      themes?: string[];
+      rel_codes?: string[];
+      _distance: number;
+      _score: number;
+    }>>(`/api/news/search?${sp.toString()}`);
+  }
+
+  getStockNewsTimeline(code: string, days = 30, limit = 80) {
+    const sp = new URLSearchParams({ code, days: String(days), limit: String(limit) });
+    return this.get<{
+      code: string; days: number; count: number;
+      items: Array<{
+        id: number; title: string; content: string; pub_time: string;
+        source?: string; importance?: number; sentiment?: "bullish" | "neutral" | "bearish";
+        themes?: string[]; rel_codes?: string[]; tags?: string[];
+      }>;
+    }>(`/api/news/timeline?${sp.toString()}`);
+  }
+
+  getThemeNewsTimeline(theme: string, days = 30, limit = 80) {
+    const sp = new URLSearchParams({ theme, days: String(days), limit: String(limit) });
+    return this.get<{
+      theme: string; days: number; count: number;
+      items: Array<{
+        id: number; title: string; content: string; pub_time: string;
+        source?: string; importance?: number; sentiment?: "bullish" | "neutral" | "bearish";
+        themes?: string[]; rel_codes?: string[]; tags?: string[];
+      }>;
+    }>(`/api/news/theme-timeline?${sp.toString()}`);
+  }
+
+  getNewsDetail(newsId: number, related = 5) {
+    return this.get<{
+      detail: {
+        id: number; title: string; content: string; pub_time: string;
+        source?: string; importance?: number; sentiment?: "bullish" | "neutral" | "bearish";
+        themes?: string[]; rel_codes?: string[]; tags?: string[]; source_urls?: Record<string, string>;
+      };
+      related: Array<{ id: number; title: string; pub_time: string; _distance: number; importance?: number; sentiment?: string }>;
+    }>(`/api/news/${newsId}?related=${related}`);
+  }
+
+  /** 个人化新闻速报 (MyDigestFloating 浮窗用). 围绕用户自选股, 三段加权排序. */
+  getMyNewsDigest(opts?: { hours?: number; topK?: number }) {
+    const sp = new URLSearchParams();
+    if (opts?.hours) sp.set("hours", String(opts.hours));
+    if (opts?.topK) sp.set("top_k", String(opts.topK));
+    const q = sp.toString();
+    return this.get<{
+      generated_at: string;
+      hours: number;
+      watch_count: number;
+      stats: {
+        total: number;
+        important: number;
+        bullish: number;
+        bearish: number;
+        neutral: number;
+        watch_hits: number;
+      };
+      items: Array<{
+        id: number;
+        title: string;
+        source?: string;
+        sentiment?: "bullish" | "neutral" | "bearish";
+        importance: number;
+        pub_time: string;
+        rel_codes: string[];
+        themes: string[];
+        watch_codes_hit: string[];
+        score?: number;
+      }>;
+    }>(`/api/me/news-digest${q ? `?${q}` : ""}`);
   }
 
   getThemeDetail(name: string) {
@@ -360,7 +529,7 @@ class ApiClient {
   }
 
   postFeedback(payload: {
-    brief_kind: "today" | "sentiment" | "theme" | "ladder" | "lhb";
+    brief_kind: "today" | "sentiment" | "theme" | "ladder" | "lhb" | "news";
     trade_date: string;
     rating: 1 | -1;
     model?: string | null;
@@ -486,12 +655,20 @@ class ApiClient {
       model: string;
       direction: "rose" | "fell" | "unknown";
       headline: string;
-      drivers: Array<{ label: string; text: string }>;
+      drivers: Array<{ label: string; text: string; news_ids?: number[] }>;
       position: { label: string; text: string };
       height: { label: string; text: string };
       tomorrow: { label: string; text: string };
       verdict: "S" | "A" | "B" | "C";
       verdict_label: string;
+      news_refs?: Array<{
+        id: number;
+        title: string;
+        sentiment?: "bullish" | "neutral" | "bearish" | null;
+        importance?: number;
+        pub_time?: string | null;
+        match?: "code" | "theme";
+      }>;
     }>(`/api/ai/why-rose?${params.toString()}`);
   }
 

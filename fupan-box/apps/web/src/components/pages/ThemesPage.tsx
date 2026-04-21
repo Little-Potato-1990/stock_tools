@@ -352,8 +352,14 @@ export function ThemesPage() {
         onBriefLoad={setBrief}
       />
 
-      {/* L2: AI 圈定的 4 个题材 (主线/新晋/退潮/明日下注) */}
-      <ThemeEvidenceGrid brief={brief} highlight={highlight} />
+      {/* L2: AI 圈定的 4 个题材 (主线/新晋/退潮/明日下注) — 含催化新闻 */}
+      <ThemeEvidenceGrid
+        brief={brief}
+        highlight={highlight}
+        onNewsClick={(id) => {
+          if (typeof window !== "undefined") window.location.hash = `#/news?focus=${id}`;
+        }}
+      />
 
       {loading ? (
         <div

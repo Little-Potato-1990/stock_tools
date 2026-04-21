@@ -1,8 +1,19 @@
-from sqlalchemy import String, Date, Integer, Float, Text, ForeignKey, Column, UniqueConstraint, Index
+from sqlalchemy import String, Date, DateTime, Integer, Float, Text, ForeignKey, Column, UniqueConstraint, Index
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 from datetime import date, datetime
 from app.database import Base
+
+try:
+    from pgvector.sqlalchemy import Vector  # type: ignore
+    _HAS_PGVECTOR = True
+except ImportError:  # pragma: no cover - pgvector 是 hard dep, 但允许 dev 环境降级
+    _HAS_PGVECTOR = False
+    Vector = None  # type: ignore
+
+from app.config import get_settings  # noqa: E402
+
+_EMBED_DIM = get_settings().news_embedding_dim
 
 
 class AIConversation(Base):
@@ -29,17 +40,45 @@ class AIMessage(Base):
 
 
 class NewsSummary(Base):
-    """新闻/公告摘要——供 RAG 检索。embedding 列待 pgvector 扩展就绪后启用。"""
+    """多源新闻 / 公告 / 政策快讯持久层 — Phase 1 新增字段.
+
+    去重策略: title_hash 取 SimHash 16-hex (cf. app.news.ingest.dedupe).
+    同一条新闻被多个 source 同时报时, 选最早的入库, 把其他 source 信息合并到 source_urls.
+    """
     __tablename__ = "news_summaries"
+    __table_args__ = (
+        Index("ix_news_pub_time", "pub_time"),
+        Index("ix_news_publish_date", "publish_date"),
+        Index("ix_news_importance_pub_time", "importance", "pub_time"),
+        UniqueConstraint("title_hash", name="uq_news_title_hash"),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
     title: Mapped[str] = mapped_column(String(500))
+    title_hash: Mapped[str] = mapped_column(String(20), index=True)  # 去重 key (SimHash hex)
     summary: Mapped[str | None] = mapped_column(Text)
-    source: Mapped[str] = mapped_column(String(50))
-    source_url: Mapped[str | None] = mapped_column(String(500))
+    source: Mapped[str] = mapped_column(String(50), index=True)
+    source_url: Mapped[str | None] = mapped_column(String(800))
+    source_urls: Mapped[dict | None] = mapped_column(JSONB)        # {source: url} 跨源合并
     publish_date: Mapped[date] = mapped_column(Date, index=True)
-    related_stocks: Mapped[dict | None] = mapped_column(JSONB)
-    related_themes: Mapped[dict | None] = mapped_column(JSONB)
+    pub_time: Mapped[datetime | None] = mapped_column(DateTime)    # 精确到秒, 主时间字段
+    related_stocks: Mapped[dict | None] = mapped_column(JSONB)     # ["600519", ...]
+    related_themes: Mapped[dict | None] = mapped_column(JSONB)     # ["AI", ...]
+    raw_tags: Mapped[dict | None] = mapped_column(JSONB)           # source 自带标签
+
+    # AI 打标 (Phase 1 同步写入, 失败用 heuristic)
+    importance: Mapped[int] = mapped_column(Integer, default=2, index=True)  # 1-5
+    sentiment: Mapped[str | None] = mapped_column(String(10))      # bullish/neutral/bearish
+    tags: Mapped[dict | None] = mapped_column(JSONB)               # 简短标签 ["利好","政策"]
+    ai_tagged_at: Mapped[datetime | None] = mapped_column(DateTime)
+
+    # Phase 4 RAG: pgvector 向量 + 状态机
+    embedding_status: Mapped[str | None] = mapped_column(String(20), index=True)  # null|pending|done|failed
+    embedding_model: Mapped[str | None] = mapped_column(String(50))
+    embedded_at: Mapped[datetime | None] = mapped_column(DateTime)
+    if _HAS_PGVECTOR:
+        embedding: Mapped[list[float] | None] = mapped_column(Vector(_EMBED_DIM), nullable=True)  # type: ignore[arg-type]
+
     created_at: Mapped[datetime] = mapped_column(default=datetime.now)
 
 

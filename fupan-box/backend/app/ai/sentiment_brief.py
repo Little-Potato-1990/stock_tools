@@ -93,17 +93,60 @@ def _heuristic_phase(series: list[dict]) -> tuple[str, str]:
     return "diverge", "分歧期"
 
 
-def _build_prompt(trade_date: str, series: list[dict], phase: str, phase_label: str) -> tuple[str, str]:
+def _load_macro_news(hours: int = 24, limit: int = 8) -> list[dict]:
+    """拉最近 N 小时高重要性 + 政策/宏观 tag 的新闻, 用于校验情绪驱动."""
+    from app.news.ingest import fetch_recent_news
+
+    try:
+        rows = fetch_recent_news(hours=hours, limit=80, min_importance=3)
+    except Exception as exc:
+        logger.debug("[sentiment-news] err=%s", exc)
+        return []
+    out: list[dict] = []
+    for r in rows:
+        tags = (r.get("tags") or []) + (r.get("raw_tags") or [])
+        is_macro = any(t in {"政策", "宏观", "监管", "央行", "突发", "重磅"} for t in tags)
+        if not is_macro and (r.get("importance") or 0) < 4:
+            continue
+        out.append(
+            {
+                "id": r["id"],
+                "t": (r.get("title") or "")[:60],
+                "s": r.get("sentiment") or "neutral",
+                "imp": int(r.get("importance") or 0),
+                "tags": tags[:3],
+            }
+        )
+        if len(out) >= limit:
+            break
+    return out
+
+
+def _build_prompt(
+    trade_date: str,
+    series: list[dict],
+    phase: str,
+    phase_label: str,
+    macro_news: list[dict] | None = None,
+) -> tuple[str, str]:
     system = (
         "你是 A 股短线情绪分析师。"
         "基于给定的近 N 日大盘情绪序列, 用中文输出 JSON。"
         "判断要直接、精炼, 避免空话套话, 突出可操作性。"
         + NO_FLUFF_RULES
     )
+    macro_block = ""
+    if macro_news:
+        macro_block = (
+            "\n近 24h 重要新闻 (用于校验情绪是否被消息面驱动, 必要时在 evidence 引用 news_id):\n"
+            f"```json\n{json.dumps(macro_news, ensure_ascii=False)[:1400]}\n```\n"
+        )
+
     user = (
         f"今日 {trade_date}, 情绪序列(从早到晚)如下:\n\n"
         f"```json\n{json.dumps(series, ensure_ascii=False)}\n```\n\n"
-        f"规则版预判: 当前阶段 = `{phase}` ({phase_label})。如有不同意见请覆盖。\n\n"
+        f"规则版预判: 当前阶段 = `{phase}` ({phase_label})。如有不同意见请覆盖。\n"
+        f"{macro_block}\n"
         "请输出 JSON, 严格按以下 schema:\n"
         "```json\n"
         "{\n"
@@ -124,7 +167,8 @@ def _build_prompt(trade_date: str, series: list[dict], phase: str, phase_label: 
         '    "1-3 条 ≤30 字 关键数字证据, 必须引用 series 里的真实数字",\n'
         '    "示例: \'昨日涨停今日上涨率 72%, 显著高于近5日均值 55%\'",\n'
         '    "示例: \'今日炸板率 28%, 较昨日下降 12pp\'"\n'
-        "  ]\n"
+        "  ],\n"
+        '  "news_ids": [可选, 引用驱动今日情绪的关键新闻id, 最多2条]\n'
         "}\n```\n"
         "字段含义:\n"
         "- yesterday_lu_up_rate: 昨日涨停今日上涨率 (>0.55 强, <0.4 弱)\n"
@@ -191,7 +235,13 @@ def _heuristic_brief(series: list[dict], phase: str, phase_label: str) -> dict[s
     }
 
 
-def _merge_llm(series: list[dict], phase: str, phase_label: str, llm_out: dict | None) -> dict[str, Any]:
+def _merge_llm(
+    series: list[dict],
+    phase: str,
+    phase_label: str,
+    llm_out: dict | None,
+    macro_news: list[dict] | None = None,
+) -> dict[str, Any]:
     if not llm_out:
         return _heuristic_brief(series, phase, phase_label)
 
@@ -230,10 +280,36 @@ def _merge_llm(series: list[dict], phase: str, phase_label: str, llm_out: dict |
     if not evidence:
         evidence = _heuristic_brief(series, out_phase, out_label).get("evidence", [])
 
+    valid_ids = {int(n["id"]) for n in (macro_news or []) if n.get("id") is not None}
+    news_ids: list[int] = []
+    for nid in (llm_out.get("news_ids") or [])[:3]:
+        try:
+            n_int = int(nid)
+        except (TypeError, ValueError):
+            continue
+        if n_int in valid_ids and n_int not in news_ids:
+            news_ids.append(n_int)
+
+    news_pool = []
+    if macro_news:
+        news_pool = [
+            {
+                "id": int(n["id"]),
+                "title": n.get("t") or "",
+                "sentiment": n.get("s"),
+                "importance": int(n.get("imp") or 0),
+                "tags": n.get("tags") or [],
+            }
+            for n in macro_news
+            if n.get("id") is not None
+        ]
+
     return {
         "phase": out_phase, "phase_label": out_label,
         "judgment": judgment, "signals": signals, "playbook": playbook,
         "evidence": evidence,
+        "news_ids": news_ids,
+        "news_pool": news_pool,
     }
 
 
@@ -245,6 +321,7 @@ async def generate_sentiment_brief(
         trade_date = _latest_trade_date_with_data() or date.today()
 
     series = _load_sentiment_series(trade_date, days=7)
+    macro_news = _load_macro_news(hours=24, limit=8)
     base: dict[str, Any] = {
         "trade_date": trade_date.isoformat(),
         "generated_at": datetime.now().isoformat(timespec="seconds"),
@@ -255,6 +332,8 @@ async def generate_sentiment_brief(
         "signals": [],
         "playbook": [],
         "evidence": [],
+        "news_ids": [],
+        "news_pool": [],
         "trend_5d": series[-5:] if series else [],
     }
 
@@ -263,8 +342,8 @@ async def generate_sentiment_brief(
         return base
 
     phase, phase_label = _heuristic_phase(series)
-    system, user = _build_prompt(trade_date.isoformat(), series, phase, phase_label)
+    system, user = _build_prompt(trade_date.isoformat(), series, phase, phase_label, macro_news)
     llm_out = await _call_llm(system, user, model_id)
-    merged = _merge_llm(series, phase, phase_label, llm_out)
+    merged = _merge_llm(series, phase, phase_label, llm_out, macro_news)
     base.update(merged)
     return base

@@ -7,6 +7,7 @@ import {
   Zap,
   Target,
   ArrowDownToLine,
+  Newspaper,
   type LucideIcon,
 } from "lucide-react";
 import { useUIStore } from "@/stores/ui-store";
@@ -14,11 +15,13 @@ import type {
   ThemeBriefData,
   ThemeDialAnchor,
   ThemeItem,
+  ThemeNewsRef,
 } from "./ThemeAiCard";
 
 interface Props {
   brief: ThemeBriefData | null;
   highlight: ThemeDialAnchor | null;
+  onNewsClick?: (newsId: number) => void;
 }
 
 interface CardSpec {
@@ -113,14 +116,49 @@ function pickItem(brief: ThemeBriefData, anchor: ThemeDialAnchor): ThemeItem | n
   return null;
 }
 
+function NewsRefRow({ refs, onClick }: { refs?: ThemeNewsRef[]; onClick?: (id: number) => void }) {
+  if (!refs || refs.length === 0) return null;
+  return (
+    <div className="flex items-center gap-1 mt-1 flex-wrap">
+      <Newspaper size={9} style={{ color: "var(--accent-purple)", flexShrink: 0 }} />
+      {refs.slice(0, 2).map((n) => (
+        <button
+          key={n.id}
+          onClick={(e) => {
+            e.stopPropagation();
+            onClick?.(n.id);
+          }}
+          className="rounded truncate"
+          style={{
+            padding: "1px 5px",
+            fontSize: 9,
+            background: "rgba(168,85,247,0.10)",
+            color: "var(--accent-purple)",
+            border: "1px solid rgba(168,85,247,0.25)",
+            maxWidth: 140,
+          }}
+          title={n.title}
+        >
+          {n.title}
+        </button>
+      ))}
+      {refs.length > 2 && (
+        <span style={{ fontSize: 9, color: "var(--text-muted)" }}>+{refs.length - 2}</span>
+      )}
+    </div>
+  );
+}
+
 function EvidenceCard({
   spec,
   brief,
   highlight,
+  onNewsClick,
 }: {
   spec: CardSpec;
   brief: ThemeBriefData;
   highlight: boolean;
+  onNewsClick?: (id: number) => void;
 }) {
   const ref = useRef<HTMLElement | null>(null);
   const Icon = spec.icon;
@@ -344,11 +382,12 @@ function EvidenceCard({
         {item.ai_note}
       </div>
       <LuTrendBars trend={item.lu_trend} color={spec.color} />
+      <NewsRefRow refs={item.news_refs} onClick={onNewsClick} />
     </button>
   );
 }
 
-export function ThemeEvidenceGrid({ brief, highlight }: Props) {
+export function ThemeEvidenceGrid({ brief, highlight, onNewsClick }: Props) {
   if (!brief) {
     return (
       <div
@@ -386,6 +425,7 @@ export function ThemeEvidenceGrid({ brief, highlight }: Props) {
             spec={spec}
             brief={brief}
             highlight={highlight === spec.anchor}
+            onNewsClick={onNewsClick}
           />
         ))}
       </div>

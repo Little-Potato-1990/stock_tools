@@ -20,6 +20,26 @@ class Settings(BaseSettings):
 
     ai_free_quota_daily: int = 5
 
+    # === 新闻聚合 (Phase 1) ===
+    # 自定义额外 RSS feeds, 格式 "name1::url1,name2::url2"
+    news_rss_feeds: str = ""
+    # ingest 时间窗 (小时); celery beat 每 30 分钟跑一次, 窗口 12h 兼顾历史回填
+    news_ingest_window_hours: float = 12.0
+    # ingest 时是否同步调 LLM 打标 (生产环境可以开)
+    news_ingest_do_tag: bool = True
+    # AI 打标用的模型 (deepseek-v3 性价比最高)
+    news_tag_model: str = "deepseek-v3"
+
+    # === Phase 4 RAG ===
+    # OpenAI 兼容 embedding 模型 (default: text-embedding-3-small = 1536 dim)
+    # 若换 bge-large-zh (1024) / m3e-large (768), 需同步改 news_embedding_dim 并重建索引
+    news_embedding_model: str = "text-embedding-3-small"
+    news_embedding_dim: int = 1536
+    # 单批 embedding 发送条数 (OpenAI: 推荐 ≤ 512; 自托管模型可调小)
+    news_embedding_batch: int = 32
+    # 后台任务每轮处理多少条 pending 新闻 (限速控本)
+    news_embedding_per_run: int = 200
+
     # 开发模式: backend lifespan 内顺手 spawn celery worker + beat 子进程, 一个命令拉起全栈.
     # 生产模式 (docker-compose) 应设为 0, 让 worker / beat 各自独立服务管理.
     dev_embed_celery: bool = True

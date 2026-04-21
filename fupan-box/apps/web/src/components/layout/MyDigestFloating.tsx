@@ -8,10 +8,17 @@ import {
   Award,
   ChevronRight,
   X,
+  Newspaper,
+  TrendingUp,
+  TrendingDown,
   type LucideIcon,
 } from "lucide-react";
 import { usePrivateStatus } from "@/stores/private-status-store";
 import { useUIStore, type NavModule } from "@/stores/ui-store";
+import { api } from "@/lib/api";
+
+type NewsDigest = Awaited<ReturnType<typeof api.getMyNewsDigest>>;
+type NewsDigestItem = NewsDigest["items"][number];
 
 /**
  * 右上角"我的速览"浮动面板.
@@ -43,13 +50,43 @@ export function MyDigestFloating() {
   const aiOk = status?.ai_track.unlocked ?? false;
   const totalUnlocked = [wlOk, planOk, tradeOk, aiOk].filter(Boolean).length;
 
+  // 个人化新闻速报: 仅在 watchlist 解锁 + 面板打开时拉
+  const [digest, setDigest] = useState<NewsDigest | null>(null);
+  const [digestLoading, setDigestLoading] = useState(false);
+  const fetchedAtRef = useRef<number>(0);
+  useEffect(() => {
+    if (!open || !wlOk) return;
+    // 5 分钟内复用缓存, 避免反复开关浮窗时打 API
+    if (Date.now() - fetchedAtRef.current < 5 * 60 * 1000 && digest != null) return;
+    setDigestLoading(true);
+    api.getMyNewsDigest({ hours: 24, topK: 6 })
+      .then((d) => {
+        setDigest(d);
+        fetchedAtRef.current = Date.now();
+      })
+      .catch((e) => {
+        console.warn("[my-news-digest]", e);
+      })
+      .finally(() => setDigestLoading(false));
+  }, [open, wlOk, digest]);
+
   if (totalUnlocked === 0) return null;
 
   const todayTriggers = status?.plans.today_triggers ?? 0;
+  const watchAlerts = digest?.items.filter((it) => (it.importance || 0) >= 3 || it.sentiment === "bullish" || it.sentiment === "bearish").length ?? 0;
+  const totalBadge = todayTriggers + watchAlerts;
 
   const goto = (m: NavModule) => {
     setActiveModule(m);
     setOpen(false);
+  };
+
+  const gotoNewsItem = (id: number) => {
+    setActiveModule("news");
+    setOpen(false);
+    if (typeof window !== "undefined") {
+      window.location.hash = `#/news?focus=${id}`;
+    }
   };
 
   return (
@@ -72,10 +109,10 @@ export function MyDigestFloating() {
             size={18}
             style={{
               color:
-                todayTriggers > 0 ? "#ffaa33" : "var(--text-secondary)",
+                totalBadge > 0 ? "#ffaa33" : "var(--text-secondary)",
             }}
           />
-          {todayTriggers > 0 && (
+          {totalBadge > 0 && (
             <span
               className="absolute -top-1 -right-1 flex items-center justify-center text-white font-bold rounded-full"
               style={{
@@ -86,8 +123,13 @@ export function MyDigestFloating() {
                 padding: "0 4px",
                 boxShadow: "0 0 0 2px var(--bg-primary)",
               }}
+              title={
+                todayTriggers > 0
+                  ? `今日触发 ${todayTriggers} · 自选要闻 ${watchAlerts}`
+                  : `自选要闻 ${watchAlerts}`
+              }
             >
-              {todayTriggers > 99 ? "99+" : todayTriggers}
+              {totalBadge > 99 ? "99+" : totalBadge}
             </span>
           )}
         </button>
@@ -146,6 +188,15 @@ export function MyDigestFloating() {
                   点击查看自选股今日表现 / 异动 / 触发计划
                 </p>
               </Section>
+            )}
+
+            {wlOk && (
+              <NewsDigestSection
+                digest={digest}
+                loading={digestLoading}
+                onGotoNews={() => goto("news")}
+                onGotoItem={gotoNewsItem}
+              />
             )}
 
             {planOk && status && (
@@ -291,6 +342,178 @@ function Section({
         />
       </div>
       {children}
+    </button>
+  );
+}
+
+
+// ===== 个人化新闻速报 section =====
+
+const SENT_COLOR: Record<string, { bg: string; fg: string; icon: typeof TrendingUp | null; label: string }> = {
+  bullish: { bg: "rgba(239,68,68,0.14)", fg: "var(--accent-red)", icon: TrendingUp, label: "利好" },
+  bearish: { bg: "rgba(34,197,94,0.14)", fg: "var(--accent-green)", icon: TrendingDown, label: "利空" },
+  neutral: { bg: "rgba(148,163,184,0.14)", fg: "var(--text-secondary)", icon: null, label: "中性" },
+};
+
+function NewsDigestSection({
+  digest,
+  loading,
+  onGotoNews,
+  onGotoItem,
+}: {
+  digest: NewsDigest | null;
+  loading: boolean;
+  onGotoNews: () => void;
+  onGotoItem: (id: number) => void;
+}) {
+  // 没自选 (watch_count===0) 或拉到空 → 不显示, 避免占位
+  const hasItems = (digest?.items?.length ?? 0) > 0;
+  if (!loading && !hasItems) return null;
+
+  const stats = digest?.stats;
+  const headline = stats
+    ? `24h ${stats.total} 条 · 重磅 ${stats.important} · 利好 ${stats.bullish} · 利空 ${stats.bearish}`
+    : "AI 正在汇总自选要闻…";
+  const highlight = (stats?.important ?? 0) > 0 || ((stats?.bullish ?? 0) + (stats?.bearish ?? 0)) >= 3;
+
+  return (
+    <div
+      style={{
+        padding: "10px 12px",
+        borderBottom: "1px solid var(--border-color)",
+      }}
+    >
+      <button
+        onClick={onGotoNews}
+        className="w-full text-left transition-colors"
+        style={{ marginBottom: 6 }}
+        onMouseEnter={(e) => { e.currentTarget.style.opacity = "0.85"; }}
+        onMouseLeave={(e) => { e.currentTarget.style.opacity = "1"; }}
+      >
+        <div className="flex items-center gap-2">
+          <Newspaper size={14} style={{ color: highlight ? "#ffaa33" : "var(--text-secondary)" }} />
+          <span style={{ fontSize: 13, fontWeight: 700, color: "var(--text-primary)", flex: 1 }}>
+            自选要闻
+          </span>
+          <span
+            style={{
+              fontSize: 11,
+              fontWeight: 700,
+              color: highlight ? "#ffaa33" : "var(--text-secondary)",
+            }}
+          >
+            {loading ? "加载中…" : `${digest?.items.length ?? 0} 条`}
+          </span>
+          <ChevronRight size={12} style={{ color: "var(--text-tertiary)" }} />
+        </div>
+        <p style={{ fontSize: 11, color: "var(--text-secondary)", marginTop: 4 }}>
+          {headline}
+        </p>
+      </button>
+
+      {loading && !hasItems && (
+        <div className="space-y-1">
+          {[0, 1, 2].map((i) => (
+            <div key={i} className="animate-pulse" style={{ height: 28, background: "var(--bg-tertiary)", borderRadius: 4 }} />
+          ))}
+        </div>
+      )}
+
+      {hasItems && (
+        <div className="space-y-1">
+          {digest!.items.slice(0, 5).map((it) => (
+            <DigestRow key={it.id} item={it} onClick={() => onGotoItem(it.id)} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function DigestRow({ item, onClick }: { item: NewsDigestItem; onClick: () => void }) {
+  const sent = item.sentiment ? SENT_COLOR[item.sentiment] : null;
+  const SentIcon = sent?.icon ?? null;
+  const imp = item.importance || 0;
+  const hot = imp >= 4;
+  const t = item.pub_time ? item.pub_time.slice(11, 16) : "";
+
+  return (
+    <button
+      onClick={onClick}
+      className="w-full text-left transition-colors"
+      style={{
+        padding: "6px 8px",
+        background: hot ? "rgba(255,170,51,0.07)" : "var(--bg-tertiary)",
+        border: hot ? "1px solid rgba(255,170,51,0.35)" : "1px solid var(--border-color)",
+        borderRadius: 4,
+      }}
+      onMouseEnter={(e) => { e.currentTarget.style.background = "rgba(255,255,255,0.06)"; }}
+      onMouseLeave={(e) => { e.currentTarget.style.background = hot ? "rgba(255,170,51,0.07)" : "var(--bg-tertiary)"; }}
+      title={item.title}
+    >
+      <div className="flex items-center gap-1.5 mb-0.5 flex-wrap">
+        {sent && (
+          <span
+            className="flex items-center gap-0.5 font-semibold"
+            style={{
+              padding: "0 4px",
+              fontSize: 9,
+              color: sent.fg,
+              background: sent.bg,
+              border: `1px solid ${sent.fg}`,
+              borderRadius: 2,
+            }}
+          >
+            {SentIcon && <SentIcon size={8} />}
+            {sent.label}
+          </span>
+        )}
+        {imp >= 3 && (
+          <span
+            className="font-bold"
+            style={{
+              padding: "0 4px",
+              fontSize: 9,
+              color: "var(--accent-orange)",
+              border: "1px solid var(--accent-orange)",
+              borderRadius: 2,
+            }}
+          >
+            ⭐ {imp}
+          </span>
+        )}
+        {item.watch_codes_hit.slice(0, 2).map((c) => (
+          <span
+            key={c}
+            className="font-bold tabular-nums"
+            style={{
+              padding: "0 4px",
+              fontSize: 9,
+              color: "#1a1d28",
+              background: "var(--accent-orange)",
+              borderRadius: 2,
+            }}
+          >
+            {c}
+          </span>
+        ))}
+        {t && (
+          <span style={{ fontSize: 9, color: "var(--text-tertiary)", marginLeft: "auto" }}>
+            {t}
+          </span>
+        )}
+      </div>
+      <div
+        className="line-clamp-1"
+        style={{
+          fontSize: 11,
+          color: "var(--text-primary)",
+          fontWeight: 500,
+          lineHeight: 1.35,
+        }}
+      >
+        {item.title}
+      </div>
     </button>
   );
 }

@@ -26,6 +26,8 @@ from app.ai.debate import run_debate, stream_debate
 from app.ai.feedback_service import get_feedback_stats, record_feedback
 from app.ai.ladder_brief import generate_ladder_brief
 from app.ai.lhb_brief import generate_lhb_brief
+from app.ai.news_brief import generate_news_brief
+from app.ai.news_stream import stream_news_headline
 from app.ai.prediction_tracker import get_stats, snapshot_predictions, verify_pending
 from app.ai.sentiment_brief import generate_sentiment_brief
 from app.ai.theme_brief import generate_theme_brief
@@ -38,6 +40,7 @@ from app.models.user import User
 from app.services.prewarm_service import (
     prewarm_debate,
     prewarm_market_briefs,
+    prewarm_news_brief,
     prewarm_why_rose,
 )
 from app.services.watchlist_service import get_or_generate_watchlist_brief
@@ -158,6 +161,60 @@ async def get_lhb_brief(
         key, generate_lhb_brief, td, model,
         action="lhb_brief", model=model, trade_date=td,
         pg_ttl_h=PG_TTL_H, refresh=bool(refresh),
+    )
+
+
+@router.get("/news-brief")
+async def get_news_brief(
+    trade_date: date = Query(None),
+    model: str = Query("deepseek-v3"),
+    refresh: int = Query(0),
+    hours: int = Query(24, ge=1, le=72),
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """新闻 AI 全局总结 (Phase 2 核心): headline + 主线 + 政策 + 突发 + 业绩 + 明日盯点."""
+    td = _resolve_td(trade_date)
+    # 自选股命中告警: 取当前用户的 watchlist
+    from app.services.watchlist_service import get_user_watchlist_codes
+    try:
+        watch_codes = await get_user_watchlist_codes(db, user.id)
+    except Exception:
+        watch_codes = []
+    # cache_key 中带 watch_hash, 不同用户互不干扰; hours 也参与 key
+    import hashlib
+    wh = hashlib.md5(("|".join(sorted(watch_codes))).encode()).hexdigest()[:8] if watch_codes else "_"
+    key = f"news_brief:{td.isoformat()}:{hours}:{wh}:{model}"
+    if refresh:
+        invalidate("news_brief")
+        invalidate_pg(key)
+    return await cached_brief(
+        key,
+        generate_news_brief,
+        td, model,
+        hours=hours,
+        watch_codes=watch_codes,
+        action="news_brief", model=model, trade_date=td,
+        pg_ttl_h=2.0,  # 新闻 brief TTL 2h, 频次远高于其他 brief
+        refresh=bool(refresh),
+    )
+
+
+@router.get("/news-brief/stream")
+async def get_news_brief_stream(
+    trade_date: date = Query(None),
+    model: str = Query("deepseek-v3"),
+    hours: int = Query(24, ge=1, le=72),
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """新闻 AI brief 的 headline 打字机 SSE — 用于首屏快速响应."""
+    td = _resolve_td(trade_date)
+    await check_and_log_quota(db, user, action="stream_news", model=model)
+    return StreamingResponse(
+        stream_news_headline(td, model, hours=hours),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
 
 
@@ -286,7 +343,7 @@ async def get_headline_stream(
 
 
 class FeedbackPayload(BaseModel):
-    brief_kind: str = Field(..., pattern="^(today|sentiment|theme|ladder|lhb)$")
+    brief_kind: str = Field(..., pattern="^(today|sentiment|theme|ladder|lhb|news)$")
     trade_date: date
     rating: int = Field(..., ge=-1, le=1)
     model: str | None = None
@@ -350,9 +407,12 @@ async def trigger_prewarm(
         return await prewarm_why_rose(td, model, max_per_dir, concurrency)
     if job == "debate":
         return await prewarm_debate(td, model, top_n_themes, max(2, concurrency))
+    if job == "news_brief":
+        return await prewarm_news_brief(td, model)
     if job == "all":
         return {
             "market_briefs": await prewarm_market_briefs(td, model),
+            "news_brief": await prewarm_news_brief(td, model),
             "why_rose": await prewarm_why_rose(td, model, max_per_dir, concurrency),
             "debate": await prewarm_debate(td, model, top_n_themes, max(2, concurrency)),
         }
