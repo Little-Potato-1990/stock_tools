@@ -476,11 +476,16 @@ def _step_aggregate(session: Session, adapter, trade_date: date):
         logger.warning(f"Failed to fetch industry board data: {e}")
 
     # 龙虎榜快照（仅 tushare 适配器有此接口）
-    try:
-        if hasattr(adapter, "fetch_lhb_list") and hasattr(adapter, "fetch_lhb_inst"):
+    if hasattr(adapter, "fetch_lhb_list") and hasattr(adapter, "fetch_lhb_inst"):
+        try:
             lhb_stocks = adapter.fetch_lhb_list(trade_date)
             lhb_insts = adapter.fetch_lhb_inst(trade_date)
-            if lhb_stocks:
+            if not lhb_stocks:
+                _log_step(
+                    session, trade_date, "lhb", "empty",
+                    error_message="tushare top_list 返回空（一般是 18:00 前调用或当日非交易日）",
+                )
+            else:
                 # 按 stock_code 把营业部明细聚合到字典
                 insts_by_code: dict[str, list[dict]] = {}
                 for it in lhb_insts:
@@ -531,8 +536,13 @@ def _step_aggregate(session: Session, adapter, trade_date: date):
                         "hot_money_top": hot_money_list[:50],
                     },
                 ))
-    except Exception as e:
-        logger.warning(f"Failed to fetch LHB data: {e}")
+                _log_step(
+                    session, trade_date, "lhb", "success",
+                    records_count=len(lhb_stocks),
+                )
+        except Exception as e:
+            logger.warning(f"Failed to fetch LHB data: {e}")
+            _log_step(session, trade_date, "lhb", "failed", error_message=str(e))
 
     # KPL 概念成分股快照（仅 tushare 适配器有此接口，前端题材弹窗用）
     try:
