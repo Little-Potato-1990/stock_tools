@@ -5,6 +5,7 @@ import { X, RefreshCw, Sparkles, MessageSquare, ExternalLink, Zap, ChevronRight,
 import { useUIStore } from "@/stores/ui-store";
 import { api } from "@/lib/api";
 import { StockCapitalChip } from "./StockCapitalChip";
+import { CacheMetaBadge, getCacheMeta } from "./CacheMetaBadge";
 
 type WhyRose = Awaited<ReturnType<typeof api.getWhyRose>>;
 
@@ -231,6 +232,11 @@ export function WhyRoseModal() {
                     <span>{data.trade_date}</span>
                     <span>·</span>
                     <span>{data.model}</span>
+                    {getCacheMeta(data) && (
+                      <span className="ml-auto">
+                        <CacheMetaBadge meta={getCacheMeta(data)} />
+                      </span>
+                    )}
                   </div>
                 </div>
               </div>

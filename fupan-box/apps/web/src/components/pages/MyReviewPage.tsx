@@ -1,10 +1,9 @@
 "use client";
 
-import { useEffect, useMemo, useState, useCallback } from "react";
+import { useEffect, useState, useCallback } from "react";
 import {
   PlusCircle,
   Trash2,
-  TrendingUp,
   TrendingDown,
   Sparkles,
   Target,

@@ -9,13 +9,26 @@ import {
   Sparkles,
   Search,
   Crown,
+  Activity,
+  Newspaper,
 } from "lucide-react";
 import { api } from "@/lib/api";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { useUIStore } from "@/stores/ui-store";
 import { TierUpgradeBanner } from "@/components/market/TierUpgradeBanner";
+import { PerspectiveBriefBar } from "@/components/market/PerspectiveBriefBar";
+import { StockQuoteSection } from "@/components/market/StockQuoteSection";
+import { NewsTimelineList, type NewsItemLite } from "@/components/market/NewsTimelineList";
+import { CacheMetaBadge, getCacheMeta } from "@/components/market/CacheMetaBadge";
 
-type TabId = "fundamentals" | "valuation" | "consensus" | "holders" | "brief";
+type TabId =
+  | "quote"
+  | "news"
+  | "brief"
+  | "fundamentals"
+  | "valuation"
+  | "consensus"
+  | "holders";
 
 interface TabSpec {
   id: TabId;
@@ -25,22 +38,18 @@ interface TabSpec {
 }
 
 const TABS: TabSpec[] = [
-  { id: "brief", label: "长线 AI 评估", icon: Sparkles, desc: "5 年财务 + 估值分位 + 一致预期 → 一句话长线判断" },
+  { id: "quote", label: "行情盘口", icon: Activity, desc: "基础资料 + 所属概念 + 涨停原因 + 近期行情 (短线主战场)" },
+  { id: "news", label: "相关新闻", icon: Newspaper, desc: "近 30 天该股相关新闻时间线 (RAG 召回)" },
+  { id: "brief", label: "长线 AI", icon: Sparkles, desc: "5 年财务 + 估值分位 + 一致预期 → 一句话长线判断" },
   { id: "fundamentals", label: "财务面板", icon: TrendingUp, desc: "近 8 季度营收/净利润/ROE 趋势 + 业绩预告" },
   { id: "valuation", label: "估值分位", icon: Gauge, desc: "PE/PB 当日 + 5 年滚动分位" },
-  { id: "consensus", label: "卖方一致预期", icon: Users, desc: "目标价 / EPS / 评级分布 (周维度)" },
+  { id: "consensus", label: "一致预期", icon: Users, desc: "目标价 / EPS / 评级分布 (周维度)" },
   { id: "holders", label: "持仓追踪", icon: Crown, desc: "近 4 季度十大股东 + 主力身份变动" },
 ];
 
 function fmt(v: number | null | undefined, digits = 2, suffix = ""): string {
   if (v == null || Number.isNaN(v)) return "—";
   return v.toFixed(digits) + suffix;
-}
-
-function fmtMv(v: number | null | undefined): string {
-  if (v == null || Number.isNaN(v)) return "—";
-  if (v >= 1e8) return (v / 1e4).toFixed(1) + "亿";
-  return (v / 1e4).toFixed(2) + "万";
 }
 
 function pct(v: number | null | undefined, digits = 1): string {
@@ -616,6 +625,9 @@ function BriefTab({ code }: { code: string }) {
             长线 AI 评估
           </span>
           <span className="ml-auto text-xs" style={{ color: "var(--text-muted)" }}>{data.trade_date}</span>
+          {getCacheMeta(data) && (
+            <CacheMetaBadge meta={getCacheMeta(data)} />
+          )}
           <button
             onClick={() => load(true)}
             className="text-xs px-2 py-0.5 rounded"
@@ -682,13 +694,60 @@ function BriefTab({ code }: { code: string }) {
   );
 }
 
+// ============ 行情盘口 Tab (短线主战场) ============
+
+function QuoteTab({ code }: { code: string }) {
+  return <StockQuoteSection code={code} showWhyRose={true} />;
+}
+
+// ============ 相关新闻 Tab ============
+
+function NewsTab({ code }: { code: string }) {
+  const [data, setData] = useState<Awaited<ReturnType<typeof api.getStockNewsTimeline>> | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    let alive = true;
+    setLoading(true);
+    api
+      .getStockNewsTimeline(code, 30, 80)
+      .then((d) => alive && setData(d))
+      .catch(() => alive && setData(null))
+      .finally(() => alive && setLoading(false));
+    return () => {
+      alive = false;
+    };
+  }, [code]);
+
+  if (loading) {
+    return <div className="px-4 py-2" style={{ color: "var(--text-muted)", fontSize: 12 }}>加载中…</div>;
+  }
+  if (!data || data.items.length === 0) {
+    return (
+      <div className="px-4 py-4" style={{ color: "var(--text-muted)", fontSize: 12 }}>
+        近 30 天暂无 {code} 相关新闻
+      </div>
+    );
+  }
+
+  return (
+    <div className="px-3 py-2 space-y-2">
+      <div style={{ color: "var(--text-muted)", fontSize: 11 }}>
+        近 {data.days} 天共 {data.count} 条相关新闻 (RAG 召回 + 时间倒序)
+      </div>
+      <NewsTimelineList items={data.items as NewsItemLite[]} emptyText="近 30 天暂无相关新闻" />
+    </div>
+  );
+}
+
 // ============ 主入口 ============
 
 export function MidLongPage() {
-  const [activeTab, setActiveTab] = useState<TabId>("brief");
+  const [activeTab, setActiveTab] = useState<TabId>("quote");
   const focused = useUIStore((s) => s.focusedStock);
   const setFocused = useUIStore((s) => s.setFocusedStock);
   const pushInteraction = useUIStore((s) => s.pushInteraction);
+  const openWhyRose = useUIStore((s) => s.openWhyRose);
   const [code, setCode] = useState<string | null>(focused?.code ?? null);
 
   const handlePick = (c: string, name?: string) => {
@@ -702,10 +761,19 @@ export function MidLongPage() {
   return (
     <div className="h-full flex flex-col" style={{ background: "var(--bg-primary)" }}>
       <PageHeader
-        title="中长视角"
-        subtitle="Tushare 财务/估值/一致预期 + AI 长线评估"
+        title="个股深度"
+        subtitle="围绕一只股票看短/中/长线全维度 — 盘口 / 新闻 / 财务 / 估值 / 一致预期 / 持仓"
         actions={<EntityPicker code={code} onPick={handlePick} />}
       />
+
+      {/* 顶部三视角速读 (锁定股票后才有意义) */}
+      {code && (
+        <PerspectiveBriefBar
+          stockCode={code}
+          stockName={focused?.name}
+          onOpenShortDetail={() => openWhyRose(code, focused?.name)}
+        />
+      )}
 
       {/* Tab 切换 */}
       <div
@@ -753,11 +821,13 @@ export function MidLongPage() {
       <div className="flex-1 overflow-y-auto py-2">
         {!code && (
           <div className="px-4 py-12 text-center" style={{ color: "var(--text-muted)" }}>
-            <Telescope size={32} style={{ margin: "0 auto 8px", opacity: 0.4 }} />
+            <Search size={32} style={{ margin: "0 auto 8px", opacity: 0.4 }} />
             <div className="text-sm mb-1">先在右上角搜索一只股票</div>
-            <div className="text-xs">中长视角分析需要锁定到具体个股</div>
+            <div className="text-xs">个股深度分析需要锁定到具体个股 — 支持代码/名称模糊检索</div>
           </div>
         )}
+        {code && activeTab === "quote" && <QuoteTab code={code} />}
+        {code && activeTab === "news" && <NewsTab code={code} />}
         {code && activeTab === "brief" && <BriefTab code={code} />}
         {code && activeTab === "fundamentals" && <FundamentalsTab code={code} />}
         {code && activeTab === "valuation" && <ValuationTab code={code} />}

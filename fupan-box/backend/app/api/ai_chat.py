@@ -12,7 +12,6 @@ from app.models.user import User
 from app.models.ai import AIConversation, AIMessage
 from app.ai.models import get_models_dict, DEFAULT_MODEL, AVAILABLE_MODELS
 from app.ai.llm_service import stream_chat
-from app.config import get_settings
 
 router = APIRouter()
 

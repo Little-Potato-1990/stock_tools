@@ -10,6 +10,7 @@ redis>=5.2.0
 celery[redis]>=5.4.0
 httpx>=0.28.0
 akshare>=1.15.0
+tushare>=1.4.0
 pandas>=2.2.0
 numpy>=2.0.0
 pgvector>=0.3.0

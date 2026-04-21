@@ -21,20 +21,17 @@ from __future__ import annotations
 import logging
 from datetime import date, timedelta
 from typing import Iterable
-from sqlalchemy import select, func, and_, or_, desc
+from sqlalchemy import select, func, and_, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.stock import Stock, DailyQuote
-from app.models.market import LimitUpRecord
 from app.models.theme import ThemeStock, Theme, ThemeDaily
-from app.models.industry import IndustryStock, Industry
 from app.models.snapshot import DailySnapshot
 from app.models.capital import (
     CapitalFlowDaily, NorthHoldDaily, EtfFlowDaily, AnnouncementEvent,
 )
 from app.models.holder import HolderSnapshotQuarterly
 from app.models.ai import NewsSummary
-from app.services.etf_registry import all_tracked_etfs
 
 logger = logging.getLogger(__name__)
 
@@ -94,7 +91,7 @@ def get_stock_capital_sync(code: str, trade_date: date | None = None) -> dict:
     所有 brief 都跑在同步线程里 (asyncio.to_thread + 同步 engine), 直接复用此函数.
     返回结构与 get_stock_context() 兼容子集.
     """
-    from sqlalchemy import create_engine, select, func, and_, or_
+    from sqlalchemy import create_engine, select, func
     from sqlalchemy.orm import Session
     from datetime import timedelta as _td
     from app.config import get_settings

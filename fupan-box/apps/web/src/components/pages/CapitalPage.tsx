@@ -123,43 +123,131 @@ function EmptyHint({ text }: { text: string }) {
 }
 
 // === Tab: Overview (CapitalAiCard + summary) ===
+type CapitalSummary = {
+  trade_date: string | null;
+  market?: Record<string, unknown> | null;
+  north?: Record<string, unknown> | null;
+  concept_top_inflow?: Array<Record<string, unknown>>;
+  concept_top_outflow?: Array<Record<string, unknown>>;
+  industry_top_inflow?: Array<Record<string, unknown>>;
+  industry_top_outflow?: Array<Record<string, unknown>>;
+  national_team_etf?: { total_inflow?: number; etf_count?: number };
+  announce_count?: Record<string, number>;
+};
+
+function MetricTile({ label, value, color }: { label: string; value: string; color?: string }) {
+  return (
+    <div
+      style={{
+        padding: "8px 10px",
+        background: "var(--bg-card)",
+        borderRadius: 4,
+        border: "1px solid var(--border-color)",
+      }}
+    >
+      <div style={{ color: "var(--text-muted)", fontSize: 10 }}>{label}</div>
+      <div
+        className="font-bold tabular-nums"
+        style={{ color: color ?? "var(--text-primary)", fontSize: 13, marginTop: 2 }}
+      >
+        {value}
+      </div>
+    </div>
+  );
+}
+
 function TabOverview() {
-  const [summary, setSummary] = useState<Record<string, unknown> | null>(null);
+  const [summary, setSummary] = useState<CapitalSummary | null>(null);
   const [loading, setLoading] = useState(true);
   useEffect(() => {
     api.getCapitalSummary()
-      .then((d) => setSummary(d))
+      .then((d) => setSummary(d as CapitalSummary))
       .catch(() => setSummary(null))
       .finally(() => setLoading(false));
   }, []);
+
+  const tiles = useMemo(() => {
+    if (!summary) return [] as Array<{ label: string; value: string; color?: string }>;
+    const out: Array<{ label: string; value: string; color?: string }> = [];
+    const market = summary.market as Record<string, unknown> | null | undefined;
+    if (market) {
+      const main = (market.main_net_inflow as number) ?? (market.net_inflow as number);
+      if (typeof main === "number") {
+        out.push({ label: "大盘主力净流入", value: formatYi(main), color: chgColor(main) });
+      }
+    }
+    const north = summary.north as Record<string, unknown> | null | undefined;
+    if (north) {
+      const net = (north.net_inflow as number) ?? 0;
+      out.push({ label: "北向净流入", value: formatYi(net), color: chgColor(net) });
+    }
+    const etf = summary.national_team_etf;
+    if (etf && typeof etf.total_inflow === "number") {
+      out.push({
+        label: `国家队 ETF (${etf.etf_count ?? 0})`,
+        value: formatYi(etf.total_inflow),
+        color: chgColor(etf.total_inflow),
+      });
+    }
+    const ann = summary.announce_count ?? {};
+    const annTotal = Object.values(ann).reduce((a, b) => a + (b ?? 0), 0);
+    if (annTotal) {
+      out.push({ label: "公告事件", value: String(annTotal) });
+    }
+    return out;
+  }, [summary]);
+
+  const renderRanks = (
+    items: Array<Record<string, unknown>> | undefined,
+    title: string,
+    sign: 1 | -1,
+  ) => {
+    if (!items || items.length === 0) return null;
+    return (
+      <div
+        style={{
+          padding: "8px 10px",
+          background: "var(--bg-card)",
+          borderRadius: 4,
+          border: "1px solid var(--border-color)",
+        }}
+      >
+        <div style={{ color: "var(--text-muted)", fontSize: 10, marginBottom: 4 }}>{title}</div>
+        {items.map((it, i) => {
+          const v = (it.main_inflow as number) ?? 0;
+          return (
+            <div key={i} className="flex items-center justify-between" style={{ fontSize: 11, padding: "2px 0" }}>
+              <span style={{ color: "var(--text-primary)" }}>{String(it.name ?? "—")}</span>
+              <span className="tabular-nums" style={{ color: chgColor(sign * v) }}>{formatYi(v)}</span>
+            </div>
+          );
+        })}
+      </div>
+    );
+  };
+
   return (
     <div>
       <CapitalAiCard hero />
-      <div className="px-3 py-3">
+      <div className="px-3 py-3 grid gap-2">
         {loading ? (
           <Loading rows={3} />
         ) : summary ? (
-          <div
-            className="grid grid-cols-2 md:grid-cols-4 gap-2"
-            style={{ fontSize: "var(--font-xs)" }}
-          >
-            {Object.entries(summary).map(([k, v]) => (
-              <div
-                key={k}
-                style={{
-                  padding: "8px 10px",
-                  background: "var(--bg-card)",
-                  borderRadius: 4,
-                  border: "1px solid var(--border-color)",
-                }}
-              >
-                <div style={{ color: "var(--text-muted)", fontSize: 10 }}>{k}</div>
-                <div className="font-bold tabular-nums" style={{ color: "var(--text-primary)", fontSize: 13, marginTop: 2 }}>
-                  {typeof v === "number" ? v.toFixed(2) : String(v ?? "—")}
-                </div>
+          <>
+            {tiles.length > 0 && (
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-2" style={{ fontSize: "var(--font-xs)" }}>
+                {tiles.map((t) => (
+                  <MetricTile key={t.label} {...t} />
+                ))}
               </div>
-            ))}
-          </div>
+            )}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+              {renderRanks(summary.concept_top_inflow, "概念-净流入 Top3", 1)}
+              {renderRanks(summary.concept_top_outflow, "概念-净流出 Top3", -1)}
+              {renderRanks(summary.industry_top_inflow, "行业-净流入 Top3", 1)}
+              {renderRanks(summary.industry_top_outflow, "行业-净流出 Top3", -1)}
+            </div>
+          </>
         ) : (
           <EmptyHint text="暂无 summary 数据 (需先跑 daily 资金 pipeline)" />
         )}
@@ -234,13 +322,13 @@ function TabNorth() {
                       <StockLink code={String(h.stock_code)} name={h.stock_name as string | null} />
                     </td>
                     <td style={{ padding: "4px 8px", textAlign: "right" }} className="tabular-nums">
-                      {formatYi(h.hold_value as number)}
+                      {formatYi(h.hold_amount as number)}
                     </td>
                     <td style={{ padding: "4px 8px", textAlign: "right" }} className="tabular-nums">
-                      {pct((h.hold_pct_circulating as number) * 100)}
+                      {pct(h.hold_pct as number)}
                     </td>
-                    <td style={{ padding: "4px 8px", textAlign: "right", color: chgColor(h.hold_change as number) }} className="tabular-nums">
-                      {formatYi(h.hold_change as number)}
+                    <td style={{ padding: "4px 8px", textAlign: "right", color: chgColor(h.chg_amount as number) }} className="tabular-nums">
+                      {formatYi(h.chg_amount as number)}
                     </td>
                   </tr>
                 ))}
@@ -324,7 +412,7 @@ function TabIndustry() {
 }
 
 function TabStock() {
-  const [direction, setDirection] = useState<"in" | "out">("in");
+  const [direction, setDirection] = useState<"inflow" | "outflow">("inflow");
   const [items, setItems] = useState<Array<Record<string, unknown>>>([]);
   const [loading, setLoading] = useState(true);
   useEffect(() => {
@@ -337,7 +425,7 @@ function TabStock() {
   return (
     <Section title="个股主力净流入排行" desc="作为选股辅助维度, 配合题材/北向使用">
       <div className="px-3 mb-2 flex items-center gap-2">
-        {(["in", "out"] as const).map((d) => (
+        {(["inflow", "outflow"] as const).map((d) => (
           <button
             key={d}
             onClick={() => setDirection(d)}
@@ -350,7 +438,7 @@ function TabStock() {
               borderRadius: 3,
             }}
           >
-            {d === "in" ? "净流入" : "净流出"}
+            {d === "inflow" ? "净流入" : "净流出"}
           </button>
         ))}
       </div>
@@ -389,60 +477,44 @@ function TabStock() {
 }
 
 function TabLimit() {
-  const [by, setBy] = useState<"theme" | "industry">("theme");
   const [items, setItems] = useState<Array<Record<string, unknown>>>([]);
   const [loading, setLoading] = useState(true);
   useEffect(() => {
     setLoading(true);
-    api.getCapitalLimitOrder(undefined, by)
+    api.getCapitalLimitOrder()
       .then((d) => setItems(d.items ?? []))
       .catch(() => setItems([]))
       .finally(() => setLoading(false));
-  }, [by]);
+  }, []);
   return (
-    <Section title="涨停封单金额聚合" desc="按题材 / 行业归类, 反映场外资金空军">
-      <div className="px-3 mb-2 flex items-center gap-2">
-        {(["theme", "industry"] as const).map((d) => (
-          <button
-            key={d}
-            onClick={() => setBy(d)}
-            className="px-2 py-1"
-            style={{
-              fontSize: "var(--font-xs)",
-              background: by === d ? "var(--accent-blue)" : "var(--bg-card)",
-              color: by === d ? "#fff" : "var(--text-secondary)",
-              border: "1px solid var(--border-color)",
-              borderRadius: 3,
-            }}
-          >
-            {d === "theme" ? "按题材" : "按行业"}
-          </button>
-        ))}
-      </div>
+    <Section title="涨停封单金额聚合" desc="按题材 + 行业混合归集, 反映场外资金空军">
       {loading ? <Loading /> : items.length === 0 ? <EmptyHint text="暂无封单数据 (需 daily pipeline 完成)" /> : (
         <div className="px-3 overflow-x-auto">
           <table className="w-full" style={{ fontSize: "var(--font-xs)" }}>
             <thead>
               <tr style={{ color: "var(--text-muted)", fontSize: 10, textAlign: "left" }}>
-                <th style={{ padding: "4px 8px" }}>{by === "theme" ? "题材" : "行业"}</th>
+                <th style={{ padding: "4px 8px" }}>题材/行业</th>
                 <th style={{ padding: "4px 8px", textAlign: "right" }}>封单总额</th>
                 <th style={{ padding: "4px 8px", textAlign: "right" }}>涨停股数</th>
               </tr>
             </thead>
             <tbody>
-              {items.map((it, i) => (
-                <tr key={i} style={{ borderTop: "1px solid var(--border-color)" }}>
-                  <td style={{ padding: "4px 8px", color: "var(--text-primary)", fontWeight: 600 }}>
-                    {String(it.name)}
-                  </td>
-                  <td style={{ padding: "4px 8px", textAlign: "right", color: "var(--accent-red)" }} className="tabular-nums">
-                    {formatYi(it.order_amount as number)}
-                  </td>
-                  <td style={{ padding: "4px 8px", textAlign: "right" }} className="tabular-nums">
-                    {String(it.stock_count ?? "—")}
-                  </td>
-                </tr>
-              ))}
+              {items.map((it, i) => {
+                const stocks = (it.stocks as Array<unknown>) ?? [];
+                return (
+                  <tr key={i} style={{ borderTop: "1px solid var(--border-color)" }}>
+                    <td style={{ padding: "4px 8px", color: "var(--text-primary)", fontWeight: 600 }}>
+                      {String(it.theme ?? "—")}
+                    </td>
+                    <td style={{ padding: "4px 8px", textAlign: "right", color: "var(--accent-red)" }} className="tabular-nums">
+                      {formatYi(it.limit_order_total as number)}
+                    </td>
+                    <td style={{ padding: "4px 8px", textAlign: "right" }} className="tabular-nums">
+                      {stocks.length || "—"}
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>

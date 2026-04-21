@@ -14,16 +14,16 @@
 """
 from __future__ import annotations
 
-from datetime import date, timedelta
+from datetime import date
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import select, func, desc, and_
+from sqlalchemy import select, func, desc
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.ai.brief_cache import cached_brief, invalidate_pg
 from app.ai.long_term_brief import generate_long_term_brief
-from app.api._cache import cached_call, invalidate as invalidate_mem
+from app.api._cache import invalidate as invalidate_mem
 from app.api.auth import optional_user
 from app.database import get_db
 from app.models.consensus import AnalystConsensusWeekly

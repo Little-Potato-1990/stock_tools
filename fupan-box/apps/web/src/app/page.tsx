@@ -9,7 +9,6 @@ import { PlansPage } from "@/components/pages/PlansPage";
 import { CapitalPage } from "@/components/pages/CapitalPage";
 import { MidLongPage } from "@/components/pages/MidLongPage";
 import { LhbPage } from "@/components/pages/LhbPage";
-import { StockSearchPage } from "@/components/pages/StockSearchPage";
 import { NewsPage } from "@/components/pages/NewsPage";
 import { AiTrackPage } from "@/components/pages/AiTrackPage";
 import { MyReviewPage } from "@/components/pages/MyReviewPage";
@@ -35,8 +34,6 @@ export default function Home() {
       return <MidLongPage />;
     case "lhb":
       return <LhbPage />;
-    case "search":
-      return <StockSearchPage />;
     case "news":
       return <NewsPage />;
     case "ai_track":

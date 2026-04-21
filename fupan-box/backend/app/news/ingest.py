@@ -389,7 +389,6 @@ def fetch_news_for_codes(codes: list[str], hours: int = 72, limit: int = 30) -> 
     cutoff = datetime.now() - timedelta(hours=hours)
     try:
         with Session(eng) as s:
-            from sqlalchemy.dialects.postgresql import JSONB as PG_JSONB
 
             # related_stocks 是 JSONB array, 用 ?| 操作符判断包含任一
             q = (

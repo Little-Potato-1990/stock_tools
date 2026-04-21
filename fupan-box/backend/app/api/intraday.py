@@ -8,7 +8,7 @@ POST /api/intraday/scan               手动触发扫描 (开发/调试)
 """
 from __future__ import annotations
 
-from datetime import datetime, timedelta, date as date_type
+from datetime import date as date_type
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query

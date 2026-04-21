@@ -1,4 +1,6 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+import logging
+
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
@@ -15,6 +17,19 @@ pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login")
 oauth2_scheme_optional = OAuth2PasswordBearer(tokenUrl="/api/auth/login", auto_error=False)
 settings = get_settings()
+logger = logging.getLogger(__name__)
+
+
+def _enqueue_user_prewarm(user_id: int) -> None:
+    """后台排队 per-user 预热. 失败静默, 不阻塞登录.
+
+    优先用 celery .delay; 若 celery 不可达则跳过 (next beat 夜间兜底).
+    """
+    try:
+        from app.tasks.peruser_prewarm import prewarm_user_bundle
+        prewarm_user_bundle.delay(int(user_id))
+    except Exception as e:
+        logger.debug(f"enqueue user prewarm skipped user={user_id}: {e}")
 
 
 class RegisterRequest(BaseModel):
@@ -83,7 +98,11 @@ async def optional_user(
 
 
 @router.post("/register", response_model=TokenResponse)
-async def register(req: RegisterRequest, db: AsyncSession = Depends(get_db)):
+async def register(
+    req: RegisterRequest,
+    background_tasks: BackgroundTasks,
+    db: AsyncSession = Depends(get_db),
+):
     existing = await db.execute(
         select(User).where((User.username == req.username) | (User.email == req.email))
     )
@@ -99,11 +118,13 @@ async def register(req: RegisterRequest, db: AsyncSession = Depends(get_db)):
     await db.commit()
     await db.refresh(user)
     token = create_access_token({"sub": str(user.id)})
+    background_tasks.add_task(_enqueue_user_prewarm, user.id)
     return TokenResponse(access_token=token)
 
 
 @router.post("/login", response_model=TokenResponse)
 async def login(
+    background_tasks: BackgroundTasks,
     form: OAuth2PasswordRequestForm = Depends(),
     db: AsyncSession = Depends(get_db),
 ):
@@ -112,6 +133,7 @@ async def login(
     if not user or not pwd_context.verify(form.password, user.password_hash):
         raise HTTPException(400, "Incorrect username or password")
     token = create_access_token({"sub": str(user.id)})
+    background_tasks.add_task(_enqueue_user_prewarm, user.id)
     return TokenResponse(access_token=token)
 
 

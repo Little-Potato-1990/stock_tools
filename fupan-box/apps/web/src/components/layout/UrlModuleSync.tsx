@@ -9,13 +9,16 @@
 
 import { useEffect, useRef, Suspense } from "react";
 import { useSearchParams, useRouter, usePathname } from "next/navigation";
-import { useUIStore, type NavModule } from "@/stores/ui-store";
+import { useUIStore, type NavModule, normalizeNavModule } from "@/stores/ui-store";
 
 const VALID_MODULES: NavModule[] = [
   "today", "sentiment", "themes", "capital", "midlong",
-  "lhb", "search", "news", "watchlist", "plans",
+  "lhb", "news", "watchlist", "plans",
   "ai_track", "my_review", "account",
 ];
+
+// 老 URL 的 ?m= 值, 兼容老书签 / 分享链接 (会被 normalize 到合法 NavModule)
+const LEGACY_ALIASES = new Set<string>(["search"]);
 
 function UrlSyncInner() {
   const searchParams = useSearchParams();
@@ -25,13 +28,16 @@ function UrlSyncInner() {
   const setActiveModule = useUIStore((s) => s.setActiveModule);
   const lastUrlRef = useRef<string | null>(null);
 
-  // 1) 启动 / URL 变化 → 同步到 store
+  // 1) 启动 / URL 变化 → 同步到 store (含老别名重定向)
   useEffect(() => {
     const m = searchParams.get("m");
-    if (m && VALID_MODULES.includes(m as NavModule) && m !== activeModule) {
-      setActiveModule(m as NavModule);
+    if (!m) return;
+    const isValid = VALID_MODULES.includes(m as NavModule) || LEGACY_ALIASES.has(m);
+    if (!isValid) return;
+    const normalized = normalizeNavModule(m);
+    if (normalized !== activeModule) {
+      setActiveModule(normalized);
     }
-    // 仅当 URL 来自外部跳转时触发, 内部 store 变化在下个 effect 处理
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchParams]);
 

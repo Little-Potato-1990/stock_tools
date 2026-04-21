@@ -18,6 +18,15 @@ import {
   type ThemeDialAnchor,
 } from "@/components/market/ThemeAiCard";
 import { ThemeEvidenceGrid } from "@/components/market/ThemeEvidenceGrid";
+import { BoardGrid } from "@/components/market/BoardGrid";
+
+type SubTab = "trend" | "concept" | "industry";
+
+const SUB_TABS: { id: SubTab; label: string; desc: string }[] = [
+  { id: "trend", label: "热度榜单", desc: "AI 主线/退潮/新晋 + 近 N 日强势题材网格" },
+  { id: "concept", label: "概念索引", desc: "全市场概念板块字母表" },
+  { id: "industry", label: "行业索引", desc: "全市场行业板块字母表" },
+];
 
 const PAGE_SIZE = 7;
 const MAX_DAYS = 60;
@@ -230,6 +239,7 @@ function IndustryCell({
 }
 
 export function ThemesPage() {
+  const [subTab, setSubTab] = useState<SubTab>("trend");
   const [days, setDays] = useState<{ trade_date: string }[]>([]);
   const [industriesByDate, setIndustriesByDate] = useState<
     Map<string, IndustryItem[]>
@@ -334,34 +344,77 @@ export function ThemesPage() {
     return filterMetaConcepts(raw).slice(0, ROWS);
   }
 
+  const subTabSpec = SUB_TABS.find((t) => t.id === subTab)!;
+
   return (
     <div>
       <PageHeader
         title="题材追踪"
         subtitle={
-          dates.length > 0
+          subTab === "trend" && dates.length > 0
             ? `${d0} 共 ${industriesByDate.get(d0)?.length ?? 0} 个题材 · 已加载 ${dates.length} 天`
-            : undefined
+            : subTabSpec.desc
         }
       />
 
-      {/* L1: AI 主视觉 */}
-      <ThemeAiCard
-        hero
-        onEvidenceClick={handleEvidenceClick}
-        onBriefLoad={setBrief}
-      />
-
-      {/* L2: AI 圈定的 4 个题材 (主线/新晋/退潮/明日下注) — 含催化新闻 */}
-      <ThemeEvidenceGrid
-        brief={brief}
-        highlight={highlight}
-        onNewsClick={(id) => {
-          if (typeof window !== "undefined") window.location.hash = `#/news?focus=${id}`;
+      {/* 子 Tab 切换 */}
+      <div
+        className="flex items-center px-3"
+        style={{
+          borderBottom: "1px solid var(--border-color)",
+          background: "var(--bg-secondary)",
+          height: 36,
         }}
-      />
+      >
+        {SUB_TABS.map((t) => (
+          <button
+            key={t.id}
+            onClick={() => setSubTab(t.id)}
+            className="font-medium transition-colors relative"
+            style={{
+              padding: "0 14px",
+              height: 36,
+              fontSize: "var(--font-md)",
+              color:
+                subTab === t.id
+                  ? "var(--text-primary)"
+                  : "var(--text-muted)",
+            }}
+          >
+            {t.label}
+            {subTab === t.id && (
+              <div
+                className="absolute bottom-0 left-2 right-2"
+                style={{ height: 2, background: "var(--accent-orange)" }}
+              />
+            )}
+          </button>
+        ))}
+      </div>
 
-      {loading ? (
+      {subTab === "concept" && <BoardGrid kind="concept" />}
+      {subTab === "industry" && <BoardGrid kind="industry" />}
+
+      {subTab === "trend" && (
+        <>
+          {/* L1: AI 主视觉 */}
+          <ThemeAiCard
+            hero
+            onEvidenceClick={handleEvidenceClick}
+            onBriefLoad={setBrief}
+          />
+
+          {/* L2: AI 圈定的 4 个题材 (主线/新晋/退潮/明日下注) — 含催化新闻 */}
+          <ThemeEvidenceGrid
+            brief={brief}
+            highlight={highlight}
+            onNewsClick={(id) => {
+              if (typeof window !== "undefined")
+                window.location.hash = `#/news?focus=${id}`;
+            }}
+          />
+
+          {loading ? (
         <div
           className="px-3 py-3 grid gap-1.5"
           style={{ gridTemplateColumns: "repeat(7, 1fr)" }}
@@ -567,6 +620,8 @@ export function ThemesPage() {
         >
           已到最早一天 ({days.length} 天)
         </div>
+      )}
+        </>
       )}
     </div>
   );

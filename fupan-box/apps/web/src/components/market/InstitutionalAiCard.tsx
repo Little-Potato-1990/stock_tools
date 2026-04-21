@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { Sparkles, RefreshCw, Users, Crown, Building2 } from "lucide-react";
 import { api } from "@/lib/api";
 import { AiCardError, AiCardFooter, AiCardLoading } from "./AiCardChrome";
+import { getCacheMeta } from "./CacheMetaBadge";
 import { AiActionBar } from "./AiActionBar";
 import { useUIStore } from "@/stores/ui-store";
 
@@ -279,6 +280,7 @@ export function InstitutionalAiCard({ hero = false }: { hero?: boolean } = {}) {
         tradeDate={data.trade_date}
         model={data.model}
         snapshot={{ headline: data.headline, stance: data.stance, evidence: data.evidence }}
+        cacheMeta={getCacheMeta(data)}
       />
     </div>
   );

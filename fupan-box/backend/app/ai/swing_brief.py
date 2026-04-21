@@ -170,7 +170,6 @@ def _heuristic(ctx: dict[str, Any]) -> dict[str, Any]:
 
     cap_ctx = ctx.get("capital_ctx") or {}
     cap_5d = (cap_ctx.get("capital") or {}).get("main_inflow_5d_yi") if cap_ctx else None
-    north_5d = (cap_ctx.get("capital") or {}).get("north_change_5d_yi") if cap_ctx else None
 
     capital_score = 5
     if cap_5d is not None:

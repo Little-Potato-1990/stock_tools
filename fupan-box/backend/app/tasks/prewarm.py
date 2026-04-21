@@ -25,6 +25,8 @@ from app.services.prewarm_service import (
     prewarm_multi_perspective as _multi_perspective_async,
     prewarm_swing_brief as _swing_brief_async,
     prewarm_long_term_brief as _long_term_brief_async,
+    prewarm_lhb_brief as _lhb_brief_async,
+    prewarm_stock_context as _stock_context_async,
 )
 
 
@@ -101,6 +103,22 @@ def prewarm_long_term_brief(
     return sync_run_async(_long_term_brief_async(td, model, max_n, concurrency))
 
 
+@celery.task(name="app.tasks.prewarm.prewarm_lhb_brief")
+def prewarm_lhb_brief(trade_date_str: str | None = None, model: str = DEFAULT_MODEL):
+    td = date_type.fromisoformat(trade_date_str) if trade_date_str else None
+    return sync_run_async(_lhb_brief_async(td, model))
+
+
+@celery.task(name="app.tasks.prewarm.prewarm_stock_context")
+def prewarm_stock_context(
+    trade_date_str: str | None = None,
+    model: str = DEFAULT_MODEL,
+    concurrency: int = 8,
+):
+    td = date_type.fromisoformat(trade_date_str) if trade_date_str else None
+    return sync_run_async(_stock_context_async(td, model, concurrency))
+
+
 @celery.task(name="app.tasks.prewarm.prewarm_all")
 def prewarm_all(trade_date_str: str | None = None, model: str = DEFAULT_MODEL):
     """串行跑完所有: 用于手动触发 / 失败重跑."""
@@ -108,8 +126,11 @@ def prewarm_all(trade_date_str: str | None = None, model: str = DEFAULT_MODEL):
     out["market_briefs"] = prewarm_market_briefs(trade_date_str, model)
     out["news_brief"] = prewarm_news_brief(trade_date_str, model)
     out["institutional_brief"] = prewarm_institutional_brief(trade_date_str, model)
+    out["lhb_brief"] = prewarm_lhb_brief(trade_date_str, model)
+    out["stock_context"] = prewarm_stock_context(trade_date_str, model)
     out["why_rose"] = prewarm_why_rose(trade_date_str, model)
     out["debate"] = prewarm_debate(trade_date_str, model)
     out["multi_perspective"] = prewarm_multi_perspective(trade_date_str, model)
     out["swing_brief"] = prewarm_swing_brief(trade_date_str, model)
+    out["long_term_brief"] = prewarm_long_term_brief(trade_date_str, model)
     return out

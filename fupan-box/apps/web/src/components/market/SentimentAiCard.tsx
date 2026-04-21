@@ -16,6 +16,7 @@ import {
 import { api } from "@/lib/api";
 import { useUIStore } from "@/stores/ui-store";
 import { AiCardError, AiCardFooter, AiCardLoading } from "./AiCardChrome";
+import { getCacheMeta } from "./CacheMetaBadge";
 import { StreamHeadlineControl } from "./StreamHeadlineControl";
 import { AiDensitySwitch } from "./AiDensitySwitch";
 import { AiActionBar } from "./AiActionBar";
@@ -510,6 +511,7 @@ export function SentimentAiCard({ hero = false, onEvidenceClick, onTrendLoad, on
         tradeDate={data.trade_date}
         model={data.model}
         snapshot={{ headline: data.judgment, phase: data.phase, evidence: data.evidence }}
+        cacheMeta={getCacheMeta(data)}
       />
     </div>
   );

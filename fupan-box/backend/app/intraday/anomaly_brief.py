@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import json
 import logging
-from datetime import date as date_type, datetime, timedelta
 from typing import Any
 
 from sqlalchemy import create_engine, select, desc, and_

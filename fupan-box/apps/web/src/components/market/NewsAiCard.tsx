@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 import { Dial } from "./dial/Dial";
 import type { DialItem } from "./dial/types";
+import { CacheMetaBadge, getCacheMeta } from "./CacheMetaBadge";
 
 interface NewsLite {
   id?: number;
@@ -238,11 +239,16 @@ export function NewsAiCard({
         <span style={{ fontSize: "var(--font-xs)", color: "var(--text-muted)" }}>
           · 多源聚合 · LLM 主线/政策/突发分桶
         </span>
-        {brief?.model && (
-          <span style={{ fontSize: 10, color: "var(--text-muted)", marginLeft: "auto" }}>
-            {brief.model}
-          </span>
-        )}
+        <span className="ml-auto flex items-center gap-2">
+          {brief?.model && (
+            <span style={{ fontSize: 10, color: "var(--text-muted)" }}>
+              {brief.model}
+            </span>
+          )}
+          {getCacheMeta(brief) && (
+            <CacheMetaBadge meta={getCacheMeta(brief)} />
+          )}
+        </span>
       </div>
 
       {/* L1 headline */}

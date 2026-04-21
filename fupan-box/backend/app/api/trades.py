@@ -8,7 +8,7 @@ P0 「我的复盘」MVP:
 from datetime import date as date_type, datetime
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, delete, func
+from sqlalchemy import select
 from pydantic import BaseModel, Field
 from app.database import get_db
 from app.api.auth import get_current_user

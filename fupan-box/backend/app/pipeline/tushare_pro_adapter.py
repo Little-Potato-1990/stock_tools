@@ -137,7 +137,7 @@ class TusharePioAdapter:
                 "stock_code": stock_code,
                 "report_date": rd,
                 "ann_date": _parse_date(r.get("ann_date")),
-                "revenue": _safe_float(r.get("tr_yoy")) and None,
+                "revenue": None,  # 由 fetch_income 补齐绝对值
                 "revenue_yoy": _safe_float(r.get("tr_yoy")),
                 "net_profit_yoy": _safe_float(r.get("netprofit_yoy")),
                 "gross_margin": _safe_float(r.get("grossprofit_margin")),
@@ -149,6 +149,77 @@ class TusharePioAdapter:
                 "cash_flow_op_to_revenue": _safe_float(r.get("ocf_to_or")),
                 "eps": _safe_float(r.get("eps")),
                 "bps": _safe_float(r.get("bps")),
+            })
+        return out
+
+    def fetch_income(
+        self,
+        stock_code: str,
+        start_period: str | None = None,
+        end_period: str | None = None,
+    ) -> list[dict]:
+        """单股利润表 (pro.income)，提供 revenue / 归母净利润绝对值。"""
+        ts_code = _to_ts_code(stock_code)
+        kwargs: dict[str, Any] = {
+            "ts_code": ts_code,
+            "fields": "ts_code,end_date,ann_date,revenue,n_income_attr_p",
+        }
+        if start_period:
+            kwargs["start_date"] = start_period
+        if end_period:
+            kwargs["end_date"] = end_period
+        try:
+            df = self._pro.income(**kwargs)
+        except Exception as e:
+            logger.warning(f"tushare income {ts_code}: {e}")
+            return []
+        if df is None or df.empty:
+            return []
+        out = []
+        for _, r in df.iterrows():
+            rd = _parse_date(r.get("end_date"))
+            if not rd:
+                continue
+            out.append({
+                "stock_code": stock_code,
+                "report_date": rd,
+                "revenue": _safe_float(r.get("revenue")),
+                "net_profit": _safe_float(r.get("n_income_attr_p")),
+            })
+        return out
+
+    def fetch_cashflow(
+        self,
+        stock_code: str,
+        start_period: str | None = None,
+        end_period: str | None = None,
+    ) -> list[dict]:
+        """单股现金流量表 (pro.cashflow)，提供经营活动现金流绝对值。"""
+        ts_code = _to_ts_code(stock_code)
+        kwargs: dict[str, Any] = {
+            "ts_code": ts_code,
+            "fields": "ts_code,end_date,ann_date,n_cashflow_act",
+        }
+        if start_period:
+            kwargs["start_date"] = start_period
+        if end_period:
+            kwargs["end_date"] = end_period
+        try:
+            df = self._pro.cashflow(**kwargs)
+        except Exception as e:
+            logger.warning(f"tushare cashflow {ts_code}: {e}")
+            return []
+        if df is None or df.empty:
+            return []
+        out = []
+        for _, r in df.iterrows():
+            rd = _parse_date(r.get("end_date"))
+            if not rd:
+                continue
+            out.append({
+                "stock_code": stock_code,
+                "report_date": rd,
+                "cash_flow_op": _safe_float(r.get("n_cashflow_act")),
             })
         return out
 
@@ -306,6 +377,7 @@ class TusharePioAdapter:
             rep_date = _parse_date(r.get("report_date"))
             if not rep_date:
                 continue
+            base_year = rep_date.year
             out.append({
                 "stock_code": stock_code,
                 "report_date": rep_date,
@@ -314,8 +386,17 @@ class TusharePioAdapter:
                 "target_price": _safe_float(r.get("max_price")) or _safe_float(r.get("min_price")),
                 "target_price_max": _safe_float(r.get("max_price")),
                 "target_price_min": _safe_float(r.get("min_price")),
-                "eps_fy1": _safe_float(r.get("eps_2024")) or _safe_float(r.get("eps_fy1")),
-                "eps_fy2": _safe_float(r.get("eps_2025")) or _safe_float(r.get("eps_fy2")),
-                "eps_fy3": _safe_float(r.get("eps_2026")) or _safe_float(r.get("eps_fy3")),
+                "eps_fy1": (
+                    _safe_float(r.get(f"eps_{base_year}"))
+                    or _safe_float(r.get("eps_fy1"))
+                ),
+                "eps_fy2": (
+                    _safe_float(r.get(f"eps_{base_year + 1}"))
+                    or _safe_float(r.get("eps_fy2"))
+                ),
+                "eps_fy3": (
+                    _safe_float(r.get(f"eps_{base_year + 2}"))
+                    or _safe_float(r.get("eps_fy3"))
+                ),
             })
         return out

@@ -13,6 +13,7 @@ import {
 import { api } from "@/lib/api";
 import { useUIStore } from "@/stores/ui-store";
 import { AiCardError, AiCardFooter, AiCardLoading } from "./AiCardChrome";
+import { getCacheMeta } from "./CacheMetaBadge";
 import { EvidenceBadge } from "./EvidenceBadge";
 import { StreamHeadlineControl } from "./StreamHeadlineControl";
 import { useStreamingHeadline } from "@/hooks/useStreamingHeadline";
@@ -536,6 +537,7 @@ export function ThemeAiCard({ hero = false, onEvidenceClick, onBriefLoad }: Prop
         tradeDate={data.trade_date}
         model={data.model}
         snapshot={{ headline: data.headline, evidence: data.evidence, next_bet: data.next_bet }}
+        cacheMeta={getCacheMeta(data)}
       />
     </div>
   );

@@ -19,16 +19,19 @@ celery.conf.imports = (
     "app.tasks.news_ingest",
     "app.tasks.quarterly",
     "app.tasks.midlong",
+    "app.tasks.external_pull",
+    "app.tasks.peruser_prewarm",
 )
 celery.conf.beat_schedule = {
     "daily-pipeline": {
         "task": "app.tasks.daily.run_pipeline_task",
-        "schedule": crontab(hour=15, minute=35, day_of_week="1-5"),
+        # 推后到 16:00, 等 tushare moneyflow_dc/moneyflow_ind_dc 当日数据落库
+        "schedule": crontab(hour=16, minute=0, day_of_week="1-5"),
     },
-    # P3: 每日 16:00 自动跑 AI 预测 T+3 校验
+    # P3: 每日 16:25 自动跑 AI 预测 T+3 校验 (跟在 daily-pipeline 16:00 之后, 与其他 16:xx 任务错峰)
     "ai-track-verify": {
         "task": "app.tasks.ai_verify.verify_ai_predictions_task",
-        "schedule": crontab(hour=16, minute=0, day_of_week="1-5"),
+        "schedule": crontab(hour=16, minute=25, day_of_week="1-5"),
     },
     # P2: 9:30 - 11:30 每分钟扫描盘中异动
     "intraday-scan-morning": {
@@ -54,15 +57,25 @@ celery.conf.beat_schedule = {
         "task": "app.tasks.prewarm.prewarm_market_briefs",
         "schedule": crontab(hour=15, minute=40, day_of_week="1-5"),
     },
-    # AI 预热: why_rose 批量 (涨停 + 涨跌幅 top30)
+    # AI 预热: LHB brief — daily-pipeline 之后 15min
+    "prewarm-lhb-brief": {
+        "task": "app.tasks.prewarm.prewarm_lhb_brief",
+        "schedule": crontab(hour=16, minute=15, day_of_week="1-5"),
+    },
+    # AI 预热: why_rose 白名单 universe (800-1500 股)
     "prewarm-why-rose": {
         "task": "app.tasks.prewarm.prewarm_why_rose",
-        "schedule": crontab(hour=15, minute=45, day_of_week="1-5"),
+        "schedule": crontab(hour=16, minute=20, day_of_week="1-5"),
     },
-    # AI 预热: debate (大盘 + top10 题材)
+    # AI 预热: debate (大盘 + top10 题材 + universe 个股)
     "prewarm-debate": {
         "task": "app.tasks.prewarm.prewarm_debate",
-        "schedule": crontab(hour=15, minute=50, day_of_week="1-5"),
+        "schedule": crontab(hour=17, minute=0, day_of_week="1-5"),
+    },
+    # 个股 7 维 context 预热 (universe, 落 PG 24h, 不含 LLM)
+    "prewarm-stock-context": {
+        "task": "app.tasks.prewarm.prewarm_stock_context",
+        "schedule": crontab(hour=17, minute=40, day_of_week="1-5"),
     },
     # === Phase 1 新闻聚合 ===
     # 全天 24x7 每 30 分钟拉一次新闻 (兼顾盘后政策 / 海外消息)
@@ -104,10 +117,14 @@ celery.conf.beat_schedule = {
         "task": "app.tasks.prewarm.prewarm_news_brief",
         "schedule": crontab(hour=15, minute=55, day_of_week="1-5"),
     },
-    # 季报股东快照——每季度公告期密集出现, 每月 1 号扫一次最新可用季度
+    # 季报股东快照——每天 20:00 扫一次(命中即跳过, 成本低), 月 1 号 20:30 兜底
     "quarterly-holder-pipeline": {
         "task": "app.tasks.quarterly.run_quarterly_holder_task",
-        "schedule": crontab(hour=20, minute=0, day_of_month="1"),
+        "schedule": crontab(hour=20, minute=0, day_of_week="1-5"),
+    },
+    "quarterly-holder-monthly-fallback": {
+        "task": "app.tasks.quarterly.run_quarterly_holder_task",
+        "schedule": crontab(hour=20, minute=30, day_of_month="1"),
     },
     # 主力身份 brief 预热: 季报变化慢, 每天 16:10 跑一次即可
     "prewarm-institutional-brief": {
@@ -146,10 +163,47 @@ celery.conf.beat_schedule = {
         "task": "app.tasks.prewarm.prewarm_swing_brief",
         "schedule": crontab(hour=18, minute=0, day_of_week="1-5"),
     },
-    # 长线 brief 预热: 每周一 19:00, 跑总市值 top 200 中 PE 分位 <50% 的股 (capped 50)
-    "prewarm-long-term-brief-weekly": {
+    # 长线 brief 预热: 改为每日 19:00 跑 universe (PG TTL 7d, 命中即跳过)
+    "prewarm-long-term-brief-daily": {
         "task": "app.tasks.prewarm.prewarm_long_term_brief",
-        "schedule": crontab(hour=19, minute=0, day_of_week="1"),
+        "schedule": crontab(hour=19, minute=0, day_of_week="1-5"),
+    },
+    # === 外部数据 (akshare / adapter) 定时拉到 redis, API 只读 ===
+    # 盘中 9-14 每 5min: 主力资金流 + 人气概念
+    "external-fund-flow-5min-morning": {
+        "task": "app.tasks.external_pull.pull_fund_flow",
+        "schedule": crontab(minute="*/5", hour="9-11", day_of_week="1-5"),
+    },
+    "external-fund-flow-5min-afternoon": {
+        "task": "app.tasks.external_pull.pull_fund_flow",
+        "schedule": crontab(minute="*/5", hour="13-14", day_of_week="1-5"),
+    },
+    "external-hot-concept-5min-morning": {
+        "task": "app.tasks.external_pull.pull_hot_concept",
+        "schedule": crontab(minute="*/5", hour="9-11", day_of_week="1-5"),
+    },
+    "external-hot-concept-5min-afternoon": {
+        "task": "app.tasks.external_pull.pull_hot_concept",
+        "schedule": crontab(minute="*/5", hour="13-14", day_of_week="1-5"),
+    },
+    # 盘前 9:25 + 盘后 15:30: 板块列表 (概念 + 行业)
+    "external-all-boards-premarket": {
+        "task": "app.tasks.external_pull.pull_all_boards",
+        "schedule": crontab(hour=9, minute=25, day_of_week="1-5"),
+    },
+    "external-all-boards-postclose": {
+        "task": "app.tasks.external_pull.pull_all_boards",
+        "schedule": crontab(hour=15, minute=30, day_of_week="1-5"),
+    },
+    # 盘后 16:30: 当日 top 30 题材 theme-detail 成分预拉 (与 daily/lhb/verify 错峰)
+    "external-theme-detail-postclose": {
+        "task": "app.tasks.external_pull.pull_theme_detail",
+        "schedule": crontab(hour=16, minute=30, day_of_week="1-5"),
+    },
+    # === Per-user 夜间预热 21:00: 活跃用户自选股 brief 全量预热 ===
+    "peruser-nightly-prewarm": {
+        "task": "app.tasks.peruser_prewarm.prewarm_active_users",
+        "schedule": crontab(hour=21, minute=0, day_of_week="1-5"),
     },
 }
 celery.conf.timezone = "Asia/Shanghai"

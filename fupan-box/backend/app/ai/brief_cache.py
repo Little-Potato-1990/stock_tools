@@ -23,7 +23,7 @@ import time
 from datetime import date as date_type, datetime, timedelta
 from typing import Any, Awaitable, Callable
 
-from sqlalchemy import create_engine, select, update, delete, func, case
+from sqlalchemy import create_engine, select, delete, func, case
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
 
@@ -59,6 +59,11 @@ def _engine():
 
 
 def pg_get(key: str, now: datetime | None = None) -> dict | None:
+    """读 PG cache, 命中时把 __cache_meta__ (generated_at / source / hit_count)
+    注入到返回内容, 供前端展示"上次预热时间"。
+
+    __cache_meta__ 不写回库, 只在读取时合成, 避免重复叠加.
+    """
     now = now or datetime.now()
     eng = _engine()
     try:
@@ -72,7 +77,18 @@ def pg_get(key: str, now: datetime | None = None) -> dict | None:
                 return None
             row.hit_count = (row.hit_count or 0) + 1
             session.commit()
-            return row.content
+            content = row.content
+            if isinstance(content, dict):
+                out = dict(content)
+                out["__cache_meta__"] = {
+                    "generated_at": row.generated_at.isoformat() if row.generated_at else None,
+                    "expires_at": row.expires_at.isoformat() if row.expires_at else None,
+                    "source": row.source,
+                    "hit_count": int(row.hit_count or 0),
+                    "cache_key": key,
+                }
+                return out
+            return content
     finally:
         eng.dispose()
 
@@ -92,6 +108,9 @@ def pg_set(
             content = dict(content)
         except Exception:
             content = {"raw": json.dumps(content, ensure_ascii=False, default=str)}
+
+    # 剥掉读取时注入的 meta, 避免回写时重复叠加
+    content = {k: v for k, v in content.items() if k != "__cache_meta__"}
 
     now = datetime.now()
     expires = now + timedelta(hours=ttl_hours)
@@ -241,8 +260,8 @@ async def cached_brief(
 # ============== 同步包装 (celery worker 用, 用 asyncio.run) ==============
 def sync_run_async(coro):
     """让 sync celery worker 跑异步 fn. 起独立 loop 不会和 fastapi 冲突."""
+    loop = asyncio.new_event_loop()
     try:
-        loop = asyncio.new_event_loop()
         return loop.run_until_complete(coro)
     finally:
         try:

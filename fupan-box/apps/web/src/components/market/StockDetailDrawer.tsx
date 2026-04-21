@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { X, ExternalLink, Star, Zap } from "lucide-react";
+import { X, ExternalLink, Star, Zap, Search } from "lucide-react";
 import { api } from "@/lib/api";
 import { getCellColor } from "@/lib/colorScale";
 import { useUIStore } from "@/stores/ui-store";
@@ -39,6 +39,9 @@ export function StockDetailDrawer({ stockCode, onClose }: Props) {
   const [loading, setLoading] = useState(false);
   const [isWatchlisted, setIsWatchlisted] = useState(false);
   const openWhyRose = useUIStore((s) => s.openWhyRose);
+  const setActiveModule = useUIStore((s) => s.setActiveModule);
+  const setFocusedStock = useUIStore((s) => s.setFocusedStock);
+  const pushInteraction = useUIStore((s) => s.pushInteraction);
 
   const fetchDetail = useCallback(async (code: string) => {
     setLoading(true);
@@ -109,6 +112,30 @@ export function StockDetailDrawer({ stockCode, onClose }: Props) {
             </span>
           </div>
           <div className="flex items-center gap-1 flex-shrink-0">
+            <button
+              onClick={() => {
+                if (!stockCode) return;
+                setFocusedStock({ code: stockCode, name: detail?.stock_name });
+                pushInteraction({
+                  kind: "stock",
+                  key: stockCode,
+                  label: detail?.stock_name,
+                });
+                setActiveModule("midlong");
+                onClose();
+              }}
+              className="flex items-center gap-0.5 px-1.5 py-1 rounded transition-colors"
+              style={{
+                color: "var(--accent-orange)",
+                fontSize: 10,
+                background: "rgba(245,158,11,0.12)",
+                border: "1px solid rgba(245,158,11,0.32)",
+              }}
+              title="去「个股深度」工作台看短中长全维度"
+            >
+              <Search size={11} />
+              个股深度
+            </button>
             <button
               onClick={() => stockCode && openWhyRose(stockCode, detail?.stock_name)}
               className="flex items-center gap-0.5 px-1.5 py-1 rounded transition-colors"

@@ -20,7 +20,7 @@ import logging
 from datetime import date as date_type
 from typing import Any
 
-from sqlalchemy import create_engine, select, desc
+from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
 
 from app.config import get_settings
@@ -29,6 +29,7 @@ from app.ai.brief_generator import generate_brief, _latest_trade_date_with_data
 from app.ai.capital_brief import generate_capital_brief
 from app.ai.institutional_brief import generate_institutional_brief
 from app.ai.ladder_brief import generate_ladder_brief
+from app.ai.lhb_brief import generate_lhb_brief
 from app.ai.long_term_brief import generate_long_term_brief
 from app.ai.multi_perspective import generate_multi_perspective
 from app.ai.news_brief import generate_news_brief
@@ -38,9 +39,8 @@ from app.ai.theme_brief import generate_theme_brief
 from app.ai.why_rose import generate_why_rose
 from app.ai.debate import run_debate
 from app.models.market import LimitUpRecord
-from app.models.stock import DailyQuote
 from app.models.snapshot import DailySnapshot
-from app.models.valuation import StockValuationDaily
+from app.services.universe_resolver import resolve_prewarm_universe
 
 logger = logging.getLogger(__name__)
 
@@ -156,45 +156,8 @@ async def prewarm_institutional_brief(
 
 
 def _pick_why_rose_targets(trade_date: date_type, max_per_dir: int = 30) -> list[str]:
-    """挑选当日预热目标:
-    - 全部涨停股
-    - 跌幅 top N (重点关注闪崩股)
-    - 涨幅前 N 但未涨停 (强势股次日预期)
-    """
-    settings = get_settings()
-    eng = create_engine(settings.database_url_sync, pool_pre_ping=True)
-    codes: set[str] = set()
-    try:
-        with Session(eng) as s:
-            lu_rows = s.execute(
-                select(LimitUpRecord.stock_code).where(LimitUpRecord.trade_date == trade_date)
-            ).scalars().all()
-            codes.update(c for c in lu_rows if c)
-
-            top_gain = s.execute(
-                select(DailyQuote.stock_code)
-                .where(
-                    DailyQuote.trade_date == trade_date,
-                    DailyQuote.change_pct.isnot(None),
-                )
-                .order_by(desc(DailyQuote.change_pct))
-                .limit(max_per_dir)
-            ).scalars().all()
-            codes.update(top_gain)
-
-            top_loss = s.execute(
-                select(DailyQuote.stock_code)
-                .where(
-                    DailyQuote.trade_date == trade_date,
-                    DailyQuote.change_pct.isnot(None),
-                )
-                .order_by(DailyQuote.change_pct)
-                .limit(max_per_dir)
-            ).scalars().all()
-            codes.update(top_loss)
-    finally:
-        eng.dispose()
-    return sorted(codes)
+    """legacy 兼容入口 — 现统一走 universe_resolver. max_per_dir 已无意义, 仅保留签名."""
+    return sorted(resolve_prewarm_universe(trade_date))
 
 
 async def prewarm_why_rose(
@@ -206,7 +169,7 @@ async def prewarm_why_rose(
     td = resolve_trade_date(trade_date)
     if not td:
         return {"status": "no_trade_date"}
-    codes = _pick_why_rose_targets(td, max_per_dir)
+    codes = sorted(resolve_prewarm_universe(td))
     if not codes:
         return {"trade_date": td.isoformat(), "targets": 0, "results": []}
 
@@ -247,7 +210,8 @@ def _pick_debate_themes(trade_date: date_type, top_n: int = 10) -> list[str]:
                 )
             ).scalar_one_or_none()
             if snap and snap.data:
-                rows = snap.data.get("themes") or snap.data.get("ranking") or []
+                # runner.py 写入键为 top/bottom (按 change_pct desc)
+                rows = snap.data.get("top") or snap.data.get("themes") or snap.data.get("ranking") or []
                 if isinstance(rows, list):
                     for r in rows[:top_n]:
                         name = r.get("name") if isinstance(r, dict) else None
@@ -273,7 +237,14 @@ async def prewarm_debate(
     model: str = DEFAULT_MODEL,
     top_n_themes: int = 10,
     concurrency: int = 3,
+    include_stocks: bool = True,
+    stock_concurrency: int = 2,
 ) -> dict[str, Any]:
+    """大盘 debate × 1 + top_n_themes 题材 debate + universe 个股 debate (可选).
+
+    - 个股 debate token 较多, 单独 stock_concurrency 控速.
+    - PG TTL 24h, 重复跑命中 skipped_cached.
+    """
     td = resolve_trade_date(trade_date)
     if not td:
         return {"status": "no_trade_date"}
@@ -301,13 +272,30 @@ async def prewarm_debate(
 
     market_res = await _market()
     theme_results = await asyncio.gather(*[_theme(t) for t in themes])
+
+    stock_results: list[dict] = []
+    if include_stocks:
+        codes = sorted(resolve_prewarm_universe(td))
+        stock_sem = asyncio.Semaphore(stock_concurrency)
+
+        async def _stock(code: str):
+            async with stock_sem:
+                return await _gen_and_cache(
+                    f"debate:stock:{code}:{td_s}:{model}",
+                    lambda: run_debate("stock", code, td, model),
+                    action="debate", model=model, trade_date=td,
+                )
+
+        stock_results = await asyncio.gather(*[_stock(c) for c in codes])
+
     summary = {"ok": 0, "skipped_cached": 0, "error": 0}
-    for r in [market_res, *theme_results]:
+    for r in [market_res, *theme_results, *stock_results]:
         st = r.get("status", "error")
         summary[st if st in summary else "error"] = summary.get(st, 0) + 1
     return {
         "trade_date": td_s,
         "themes": themes,
+        "stock_targets": len(stock_results),
         "summary": summary,
         "market": market_res,
     }
@@ -326,76 +314,19 @@ PG_TTL_H_LONG = 24.0 * 7  # 7 天
 def _pick_multi_perspective_targets(
     trade_date: date_type, max_n: int = 50,
 ) -> list[str]:
-    """挑预热目标: 当日涨停 + 主力流入 top + 跌幅 top, 去重 capped 50."""
-    settings = get_settings()
-    eng = create_engine(settings.database_url_sync, pool_pre_ping=True)
-    codes: set[str] = set()
-    try:
-        with Session(eng) as s:
-            lu = s.execute(
-                select(LimitUpRecord.stock_code).where(LimitUpRecord.trade_date == trade_date)
-            ).scalars().all()
-            codes.update(c for c in lu if c)
-
-            top_gain = s.execute(
-                select(DailyQuote.stock_code)
-                .where(
-                    DailyQuote.trade_date == trade_date,
-                    DailyQuote.change_pct.isnot(None),
-                )
-                .order_by(desc(DailyQuote.change_pct))
-                .limit(max_n)
-            ).scalars().all()
-            codes.update(top_gain)
-
-            top_amount = s.execute(
-                select(DailyQuote.stock_code)
-                .where(
-                    DailyQuote.trade_date == trade_date,
-                    DailyQuote.amount.isnot(None),
-                )
-                .order_by(desc(DailyQuote.amount))
-                .limit(max_n)
-            ).scalars().all()
-            codes.update(top_amount)
-    finally:
-        eng.dispose()
-    return sorted(codes)[:max_n]
+    """legacy 入口 — 现统一走 universe_resolver. max_n 仅兜底截断."""
+    codes = sorted(resolve_prewarm_universe(trade_date))
+    if max_n and len(codes) > max_n * 40:  # 仅极端情况下软截断
+        return codes[: max_n * 40]
+    return codes
 
 
 def _pick_long_term_targets(trade_date: date_type, max_n: int = 50) -> list[str]:
-    """长线预热: 总市值 top 200 中 PE 5y 分位 < 0.5 或 ROE 5Y > 12 的股票, capped."""
-    settings = get_settings()
-    eng = create_engine(settings.database_url_sync, pool_pre_ping=True)
-    codes: list[str] = []
-    try:
-        with Session(eng) as s:
-            rows = s.execute(
-                select(StockValuationDaily.stock_code, StockValuationDaily.total_mv)
-                .where(
-                    StockValuationDaily.trade_date == trade_date,
-                    StockValuationDaily.total_mv.isnot(None),
-                )
-                .order_by(desc(StockValuationDaily.total_mv))
-                .limit(200)
-            ).all()
-            top_mv = [c for c, _ in rows]
-
-            sub = s.execute(
-                select(StockValuationDaily.stock_code)
-                .where(
-                    StockValuationDaily.trade_date == trade_date,
-                    StockValuationDaily.stock_code.in_(top_mv),
-                    StockValuationDaily.pe_pct_5y.isnot(None),
-                    StockValuationDaily.pe_pct_5y < 0.5,
-                )
-                .order_by(StockValuationDaily.pe_pct_5y)
-                .limit(max_n)
-            ).scalars().all()
-            codes = list(sub)
-    finally:
-        eng.dispose()
-    return codes[:max_n]
+    """legacy 入口 — 现统一走 universe_resolver."""
+    codes = sorted(resolve_prewarm_universe(trade_date))
+    if max_n and len(codes) > max_n * 40:
+        return codes[: max_n * 40]
+    return codes
 
 
 async def prewarm_multi_perspective(
@@ -407,7 +338,7 @@ async def prewarm_multi_perspective(
     td = resolve_trade_date(trade_date)
     if not td:
         return {"status": "no_trade_date"}
-    codes = _pick_multi_perspective_targets(td, max_n)
+    codes = sorted(resolve_prewarm_universe(td))
     if not codes:
         return {"trade_date": td.isoformat(), "targets": 0, "results": []}
 
@@ -448,7 +379,7 @@ async def prewarm_swing_brief(
     td = resolve_trade_date(trade_date)
     if not td:
         return {"status": "no_trade_date"}
-    codes = _pick_multi_perspective_targets(td, max_n)
+    codes = sorted(resolve_prewarm_universe(td))
     if not codes:
         return {"trade_date": td.isoformat(), "targets": 0, "results": []}
 
@@ -479,7 +410,7 @@ async def prewarm_long_term_brief(
     td = resolve_trade_date(trade_date)
     if not td:
         return {"status": "no_trade_date"}
-    codes = _pick_long_term_targets(td, max_n)
+    codes = sorted(resolve_prewarm_universe(td))
     if not codes:
         return {"trade_date": td.isoformat(), "targets": 0, "results": []}
 
@@ -509,3 +440,92 @@ async def prewarm_long_term_brief(
         st = r.get("status", "error")
         summary[st if st in summary else "error"] = summary.get(st, 0) + 1
     return {"trade_date": td.isoformat(), "targets": len(codes), "summary": summary}
+
+
+# ============================================================
+# 新增: LHB brief 预热
+# ============================================================
+
+async def prewarm_lhb_brief(
+    trade_date: date_type | None, model: str = DEFAULT_MODEL,
+) -> dict[str, Any]:
+    """龙虎榜 AI 拆解 brief 预热. 每天一次, 和其他大盘 brief 并列."""
+    td = resolve_trade_date(trade_date)
+    if not td:
+        return {"status": "no_trade_date"}
+    td_s = _td_str(td)
+    key = f"lhb_brief:{td_s}:{model}"
+    return await _gen_and_cache(
+        key,
+        lambda: generate_lhb_brief(td, model),
+        action="lhb_brief", model=model, trade_date=td,
+    )
+
+
+# ============================================================
+# 新增: 个股 7 维 context 预热 (落 PG, 24h TTL)
+# ============================================================
+
+_CONTEXT_TTL_H = 24.0
+
+
+async def _generate_stock_context_for_cache(code: str, td: date_type) -> dict:
+    """独立的 async engine + AsyncSession 拉 context, 不复用 FastAPI request scope."""
+    from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
+    from app.services.stock_context import get_stock_context
+
+    settings = get_settings()
+    eng = create_async_engine(settings.database_url, pool_pre_ping=True)
+    try:
+        maker = async_sessionmaker(eng, expire_on_commit=False)
+        async with maker() as session:
+            ctx = await get_stock_context(session, code, trade_date=td)
+            return ctx if isinstance(ctx, dict) else {"code": code, "raw": ctx}
+    finally:
+        await eng.dispose()
+
+
+async def prewarm_stock_context(
+    trade_date: date_type | None,
+    model: str = DEFAULT_MODEL,  # 保留签名一致, context 本身不涉及 LLM
+    concurrency: int = 8,
+) -> dict[str, Any]:
+    """对预热白名单跑一遍 stock_context, 结果 dump 到 brief_cache PG 24h.
+
+    cache_key 形如 `stock_context:600519:2026-04-21`, 不含 model (与 LLM 无关).
+    API 读取时需用同一 key 规则.
+    """
+    td = resolve_trade_date(trade_date)
+    if not td:
+        return {"status": "no_trade_date"}
+    codes = sorted(resolve_prewarm_universe(td))
+    if not codes:
+        return {"trade_date": td.isoformat(), "targets": 0, "results": []}
+
+    sem = asyncio.Semaphore(concurrency)
+
+    async def _one(code: str):
+        async with sem:
+            key = f"stock_context:{code}:{td.isoformat()}"
+            try:
+                ctx = await _generate_stock_context_for_cache(code, td)
+                await asyncio.to_thread(
+                    pg_set, key, ctx,
+                    action="stock_context", model=None, trade_date=td,
+                    ttl_hours=_CONTEXT_TTL_H, source="prewarm",
+                )
+                return {"key": key, "status": "ok"}
+            except Exception as e:
+                logger.warning(f"prewarm stock_context {code} fail: {e}")
+                return {"key": key, "status": "error", "error": str(e)[:120]}
+
+    results = await asyncio.gather(*[_one(c) for c in codes])
+    summary = {"ok": 0, "error": 0}
+    for r in results:
+        st = r.get("status", "error")
+        summary[st if st in summary else "error"] = summary.get(st, 0) + 1
+    return {
+        "trade_date": td.isoformat(),
+        "targets": len(codes),
+        "summary": summary,
+    }

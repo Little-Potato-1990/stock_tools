@@ -15,9 +15,8 @@ import time
 from collections import defaultdict
 from datetime import date, datetime, timedelta
 from statistics import mean, median
-from typing import Iterable
 
-from sqlalchemy import create_engine, delete, select, func, text
+from sqlalchemy import create_engine, select, func, text
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
 
@@ -93,23 +92,59 @@ def run_fundamentals_pipeline(
         total_fc = 0
         failed = 0
 
-        # 1.1 fina_indicator (按股拉, 慢)
+        # 1.1 fina_indicator + income + cashflow 三接口合并 (按股拉, 慢)
         for i, code in enumerate(codes, 1):
             try:
-                rows = adapter.fetch_fina_indicator(code, start_period=start_period, end_period=end_period)
-                if rows:
-                    stmt = pg_insert(StockFundamentalsQuarterly).values(rows)
-                    stmt = stmt.on_conflict_do_update(
-                        constraint="uq_fund_quarterly",
-                        set_={
-                            c.name: stmt.excluded[c.name]
-                            for c in StockFundamentalsQuarterly.__table__.columns
-                            if c.name not in ("id", "created_at", "stock_code", "report_date")
-                        },
+                rows = adapter.fetch_fina_indicator(
+                    code, start_period=start_period, end_period=end_period
+                )
+                if not rows:
+                    time.sleep(_INTERFACE_INTERVAL)
+                    continue
+
+                # income 补 revenue / net_profit 绝对值
+                try:
+                    inc_rows = adapter.fetch_income(
+                        code, start_period=start_period, end_period=end_period
                     )
-                    s.execute(stmt)
-                    s.commit()
-                    total_fund += len(rows)
+                    inc_map = {r["report_date"]: r for r in inc_rows}
+                except Exception as e:
+                    inc_map = {}
+                    logger.warning(f"income {code}: {e}")
+                time.sleep(_INTERFACE_INTERVAL)
+
+                # cashflow 补 cash_flow_op 绝对值
+                try:
+                    cf_rows = adapter.fetch_cashflow(
+                        code, start_period=start_period, end_period=end_period
+                    )
+                    cf_map = {r["report_date"]: r for r in cf_rows}
+                except Exception as e:
+                    cf_map = {}
+                    logger.warning(f"cashflow {code}: {e}")
+                time.sleep(_INTERFACE_INTERVAL)
+
+                # merge
+                for r in rows:
+                    rd = r["report_date"]
+                    if rd in inc_map:
+                        r["revenue"] = inc_map[rd].get("revenue")
+                        r["net_profit"] = inc_map[rd].get("net_profit")
+                    if rd in cf_map:
+                        r["cash_flow_op"] = cf_map[rd].get("cash_flow_op")
+
+                stmt = pg_insert(StockFundamentalsQuarterly).values(rows)
+                stmt = stmt.on_conflict_do_update(
+                    constraint="uq_fund_quarterly",
+                    set_={
+                        c.name: stmt.excluded[c.name]
+                        for c in StockFundamentalsQuarterly.__table__.columns
+                        if c.name not in ("id", "created_at", "stock_code", "report_date")
+                    },
+                )
+                s.execute(stmt)
+                s.commit()
+                total_fund += len(rows)
                 if i % 50 == 0:
                     logger.info(f"fundamentals {i}/{len(codes)}: +{total_fund} rows")
                 time.sleep(_INTERFACE_INTERVAL)

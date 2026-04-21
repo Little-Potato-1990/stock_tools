@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 class AKShareAdapter(DataSourceAdapter):
 
     def fetch_daily_quotes(self, trade_date: date) -> list[RawDailyQuote]:
-        date_str = trade_date.strftime("%Y%m%d")
+        # ak.stock_zh_a_spot_em 是当日实时, 不接受 trade_date; 调用方会用 trade_date 入库.
         try:
             df = ak.stock_zh_a_spot_em()
         except Exception:
@@ -287,8 +287,7 @@ class AKShareAdapter(DataSourceAdapter):
         return out
 
     def fetch_north_hold(self, trade_date: date, top: int = 200) -> list[dict]:
-        """北向资金个股持股 Top N (按持股市值排序)."""
-        date_str = trade_date.strftime("%Y%m%d")
+        """北向资金个股持股 Top N (按持股市值排序). trade_date 仅用于调用方入库标识."""
         candidates = [
             ("stock_hsgt_hold_stock_em", {"market": "北向", "indicator": "今日排行"}),
             ("stock_hsgt_hold_stock_em", {"market": "北向", "indicator": "5日排行"}),
@@ -412,8 +411,8 @@ class AKShareAdapter(DataSourceAdapter):
                 continue
         return out
 
-    def fetch_etf_spot(self) -> list[dict]:
-        """ETF 实时行情(基础数据, 由 pipeline 后续根据份额变化计算净申购)."""
+    def fetch_etf_spot(self, trade_date: date | None = None) -> list[dict]:
+        """ETF 实时行情(akshare 仅支持实时盘口, trade_date 仅作签名对齐用)."""
         try:
             df = ak.fund_etf_spot_em()
         except Exception as e:

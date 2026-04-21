@@ -24,7 +24,7 @@ import logging
 from datetime import date, datetime
 from typing import Any
 
-from sqlalchemy import create_engine, select, func
+from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
 
 from app.ai.brief_generator import _call_llm, _latest_trade_date_with_data

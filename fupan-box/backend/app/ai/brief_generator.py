@@ -912,7 +912,7 @@ async def generate_brief(
     }
 
     if not overview:
-        regime, regime_label = "consensus", "无数据"
+        regime_label = "无数据"
         base_brief["tagline"] = f"{trade_date.isoformat()} 暂无市场数据，请先运行数据管线"
         base_brief["regime_label"] = regime_label
         return base_brief

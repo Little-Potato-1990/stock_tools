@@ -10,7 +10,7 @@ import logging
 from datetime import date, datetime, timedelta
 from typing import Any
 
-from sqlalchemy import create_engine, func, select
+from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
 
 from app.config import get_settings
@@ -19,7 +19,10 @@ from app.models.ai import AIBriefFeedback
 logger = logging.getLogger(__name__)
 
 
-_VALID_KINDS = {"today", "sentiment", "theme", "ladder", "lhb", "news"}
+_VALID_KINDS = {
+    "today", "sentiment", "theme", "ladder", "lhb", "news",
+    "capital", "institutional",
+}
 
 
 def _engine():

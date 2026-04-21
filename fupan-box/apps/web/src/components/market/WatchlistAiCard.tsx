@@ -5,6 +5,7 @@ import { Sparkles, RotateCcw, Loader2 } from "lucide-react";
 import { api } from "@/lib/api";
 import { AiCardFooter } from "./AiCardChrome";
 import { EvidenceBadge } from "./EvidenceBadge";
+import { getCacheMeta } from "./CacheMetaBadge";
 
 type WatchlistBrief = Awaited<ReturnType<typeof api.getWatchlistBrief>>;
 
@@ -146,6 +147,7 @@ export function WatchlistAiCard({ itemCount }: Props) {
             tradeDate={data.trade_date}
             model={data.model}
             snapshot={{ headline: data.headline, focus: data.focus, evidence: data.evidence }}
+            cacheMeta={getCacheMeta(data)}
           />
         </>
       )}

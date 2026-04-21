@@ -50,7 +50,7 @@ export function FeedbackThumbs({
     setState("submitting");
     setErrMsg(null);
     try {
-      await api.postFeedback({
+      const res = (await api.postFeedback({
         brief_kind: kind,
         trade_date: tradeDate,
         rating,
@@ -58,7 +58,12 @@ export function FeedbackThumbs({
         reason: extra?.reason ?? reason ?? null,
         evidence_correct: extra?.evidence_correct ?? evidenceCorrect ?? null,
         snapshot: snapshot ?? null,
-      });
+      })) as { ok?: boolean; error?: string } | undefined;
+      if (res && res.ok === false) {
+        setState("error");
+        setErrMsg(res.error || "submit failed");
+        return;
+      }
       setState("ok");
     } catch (e) {
       setState("error");

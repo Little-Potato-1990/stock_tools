@@ -17,13 +17,21 @@ export type NavModule =
   | "capital"
   | "midlong"
   | "lhb"
-  | "search"
   | "news"
   | "watchlist"
   | "plans"
   | "ai_track"
   | "my_review"
   | "account";
+
+/**
+ * 兼容老书签 / 老 URL: 旧的 "search" 模块已并入 "midlong"
+ * (重命名为「个股深度」). 此函数把任意字符串归一到合法 NavModule.
+ */
+export function normalizeNavModule(m: string): NavModule {
+  if (m === "search") return "midlong";
+  return m as NavModule;
+}
 
 /** 浮动徽章里展示的股票 (用户最近聚焦的) */
 interface FocusedStock {
@@ -154,7 +162,7 @@ const getStoredAiStyle = (): AiDensity => {
 
 export const useUIStore = create<UIState>((set) => ({
   activeModule: "today",
-  setActiveModule: (m) => set({ activeModule: m }),
+  setActiveModule: (m) => set({ activeModule: normalizeNavModule(m) }),
 
   lhbScope: "daily",
   setLhbScope: (s) => set({ lhbScope: s }),

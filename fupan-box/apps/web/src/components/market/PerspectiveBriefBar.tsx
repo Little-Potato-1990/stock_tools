@@ -14,6 +14,7 @@ import { useEffect, useState, useCallback } from "react";
 import { Sparkles, ChevronRight, RefreshCw, Telescope, Activity, Waves } from "lucide-react";
 import { api } from "@/lib/api";
 import { useUIStore } from "@/stores/ui-store";
+import { CacheMetaBadge, getCacheMeta } from "./CacheMetaBadge";
 
 type MultiPerspective = Awaited<ReturnType<typeof api.getMultiPerspectiveBrief>>;
 type SwingBrief = Awaited<ReturnType<typeof api.getSwingBrief>>;
@@ -222,6 +223,11 @@ export function PerspectiveBriefBar({ stockCode, stockName, onOpenShortDetail }:
             {current.evidence && current.evidence.length > 0 && (
               <span>· 关键证据 {current.evidence.length} 条</span>
             )}
+            {getCacheMeta(data) && (
+              <span className="ml-auto">
+                <CacheMetaBadge meta={getCacheMeta(data)} />
+              </span>
+            )}
           </div>
 
           {/* 波段视角的 inline 展开 */}
@@ -259,8 +265,13 @@ export function PerspectiveBriefBar({ stockCode, stockName, onOpenShortDetail }:
                       </ul>
                     </div>
                   </div>
-                  <div className="mt-1.5 text-xs" style={{ color: "var(--text-muted)" }}>
-                    建议持有: {swingDetail.time_horizon}
+                  <div className="mt-1.5 text-xs flex items-center gap-2" style={{ color: "var(--text-muted)" }}>
+                    <span>建议持有: {swingDetail.time_horizon}</span>
+                    {getCacheMeta(swingDetail) && (
+                      <span className="ml-auto">
+                        <CacheMetaBadge meta={getCacheMeta(swingDetail)} />
+                      </span>
+                    )}
                   </div>
                 </>
               ) : (

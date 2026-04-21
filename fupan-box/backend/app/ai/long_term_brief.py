@@ -202,7 +202,6 @@ def _heuristic_brief(ctx: dict[str, Any]) -> dict[str, Any]:
     funds = ctx.get("fundamentals_recent_8q") or []
 
     pe_pct = val.get("pe_pct_5y")
-    pb_pct = val.get("pb_pct_5y")
     roe5y = ctx.get("roe_avg_5y")
 
     if pe_pct is not None:

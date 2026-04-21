@@ -37,7 +37,7 @@ from __future__ import annotations
 import json
 import logging
 from collections import Counter
-from datetime import date, datetime, timedelta
+from datetime import date, datetime
 from typing import Any
 
 from app.ai.brief_generator import _call_llm, _latest_trade_date_with_data

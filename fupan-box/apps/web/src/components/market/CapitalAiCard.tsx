@@ -1,10 +1,11 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Sparkles, RefreshCw, TrendingUp, TrendingDown, Activity } from "lucide-react";
+import { Sparkles, RefreshCw, TrendingUp, Activity } from "lucide-react";
 import { api } from "@/lib/api";
 import { AiCardError, AiCardFooter, AiCardLoading } from "./AiCardChrome";
 import { AiActionBar } from "./AiActionBar";
+import { getCacheMeta } from "./CacheMetaBadge";
 
 interface CapitalBrief {
   trade_date: string;
@@ -203,6 +204,7 @@ export function CapitalAiCard({ hero = false }: { hero?: boolean } = {}) {
         tradeDate={data.trade_date}
         model={data.model}
         snapshot={{ headline: data.headline, stance: data.stance, evidence: data.evidence }}
+        cacheMeta={getCacheMeta(data)}
       />
     </div>
   );

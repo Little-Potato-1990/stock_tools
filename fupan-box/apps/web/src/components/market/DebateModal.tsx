@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import { useUIStore } from "@/stores/ui-store";
 import { api } from "@/lib/api";
+import { CacheMetaBadge, getCacheMeta } from "./CacheMetaBadge";
 
 type Debate = Awaited<ReturnType<typeof api.getDebate>>;
 
@@ -297,9 +298,14 @@ export function DebateModal() {
             borderTop: "1px solid var(--border-color)",
           }}
         >
-          <div style={{ fontSize: 10, color: "var(--text-muted)" }}>
-            {data?.model && `模型: ${data.model}`}
-            {data?.trade_date && ` · ${data.trade_date}`}
+          <div className="flex items-center gap-2" style={{ fontSize: 10, color: "var(--text-muted)" }}>
+            <span>
+              {data?.model && `模型: ${data.model}`}
+              {data?.trade_date && ` · ${data.trade_date}`}
+            </span>
+            {getCacheMeta(data) && (
+              <CacheMetaBadge meta={getCacheMeta(data)} />
+            )}
           </div>
           <div className="flex items-center gap-1.5">
             <button

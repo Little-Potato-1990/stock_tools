@@ -707,43 +707,49 @@ class ApiClient {
     );
   }
 
-  getCapitalNorthHolds(tradeDate?: string, limit = 50) {
-    const params = new URLSearchParams({ limit: String(limit) });
+  getCapitalNorthHolds(tradeDate?: string, top = 50) {
+    const params = new URLSearchParams({ top: String(top) });
     if (tradeDate) params.set("trade_date", tradeDate);
     return this.get<{ items: Array<Record<string, unknown>> }>(
       `/api/market/capital/north/holds?${params}`,
     );
   }
 
-  getCapitalConcept(tradeDate?: string, limit = 30) {
-    const params = new URLSearchParams({ limit: String(limit) });
+  getCapitalConcept(tradeDate?: string, top = 30) {
+    const params = new URLSearchParams({ top: String(top) });
     if (tradeDate) params.set("trade_date", tradeDate);
     return this.get<{ items: Array<Record<string, unknown>> }>(
       `/api/market/capital/concept?${params}`,
     );
   }
 
-  getCapitalIndustry(tradeDate?: string, limit = 30) {
-    const params = new URLSearchParams({ limit: String(limit) });
+  getCapitalIndustry(tradeDate?: string, top = 30) {
+    const params = new URLSearchParams({ top: String(top) });
     if (tradeDate) params.set("trade_date", tradeDate);
     return this.get<{ items: Array<Record<string, unknown>> }>(
       `/api/market/capital/industry?${params}`,
     );
   }
 
-  getCapitalStockRank(tradeDate?: string, limit = 50, direction: "in" | "out" = "in") {
-    const params = new URLSearchParams({ limit: String(limit), direction });
+  getCapitalStockRank(
+    tradeDate?: string,
+    top = 50,
+    direction: "inflow" | "outflow" = "inflow",
+  ) {
+    const params = new URLSearchParams({ top: String(top), direction });
     if (tradeDate) params.set("trade_date", tradeDate);
     return this.get<{ items: Array<Record<string, unknown>> }>(
       `/api/market/capital/stock-rank?${params}`,
     );
   }
 
-  getCapitalLimitOrder(tradeDate?: string, by: "theme" | "industry" = "theme") {
-    const params = new URLSearchParams({ by });
+  getCapitalLimitOrder(tradeDate?: string) {
+    // 后端按 (题材+行业) 混合归集, 不区分 by; UI 也只展示一个聚合.
+    const params = new URLSearchParams();
     if (tradeDate) params.set("trade_date", tradeDate);
+    const q = params.toString() ? `?${params}` : "";
     return this.get<{ items: Array<Record<string, unknown>> }>(
-      `/api/market/capital/limit-order?${params}`,
+      `/api/market/capital/limit-order${q}`,
     );
   }
 
@@ -755,16 +761,16 @@ class ApiClient {
     return this.get<{ items: Array<Record<string, unknown>> }>(`/api/market/capital/etf${q}`);
   }
 
-  getCapitalAnnounce(eventType?: string, days = 14, limit = 100) {
-    const params = new URLSearchParams({ days: String(days), limit: String(limit) });
+  getCapitalAnnounce(eventType?: string, days = 14, top = 100) {
+    const params = new URLSearchParams({ days: String(days), top: String(top) });
     if (eventType) params.set("event_type", eventType);
     return this.get<{ items: Array<Record<string, unknown>> }>(
       `/api/market/capital/announce?${params}`,
     );
   }
 
-  getCapitalHolders(reportDate?: string, holderType?: string, limit = 100) {
-    const params = new URLSearchParams({ limit: String(limit) });
+  getCapitalHolders(reportDate?: string, holderType?: string, top = 100) {
+    const params = new URLSearchParams({ top: String(top) });
     if (reportDate) params.set("report_date", reportDate);
     if (holderType) params.set("holder_type", holderType);
     return this.get<{ items: Array<Record<string, unknown>> }>(
@@ -772,9 +778,16 @@ class ApiClient {
     );
   }
 
-  getCapitalMovements(canonicalName?: string, days = 90, limit = 100) {
-    const params = new URLSearchParams({ days: String(days), limit: String(limit) });
-    if (canonicalName) params.set("canonical_name", canonicalName);
+  getCapitalMovements(
+    canonicalName?: string,
+    top = 100,
+    changeType: "new" | "add" | "cut" | "exit" | "unchanged" = "add",
+    reportDate?: string,
+  ) {
+    // 后端按 report_date(季度快照) + canonical/change_type 过滤, 没有 days 概念.
+    const params = new URLSearchParams({ top: String(top), change_type: changeType });
+    if (canonicalName) params.set("canonical", canonicalName);
+    if (reportDate) params.set("report_date", reportDate);
     return this.get<{ items: Array<Record<string, unknown>> }>(
       `/api/market/capital/movements?${params}`,
     );

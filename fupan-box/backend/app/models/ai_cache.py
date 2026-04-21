@@ -13,8 +13,8 @@ cache_key 约定 (各调用方自行拼装, 字符串):
 
 content 是 JSON dict 序列化, 按 fn 实际返回结构.
 """
-from datetime import date as date_type, datetime, timedelta
-from sqlalchemy import String, Integer, Text, Date, DateTime, JSON, Index
+from datetime import date as date_type, datetime
+from sqlalchemy import String, Integer, Date, DateTime, JSON, Index
 from sqlalchemy.orm import Mapped, mapped_column
 from app.database import Base
 

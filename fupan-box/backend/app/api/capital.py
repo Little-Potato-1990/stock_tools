@@ -16,7 +16,7 @@
 """
 from datetime import date, timedelta
 from fastapi import APIRouter, Depends, Query
-from sqlalchemy import select, func, desc, and_, or_
+from sqlalchemy import select, func, desc
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
@@ -24,6 +24,7 @@ from app.models.capital import (
     CapitalFlowDaily, NorthHoldDaily, EtfFlowDaily, AnnouncementEvent,
 )
 from app.models.holder import HolderSnapshotQuarterly
+from app.models.stock import Stock
 from app.api._cache import cached_call
 
 
@@ -48,10 +49,11 @@ async def capital_market(
         .limit(days)
     )
     rows = r.scalars().all()
-    return [
+    items = [
         {"trade_date": x.trade_date.isoformat(), **(x.data or {})}
         for x in rows
     ]
+    return {"items": items, "count": len(items)}
 
 
 # 2. 北向资金当日 + 近 N 日趋势
@@ -67,10 +69,11 @@ async def capital_north(
         .limit(days)
     )
     rows = r.scalars().all()
-    return [
+    items = [
         {"trade_date": x.trade_date.isoformat(), **(x.data or {})}
         for x in rows
     ]
+    return {"items": items, "count": len(items)}
 
 
 # 3. 北向单股持仓 Top
@@ -85,7 +88,7 @@ async def capital_north_holds(
         r = await db.execute(select(func.max(NorthHoldDaily.trade_date)))
         trade_date = r.scalar_one_or_none()
     if not trade_date:
-        return []
+        return {"items": [], "count": 0, "trade_date": None}
 
     if sort == "chg_5d":
         # 取该 date 所有, 加 5 日前持仓做差(简化: 直接按当日 chg_amount)
@@ -102,7 +105,7 @@ async def capital_north_holds(
         .limit(top)
     )
     rows = r.scalars().all()
-    return [
+    items = [
         {
             "trade_date": x.trade_date.isoformat(),
             "stock_code": x.stock_code,
@@ -115,6 +118,11 @@ async def capital_north_holds(
         }
         for x in rows
     ]
+    return {
+        "items": items,
+        "count": len(items),
+        "trade_date": trade_date.isoformat(),
+    }
 
 
 # 4. 概念主力净流入榜
@@ -128,7 +136,7 @@ async def capital_concept(
     if not trade_date:
         trade_date = await _latest_capital_date(db)
     if not trade_date:
-        return []
+        return {"items": [], "count": 0, "trade_date": None}
     r = await db.execute(
         select(CapitalFlowDaily)
         .where(
@@ -142,7 +150,8 @@ async def capital_concept(
         key=lambda d: d.get("main_inflow", 0) or 0,
         reverse=(direction == "inflow"),
     )
-    return items[:top]
+    items = items[:top]
+    return {"items": items, "count": len(items), "trade_date": trade_date.isoformat()}
 
 
 # 5. 行业主力净流入榜
@@ -156,7 +165,7 @@ async def capital_industry(
     if not trade_date:
         trade_date = await _latest_capital_date(db)
     if not trade_date:
-        return []
+        return {"items": [], "count": 0, "trade_date": None}
     r = await db.execute(
         select(CapitalFlowDaily)
         .where(
@@ -170,7 +179,8 @@ async def capital_industry(
         key=lambda d: d.get("main_inflow", 0) or 0,
         reverse=(direction == "inflow"),
     )
-    return items[:top]
+    items = items[:top]
+    return {"items": items, "count": len(items), "trade_date": trade_date.isoformat()}
 
 
 # 6. 个股主力净流入榜 + 多维过滤
@@ -187,7 +197,7 @@ async def capital_stock_rank(
     if not trade_date:
         trade_date = await _latest_capital_date(db)
     if not trade_date:
-        return []
+        return {"items": [], "count": 0, "trade_date": None}
 
     r = await db.execute(
         select(CapitalFlowDaily)
@@ -219,7 +229,8 @@ async def capital_stock_rank(
         key=lambda d: d.get("main_inflow", 0) or 0,
         reverse=(direction == "inflow"),
     )
-    return items[:top]
+    items = items[:top]
+    return {"items": items, "count": len(items), "trade_date": trade_date.isoformat()}
 
 
 # 7. 涨停封单按题材
@@ -231,7 +242,7 @@ async def capital_limit_order(
     if not trade_date:
         trade_date = await _latest_capital_date(db)
     if not trade_date:
-        return []
+        return {"items": [], "count": 0, "trade_date": None}
     r = await db.execute(
         select(CapitalFlowDaily)
         .where(
@@ -243,7 +254,7 @@ async def capital_limit_order(
     rows = r.scalars().all()
     items = [{"theme": x.scope_key, **(x.data or {})} for x in rows]
     items.sort(key=lambda d: d.get("limit_order_total", 0) or 0, reverse=True)
-    return items
+    return {"items": items, "count": len(items), "trade_date": trade_date.isoformat()}
 
 
 # 8. ETF 净申购榜(国家队代理)
@@ -258,14 +269,14 @@ async def capital_etf(
         r = await db.execute(select(func.max(EtfFlowDaily.trade_date)))
         trade_date = r.scalar_one_or_none()
     if not trade_date:
-        return []
+        return {"items": [], "count": 0, "trade_date": None}
     q = select(EtfFlowDaily).where(EtfFlowDaily.trade_date == trade_date)
     if category:
         q = q.where(EtfFlowDaily.category == category)
     q = q.order_by(EtfFlowDaily.inflow_estimate.desc().nullslast()).limit(top)
     r = await db.execute(q)
     rows = r.scalars().all()
-    return [
+    items = [
         {
             "trade_date": x.trade_date.isoformat(),
             "etf_code": x.etf_code,
@@ -280,6 +291,7 @@ async def capital_etf(
         }
         for x in rows
     ]
+    return {"items": items, "count": len(items), "trade_date": trade_date.isoformat()}
 
 
 # 9. 公告事件流
@@ -303,7 +315,7 @@ async def capital_announce(
     q = q.order_by(AnnouncementEvent.trade_date.desc()).limit(top)
     r = await db.execute(q)
     rows = r.scalars().all()
-    return [
+    items = [
         {
             "id": x.id,
             "trade_date": x.trade_date.isoformat(),
@@ -319,6 +331,7 @@ async def capital_announce(
         }
         for x in rows
     ]
+    return {"items": items, "count": len(items)}
 
 
 # 10. 主力持仓追踪——按 canonical_name(汇金 / 社保 / 等)看持仓股票列表
@@ -334,10 +347,12 @@ async def capital_holders(
         r = await db.execute(select(func.max(HolderSnapshotQuarterly.report_date)))
         report_date = r.scalar_one_or_none()
     if not report_date:
-        return []
+        return {"items": [], "count": 0, "report_date": None}
 
-    q = select(HolderSnapshotQuarterly).where(
-        HolderSnapshotQuarterly.report_date == report_date,
+    q = (
+        select(HolderSnapshotQuarterly, Stock.name)
+        .join(Stock, Stock.code == HolderSnapshotQuarterly.stock_code, isouter=True)
+        .where(HolderSnapshotQuarterly.report_date == report_date)
     )
     if canonical:
         q = q.where(HolderSnapshotQuarterly.canonical_name == canonical)
@@ -348,12 +363,12 @@ async def capital_holders(
     q = q.order_by(HolderSnapshotQuarterly.shares_pct.desc().nullslast()).limit(top)
 
     r = await db.execute(q)
-    rows = r.scalars().all()
-    return [
+    rows = r.all()
+    items = [
         {
             "report_date": x.report_date.isoformat(),
             "stock_code": x.stock_code,
-            "stock_name": x.stock_name,
+            "stock_name": x.stock_name or stock_name,
             "holder_name": x.holder_name,
             "canonical_name": x.canonical_name,
             "holder_type": x.holder_type,
@@ -365,8 +380,9 @@ async def capital_holders(
             "change_shares": x.change_shares,
             "change_type": x.change_type,
         }
-        for x in rows
+        for x, stock_name in rows
     ]
+    return {"items": items, "count": len(items), "report_date": report_date.isoformat()}
 
 
 # 11. 主力身份动向汇总——本季度 vs 上季度变动
@@ -383,11 +399,15 @@ async def capital_movements(
         r = await db.execute(select(func.max(HolderSnapshotQuarterly.report_date)))
         report_date = r.scalar_one_or_none()
     if not report_date:
-        return []
+        return {"items": [], "count": 0, "report_date": None}
 
-    q = select(HolderSnapshotQuarterly).where(
-        HolderSnapshotQuarterly.report_date == report_date,
-        HolderSnapshotQuarterly.canonical_name.is_not(None),
+    q = (
+        select(HolderSnapshotQuarterly, Stock.name)
+        .join(Stock, Stock.code == HolderSnapshotQuarterly.stock_code, isouter=True)
+        .where(
+            HolderSnapshotQuarterly.report_date == report_date,
+            HolderSnapshotQuarterly.canonical_name.is_not(None),
+        )
     )
     if change_type:
         q = q.where(HolderSnapshotQuarterly.change_type == change_type)
@@ -398,12 +418,12 @@ async def capital_movements(
     q = q.order_by(HolderSnapshotQuarterly.change_shares.desc().nullslast()).limit(top)
 
     r = await db.execute(q)
-    rows = r.scalars().all()
-    return [
+    rows = r.all()
+    items = [
         {
             "report_date": x.report_date.isoformat(),
             "stock_code": x.stock_code,
-            "stock_name": x.stock_name,
+            "stock_name": x.stock_name or stock_name,
             "canonical_name": x.canonical_name,
             "holder_type": x.holder_type,
             "fund_company": x.fund_company,
@@ -412,8 +432,9 @@ async def capital_movements(
             "change_shares": x.change_shares,
             "change_type": x.change_type,
         }
-        for x in rows
+        for x, stock_name in rows
     ]
+    return {"items": items, "count": len(items), "report_date": report_date.isoformat()}
 
 
 # 12. 当日资金概览(给 CapitalPage 顶部 summary bar 用)

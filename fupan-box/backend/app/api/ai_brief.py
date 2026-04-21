@@ -44,8 +44,13 @@ from app.models.user import User
 from app.services.prewarm_service import (
     prewarm_debate,
     prewarm_institutional_brief,
+    prewarm_lhb_brief as prewarm_lhb_brief_svc,
+    prewarm_long_term_brief,
     prewarm_market_briefs,
+    prewarm_multi_perspective,
     prewarm_news_brief,
+    prewarm_stock_context,
+    prewarm_swing_brief,
     prewarm_why_rose,
 )
 from app.services.watchlist_service import get_or_generate_watchlist_brief
@@ -262,20 +267,36 @@ async def get_news_brief(
     model: str = Query("deepseek-v3"),
     refresh: int = Query(0),
     hours: int = Query(24, ge=1, le=72),
+    public_only: int = Query(
+        1, ge=0, le=1,
+        description="=1 (默认) 走与 beat 共享的公共 key, 保证登录用户首次点击即命中预热; "
+                    "=0 额外合入当前用户自选股作为 per-user key",
+    ),
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """新闻 AI 全局总结 (Phase 2 核心): headline + 主线 + 政策 + 突发 + 业绩 + 明日盯点."""
+    """新闻 AI 全局总结 (Phase 2 核心): headline + 主线 + 政策 + 突发 + 业绩 + 明日盯点.
+
+    设计:
+        - 默认 public_only=1: watch_codes=None, cache_key=news_brief:{td}:{hours}:_:{model}
+          与 celery beat prewarm_news_brief 共用同一 key, 登录用户首次打开即命中.
+        - public_only=0: 老逻辑, watch_codes=用户自选, 单独 per-user cache key,
+          用于需要"自选股命中告警"的场景.
+    """
     td = _resolve_td(trade_date)
-    # 自选股命中告警: 取当前用户的 watchlist
-    from app.services.watchlist_service import get_user_watchlist_codes
-    try:
-        watch_codes = await get_user_watchlist_codes(db, user.id)
-    except Exception:
-        watch_codes = []
-    # cache_key 中带 watch_hash, 不同用户互不干扰; hours 也参与 key
+    watch_codes: list[str] = []
+    if not public_only:
+        from app.services.watchlist_service import get_user_watchlist_codes
+        try:
+            watch_codes = await get_user_watchlist_codes(db, user.id)
+        except Exception:
+            watch_codes = []
+
     import hashlib
-    wh = hashlib.md5(("|".join(sorted(watch_codes))).encode()).hexdigest()[:8] if watch_codes else "_"
+    wh = (
+        hashlib.md5(("|".join(sorted(watch_codes))).encode()).hexdigest()[:8]
+        if watch_codes else "_"
+    )
     key = f"news_brief:{td.isoformat()}:{hours}:{wh}:{model}"
     if refresh:
         invalidate("news_brief")
@@ -285,7 +306,7 @@ async def get_news_brief(
         generate_news_brief,
         td, model,
         hours=hours,
-        watch_codes=watch_codes,
+        watch_codes=watch_codes or None,
         action="news_brief", model=model, trade_date=td,
         pg_ttl_h=2.0,  # 新闻 brief TTL 2h, 频次远高于其他 brief
         refresh=bool(refresh),
@@ -491,7 +512,9 @@ async def trigger_prewarm(
     top_n_themes: int = Query(10),
     concurrency: int = Query(4),
 ):
-    """手动触发预热. job ∈ {market_briefs, why_rose, debate, all}."""
+    """手动触发预热. job ∈ {market_briefs, why_rose, debate, lhb_brief,
+    stock_context, multi_perspective, swing_brief, long_term_brief, news_brief,
+    institutional_brief, all}."""
     td = trade_date
     if job == "market_briefs":
         return await prewarm_market_briefs(td, model)
@@ -503,12 +526,27 @@ async def trigger_prewarm(
         return await prewarm_news_brief(td, model)
     if job == "institutional_brief":
         return await prewarm_institutional_brief(td, model)
+    if job == "lhb_brief":
+        return await prewarm_lhb_brief_svc(td, model)
+    if job == "stock_context":
+        return await prewarm_stock_context(td, model, concurrency)
+    if job == "multi_perspective":
+        return await prewarm_multi_perspective(td, model, 50, concurrency)
+    if job == "swing_brief":
+        return await prewarm_swing_brief(td, model, 50, concurrency)
+    if job == "long_term_brief":
+        return await prewarm_long_term_brief(td, model, 50, max(1, concurrency // 2))
     if job == "all":
         return {
             "market_briefs": await prewarm_market_briefs(td, model),
             "news_brief": await prewarm_news_brief(td, model),
             "institutional_brief": await prewarm_institutional_brief(td, model),
+            "lhb_brief": await prewarm_lhb_brief_svc(td, model),
+            "stock_context": await prewarm_stock_context(td, model, concurrency),
             "why_rose": await prewarm_why_rose(td, model, max_per_dir, concurrency),
             "debate": await prewarm_debate(td, model, top_n_themes, max(2, concurrency)),
+            "multi_perspective": await prewarm_multi_perspective(td, model, 50, concurrency),
+            "swing_brief": await prewarm_swing_brief(td, model, 50, concurrency),
+            "long_term_brief": await prewarm_long_term_brief(td, model, 50, max(1, concurrency // 2)),
         }
     return {"error": f"unknown job: {job}"}

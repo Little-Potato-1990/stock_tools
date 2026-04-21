@@ -4,7 +4,7 @@
 """
 import logging
 from datetime import date, datetime
-from sqlalchemy import create_engine, delete, func
+from sqlalchemy import create_engine, delete
 from sqlalchemy.orm import Session
 from app.config import get_settings
 from app.database import Base
@@ -64,10 +64,30 @@ def run_quarterly_pipeline(
 
     with Session(engine) as session:
         if stock_codes is None:
-            q = session.query(Stock.stock_code).distinct()
+            q = session.query(Stock.code).distinct()
             if limit:
                 q = q.limit(limit)
             stock_codes = [c for (c,) in q.all()]
+            # Fallback: stocks 表为空时, 先用 adapter.fetch_stock_list() 拉一次填库
+            if not stock_codes and hasattr(adapter, "fetch_stock_list"):
+                logger.warning("stocks table empty, bootstrapping via adapter.fetch_stock_list()")
+                items = adapter.fetch_stock_list()
+                for it in items:
+                    code = str(it.get("code", "")).zfill(6)
+                    if not code:
+                        continue
+                    if code.startswith(("60", "68", "9")):
+                        market = "SH"
+                    elif code.startswith(("4", "8")):
+                        market = "BJ"
+                    else:
+                        market = "SZ"
+                    session.merge(Stock(code=code, name=it.get("name", ""), market=market))
+                session.commit()
+                q = session.query(Stock.code).distinct()
+                if limit:
+                    q = q.limit(limit)
+                stock_codes = [c for (c,) in q.all()]
 
         log = DataUpdateLog(
             trade_date=rd, step="quarterly_holder", status="running",
@@ -77,6 +97,11 @@ def run_quarterly_pipeline(
 
         matcher = HolderIdentityMatcher(session)
         matcher.reload()
+
+        # 一次性加载 code -> name 映射, 避免 N+1
+        name_map: dict[str, str] = {
+            c: n for c, n in session.query(Stock.code, Stock.name).all()
+        }
 
         total = 0
         failed = 0
@@ -94,6 +119,7 @@ def run_quarterly_pipeline(
                         & (HolderSnapshotQuarterly.report_date == rd)
                     )
                 )
+                stock_name = name_map.get(code)
                 for r in rows:
                     canonical, htype, fund_co = matcher.match(r.get("holder_name", ""))
                     chg_shares = r.get("change_shares")
@@ -109,6 +135,7 @@ def run_quarterly_pipeline(
                     session.add(HolderSnapshotQuarterly(
                         report_date=rd,
                         stock_code=code,
+                        stock_name=stock_name,
                         holder_name=r["holder_name"],
                         canonical_name=canonical,
                         holder_type=htype,

@@ -9,14 +9,14 @@ from sqlalchemy.orm import Session
 from sqlalchemy import create_engine, delete
 from app.config import get_settings
 from app.database import Base
-from app.models.stock import Stock, DailyQuote
+from app.models.stock import DailyQuote
 from app.models.market import LimitUpRecord, LimitDownRecord, MarketSentiment, LadderSummary
 from app.models.snapshot import DailySnapshot, DataUpdateLog
 from app.models.capital import (
     CapitalFlowDaily, NorthHoldDaily, EtfFlowDaily, AnnouncementEvent,
 )
 from app.pipeline.akshare_adapter import AKShareAdapter
-from app.services.etf_registry import all_tracked_etfs, by_code as etf_meta_by_code
+from app.services.etf_registry import all_tracked_etfs
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
@@ -692,7 +692,7 @@ def _step_collect_etf(session: Session, adapter, trade_date: date):
     """Step 6: ETF 行情 + 关键宽基/行业 ETF 份额变化(净申购代理)."""
     _log_step(session, trade_date, "etf", "running")
     try:
-        spot_rows = adapter.fetch_etf_spot()
+        spot_rows = adapter.fetch_etf_spot(trade_date)
         if not spot_rows:
             _log_step(session, trade_date, "etf", "empty")
             return

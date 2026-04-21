@@ -85,7 +85,7 @@ async def search_stocks(
 ):
     """搜索股票 - 按代码或名称"""
     from app.models.stock import DailyQuote
-    from sqlalchemy import func as sa_func, or_
+    from sqlalchemy import func as sa_func
 
     latest_date = (await db.execute(
         select(sa_func.max(DailyQuote.trade_date))
@@ -174,7 +174,6 @@ async def get_yesterday_limit_up_performance(
     db: AsyncSession = Depends(get_db),
 ):
     """昨日涨停股今日表现"""
-    from sqlalchemy import func as sa_func
     latest_two = (
         select(MarketSentiment.trade_date)
         .order_by(MarketSentiment.trade_date.desc())
@@ -307,13 +306,23 @@ async def get_bigdata_rank(
     dimension: str = Query("fund_flow", description="排名维度"),
     db: AsyncSession = Depends(get_db),
 ):
-    """大数据多维排名: 按不同资金维度对概念板块排名"""
-    # 实时主力资金流仅 akshare 提供; 其他维度走 DB / 现有 adapter.
+    """大数据多维排名: 按不同资金维度对概念板块排名.
+
+    fund_flow / hot_concept 优先读 redis cache (celery beat 每 5 min 刷新),
+    miss 才走外网 adapter 兜底, 减少每次点击都打 akshare.
+    """
     from app.pipeline.akshare_adapter import AKShareAdapter
-    import akshare as ak
+    from app.services.external_cache import (
+        KEY_FUND_FLOW, KEY_HOT_CONCEPT, cache_get,
+    )
 
     if dimension == "fund_flow":
+        cached = await cache_get(KEY_FUND_FLOW)
+        if cached:
+            return cached
+        # cache miss 兜底
         try:
+            import akshare as ak
             df = ak.stock_sector_fund_flow_rank(indicator="今日", sector_type="概念资金流")
             results = []
             for _, row in df.head(30).iterrows():
@@ -357,6 +366,9 @@ async def get_bigdata_rank(
         return {"dimension": "limit_up_order", "label": "涨停封单额", "items": items}
 
     elif dimension == "hot_concept":
+        cached = await cache_get(KEY_HOT_CONCEPT)
+        if cached:
+            return cached
         from app.pipeline.runner import get_adapter
         primary = get_adapter()
         fallback = AKShareAdapter() if not isinstance(primary, AKShareAdapter) else None
@@ -392,7 +404,14 @@ async def get_theme_detail(
     db: AsyncSession = Depends(get_db),
 ):
     """题材/行业详情：取该板块成分股，按不同维度分类。
-    依次按"主数据源-概念 / 主数据源-行业 / AKShare-概念 / AKShare-行业"四级兜底。"""
+
+    优先走 redis cache (beat 盘后对 top30 题材预拉), miss 再走 adapter 兜底.
+    """
+    from app.services.external_cache import KEY_THEME_DETAIL_PREFIX, cache_get
+    cached = await cache_get(f"{KEY_THEME_DETAIL_PREFIX}{name}")
+    if cached:
+        return cached
+
     from app.pipeline.runner import get_adapter
     from app.pipeline.akshare_adapter import AKShareAdapter
     from sqlalchemy import func as sa_func
@@ -468,12 +487,7 @@ async def get_stock_detail(
     db: AsyncSession = Depends(get_db),
 ):
     """个股详情: 基础资料、涨停原因、行业、概念标签、近期行情"""
-    from app.models.stock import DailyQuote, Stock
-    from sqlalchemy import func as sa_func
-
-    latest_date = (await db.execute(
-        select(sa_func.max(DailyQuote.trade_date))
-    )).scalar()
+    from app.models.stock import DailyQuote, Stock  # DailyQuote used in trailing query
 
     stock_info: dict = {"stock_code": code, "stock_name": code}
 
@@ -553,7 +567,19 @@ async def get_stock_detail(
 async def get_all_boards(
     kind: str = Query("concept", regex="^(concept|industry)$"),
 ):
-    """返回所有概念/行业板块，按首字符分组用于"概念分类/行业分类"页面。"""
+    """返回所有概念/行业板块，按首字符分组用于"概念分类/行业分类"页面。
+
+    优先读 redis cache (beat 每天 9:25 + 15:30 两次), miss 兜底打 adapter.
+    """
+    from app.services.external_cache import (
+        KEY_ALL_BOARDS_CONCEPT, KEY_ALL_BOARDS_INDUSTRY, cache_get,
+    )
+    cached = await cache_get(
+        KEY_ALL_BOARDS_CONCEPT if kind == "concept" else KEY_ALL_BOARDS_INDUSTRY
+    )
+    if cached:
+        return cached
+
     from app.pipeline.runner import get_adapter
     from app.pipeline.akshare_adapter import AKShareAdapter
 
@@ -680,7 +706,7 @@ async def get_strong_stocks_grid(
 
 async def _strong_stocks_grid_impl(db: AsyncSession, days: int, rows: int, scope: str):
     from app.models.stock import DailyQuote
-    from sqlalchemy import func as sa_func
+    from sqlalchemy import or_
 
     date_rows = await db.execute(
         select(MarketSentiment.trade_date)
@@ -691,39 +717,70 @@ async def _strong_stocks_grid_impl(db: AsyncSession, days: int, rows: int, scope
     if not trade_dates:
         return {"dates": [], "rows": rows, "cells": {}}
 
-    def _scope_filter(code: str) -> bool:
+    def _scope_clause(col):
+        # SQL-level prefix filter, avoid loading 全部 quotes 后 Python 再筛.
         if scope == "main":
-            return code.startswith(("60", "00")) and not code.startswith("300")
+            return or_(col.like("60%"), col.like("00%")) & ~col.like("300%")
         if scope == "gem":
-            return code.startswith("300") or code.startswith("301")
+            return or_(col.like("300%"), col.like("301%"))
         if scope == "star":
-            return code.startswith("688") or code.startswith("689")
+            return or_(col.like("688%"), col.like("689%"))
         if scope == "bj":
-            return code.startswith(("8", "4")) and len(code) == 6
-        return True
+            return or_(col.like("8%"), col.like("4%"))
+        return None
 
     cells: dict[str, list] = {}
+    PER_DAY_PREFETCH = max(rows * 20, 100)  # 给 lu 重排留余量
 
     for dt in trade_dates:
-        lu_res = await db.execute(
-            select(LimitUpRecord).where(LimitUpRecord.trade_date == dt)
-        )
+        lu_q = select(LimitUpRecord).where(LimitUpRecord.trade_date == dt)
+        sc = _scope_clause(LimitUpRecord.stock_code)
+        if sc is not None:
+            lu_q = lu_q.where(sc)
+        lu_res = await db.execute(lu_q)
         lu_records = list(lu_res.scalars().all())
-        lu_map = {r.stock_code: r for r in lu_records if _scope_filter(r.stock_code)}
+        lu_map = {r.stock_code: r for r in lu_records}
 
-        q_res = await db.execute(
-            select(DailyQuote).where(DailyQuote.trade_date == dt)
+        # 只取当日按 change_pct desc 前 N 条 quotes (绝大多数候选); 涨停股始终通过 lu_map 兜底进入打分.
+        q_q = (
+            select(DailyQuote)
+            .where(DailyQuote.trade_date == dt)
+            .order_by(DailyQuote.change_pct.desc().nullslast())
+            .limit(PER_DAY_PREFETCH)
         )
-        quotes = [q for q in q_res.scalars().all() if _scope_filter(q.stock_code)]
+        sc2 = _scope_clause(DailyQuote.stock_code)
+        if sc2 is not None:
+            q_q = q_q.where(sc2)
+        q_res = await db.execute(q_q)
+        quotes = list(q_res.scalars().all())
 
         scored = []
+        seen_codes: set[str] = set()
         for q in quotes:
+            seen_codes.add(q.stock_code)
             lu = lu_map.get(q.stock_code)
             board = lu.continuous_days if lu else 0
             chg = float(q.change_pct or 0)
             amount = float(q.amount or 0)
             score = board * 1000 + chg * 10 + amount / 1e9
             scored.append((score, q, lu))
+
+        # 涨停股若不在 prefetch top-N 内, 也要拉进来 (例如一字板 amount 极小)
+        missing_codes = [c for c in lu_map.keys() if c not in seen_codes]
+        if missing_codes:
+            extra_res = await db.execute(
+                select(DailyQuote).where(
+                    DailyQuote.trade_date == dt,
+                    DailyQuote.stock_code.in_(missing_codes),
+                )
+            )
+            for q in extra_res.scalars().all():
+                lu = lu_map.get(q.stock_code)
+                board = lu.continuous_days if lu else 0
+                chg = float(q.change_pct or 0)
+                amount = float(q.amount or 0)
+                score = board * 1000 + chg * 10 + amount / 1e9
+                scored.append((score, q, lu))
 
         scored.sort(key=lambda x: -x[0])
         top = scored[:rows]
@@ -771,7 +828,6 @@ async def get_ladder_track(
 
 async def _ladder_track_impl(db: AsyncSession, days: int):
     from app.models.stock import DailyQuote
-    from sqlalchemy import func as sa_func
 
     date_rows = await db.execute(
         select(MarketSentiment.trade_date)
