@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { X, TrendingUp, TrendingDown } from "lucide-react";
+import { X, TrendingUp, TrendingDown, Activity, Waves, Telescope, ChevronRight } from "lucide-react";
 import { api } from "@/lib/api";
 import { useUIStore } from "@/stores/ui-store";
 import { StockCapitalChip } from "./StockCapitalChip";
@@ -26,6 +26,13 @@ interface ThemeDetail {
 }
 
 type SubTab = "limit_up" | "all" | "hot" | "core" | "high";
+type Perspective = "short" | "swing" | "long";
+
+const PERSPECTIVE_META: Record<Perspective, { label: string; icon: React.ComponentType<{ size?: number }>; color: string }> = {
+  short: { label: "短线", icon: Activity, color: "var(--accent-orange)" },
+  swing: { label: "波段", icon: Waves, color: "var(--accent-blue)" },
+  long: { label: "长线", icon: Telescope, color: "var(--accent-purple)" },
+};
 
 const SUB_TABS: { key: SubTab; label: string; desc: string }[] = [
   { key: "limit_up", label: "涨停", desc: "当日涨停的成分股" },
@@ -44,7 +51,9 @@ export function ThemeDetailDrawer({ themeName, onClose }: Props) {
   const [detail, setDetail] = useState<ThemeDetail | null>(null);
   const [loading, setLoading] = useState(false);
   const [subTab, setSubTab] = useState<SubTab>("limit_up");
+  const [perspective, setPerspective] = useState<Perspective>("short");
   const openStockDetail = useUIStore((s) => s.openStockDetail);
+  const setActiveModule = useUIStore((s) => s.setActiveModule);
 
   const fetchDetail = useCallback(async (name: string) => {
     setLoading(true);
@@ -73,6 +82,36 @@ export function ThemeDetailDrawer({ themeName, onClose }: Props) {
   const tabCounts: Record<SubTab, number> = detail
     ? { limit_up: detail.limit_up.length, all: detail.all.length, hot: detail.hot.length, core: detail.core.length, high: detail.high.length }
     : { limit_up: 0, all: 0, hot: 0, core: 0, high: 0 };
+
+  // 三视角策略提示 (基于成分股数据本地推演, 零 LLM 成本)
+  const perspectiveHint = ((): { tip: string; recommendTab?: SubTab } => {
+    if (!detail) return { tip: "数据加载中…" };
+    const luCount = detail.limit_up.length;
+    const continuousCount = detail.all.filter((s) => s.continuous_days >= 2).length;
+    const highBoard = detail.all.reduce((m, s) => Math.max(m, s.continuous_days), 0);
+    if (perspective === "short") {
+      if (luCount >= 5) {
+        return { tip: `今日涨停 ${luCount} 只，连板梯队 ${continuousCount} 只，最高 ${highBoard} 板，题材热度高，可关注首板/二板低吸切换`, recommendTab: "limit_up" };
+      }
+      if (luCount > 0) {
+        return { tip: `涨停 ${luCount} 只，热度温和，重点跟踪连板核心：${detail.limit_up[0]?.stock_name}`, recommendTab: "limit_up" };
+      }
+      return { tip: "今日无涨停，短线视角谨慎参与，关注次日是否有首板启动" };
+    }
+    if (perspective === "swing") {
+      if (continuousCount >= 3 && highBoard >= 3) {
+        return { tip: `连板梯队 ${continuousCount} 只 (最高 ${highBoard} 板)，题材主线确立，波段宜顺势持有龙头/中军`, recommendTab: "core" };
+      }
+      if (highBoard >= 2) {
+        return { tip: `最高 ${highBoard} 板，主线初现但合力不足，波段宜小仓试水核心股，止损位放高标连板缺口下方`, recommendTab: "high" };
+      }
+      return { tip: "缺乏连板合力，波段视角观望，等主线持续 ≥3 天后再介入" };
+    }
+    // long
+    return {
+      tip: "长线视角不看涨停, 关注题材内估值低位 + 业绩拐点的核心股, 进入「中长视角」页选股",
+    };
+  })();
 
   return (
     <>
@@ -113,6 +152,80 @@ export function ThemeDetailDrawer({ themeName, onClose }: Props) {
           >
             <X size={16} />
           </button>
+        </div>
+
+        {/* 三视角策略提示条 */}
+        <div
+          className="px-3 py-2"
+          style={{
+            background: "linear-gradient(135deg, rgba(168,85,247,0.06) 0%, var(--bg-secondary) 70%)",
+            borderBottom: "1px solid var(--border-color)",
+          }}
+        >
+          <div className="flex items-center gap-1 mb-1">
+            <span style={{ fontSize: 9, color: "var(--accent-purple)", fontWeight: 700, letterSpacing: 1 }}>
+              三视角策略
+            </span>
+            {(["short", "swing", "long"] as Perspective[]).map((p) => {
+              const meta = PERSPECTIVE_META[p];
+              const Icon = meta.icon;
+              const active = perspective === p;
+              return (
+                <button
+                  key={p}
+                  onClick={() => {
+                    setPerspective(p);
+                    if (p !== "long") {
+                      const hint = ((): SubTab | undefined => {
+                        if (!detail) return;
+                        const lu = detail.limit_up.length;
+                        const cont = detail.all.filter((s) => s.continuous_days >= 2).length;
+                        const high = detail.all.reduce((m, s) => Math.max(m, s.continuous_days), 0);
+                        if (p === "short") return lu > 0 ? "limit_up" : undefined;
+                        if (p === "swing") {
+                          if (cont >= 3 && high >= 3) return "core";
+                          if (high >= 2) return "high";
+                        }
+                        return;
+                      })();
+                      if (hint) setSubTab(hint);
+                    }
+                  }}
+                  className="flex items-center gap-0.5 px-1.5 py-0.5 transition-all ml-1"
+                  style={{
+                    background: active ? meta.color : "transparent",
+                    color: active ? "#fff" : meta.color,
+                    border: `1px solid ${meta.color}`,
+                    borderRadius: 3,
+                    fontSize: 9,
+                    fontWeight: active ? 700 : 500,
+                  }}
+                >
+                  <Icon size={9} />
+                  {meta.label}
+                </button>
+              );
+            })}
+          </div>
+          <div style={{ fontSize: 11, color: "var(--text-secondary)", lineHeight: 1.5 }}>
+            {perspectiveHint.tip}
+          </div>
+          {perspective === "long" && (
+            <button
+              onClick={() => { setActiveModule("midlong"); onClose(); }}
+              className="mt-1.5 inline-flex items-center gap-1 px-1.5 py-0.5 font-bold transition-all"
+              style={{
+                background: PERSPECTIVE_META.long.color,
+                color: "#fff",
+                borderRadius: 3,
+                fontSize: 10,
+              }}
+            >
+              <Telescope size={10} />
+              进入中长视角
+              <ChevronRight size={10} />
+            </button>
+          )}
         </div>
 
         <div

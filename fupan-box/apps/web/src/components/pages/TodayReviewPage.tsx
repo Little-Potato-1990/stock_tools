@@ -33,6 +33,7 @@ import { useStreamingHeadline } from "@/hooks/useStreamingHeadline";
 import { FeedbackThumbs } from "@/components/market/FeedbackThumbs";
 import { AiDensitySwitch } from "@/components/market/AiDensitySwitch";
 import { AiActionBar } from "@/components/market/AiActionBar";
+import { MarketPerspectiveCard } from "@/components/market/MarketPerspectiveCard";
 import { colorFromTrend } from "@/lib/format";
 import { flashGlow } from "@/lib/scrollGlow";
 import type {
@@ -1623,6 +1624,9 @@ export function TodayReviewPage() {
     >
       <div id="section-hero" style={{ borderRadius: 6 }}>
         <HeroBlock brief={brief} />
+      </div>
+      <div id="section-perspective" style={{ borderRadius: 6 }}>
+        <MarketPerspectiveCard brief={brief} />
       </div>
       <div id="section-mainline" style={{ borderRadius: 6 }}>
         <MainLineBlock lines={brief.main_lines} />

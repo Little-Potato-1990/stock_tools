@@ -70,6 +70,12 @@ class NewsSummary(Base):
     importance: Mapped[int] = mapped_column(Integer, default=2, index=True)  # 1-5
     sentiment: Mapped[str | None] = mapped_column(String(10))      # bullish/neutral/bearish
     tags: Mapped[dict | None] = mapped_column(JSONB)               # 简短标签 ["利好","政策"]
+    # Phase 2: 影响时间维度, 给中长视角新闻过滤用
+    # short  = 今日/本周盘面催化 (涨停/异动/快讯)
+    # swing  = 5-20 日波段 (订单/中标/业绩/重组)
+    # long   = 长线逻辑 (战略/研发/产能扩张/政策周期)
+    # mixed  = 同时影响多个时间维度 (重大并购/行业政策)
+    impact_horizon: Mapped[str | None] = mapped_column(String(8), index=True)
     ai_tagged_at: Mapped[datetime | None] = mapped_column(DateTime)
 
     # Phase 4 RAG: pgvector 向量 + 状态机

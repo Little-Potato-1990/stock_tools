@@ -45,6 +45,12 @@ class Settings(BaseSettings):
     dev_embed_celery: bool = True
     dev_embed_celery_concurrency: int = 2  # worker -c 参数, 本地 2 足够
 
+    # === Phase 1 限流 ===
+    # 匿名 IP / 登录 user 滑窗限流, 60 秒窗口
+    rate_limit_anonymous_per_min: int = 60
+    rate_limit_user_per_min: int = 300
+    rate_limit_enabled: bool = True
+
     class Config:
         env_file = ".env"
 

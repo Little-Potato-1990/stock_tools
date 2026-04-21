@@ -32,6 +32,8 @@ from app.ai.news_brief import generate_news_brief
 from app.ai.news_stream import stream_news_headline
 from app.ai.prediction_tracker import get_stats, snapshot_predictions, verify_pending
 from app.ai.sentiment_brief import generate_sentiment_brief
+from app.ai.multi_perspective import generate_multi_perspective
+from app.ai.swing_brief import generate_swing_brief
 from app.ai.theme_brief import generate_theme_brief
 from app.ai.why_rose import generate_why_rose
 from app.api._cache import invalidate
@@ -134,16 +136,60 @@ async def get_sentiment_brief(
 async def get_theme_brief(
     trade_date: date = Query(None),
     model: str = Query("deepseek-v3"),
+    perspective: str = Query("short", pattern="^(short|swing|long)$"),
     refresh: int = Query(0),
 ):
     td = _resolve_td(trade_date)
-    key = f"theme_brief:{td.isoformat()}:{model}"
+    # 向后兼容: perspective=short 时 key 不带后缀, 与 cross_context 引用对齐
+    key = (
+        f"theme_brief:{td.isoformat()}:{model}"
+        if perspective == "short"
+        else f"theme_brief:{td.isoformat()}:{model}:{perspective}"
+    )
     if refresh:
         invalidate("theme_brief")
         invalidate_pg(key)
     return await cached_brief(
-        key, generate_theme_brief, td, model,
+        key, generate_theme_brief, td, model, perspective,
         action="theme_brief", model=model, trade_date=td,
+        pg_ttl_h=PG_TTL_H, refresh=bool(refresh),
+    )
+
+
+@router.get("/multi-perspective/{code}")
+async def get_multi_perspective(
+    code: str,
+    trade_date: date = Query(None),
+    model: str = Query("deepseek-v3"),
+    refresh: int = Query(0),
+):
+    """三视角一句话速读 (短/波段/长). 1 次 LLM call 出 3 条 headline."""
+    td = _resolve_td(trade_date)
+    key = f"multi_perspective:{code}:{td.isoformat()}:{model}"
+    if refresh:
+        invalidate_pg(key)
+    return await cached_brief(
+        key, generate_multi_perspective, code, td, model,
+        action="multi_perspective", model=model, trade_date=td,
+        pg_ttl_h=PG_TTL_H, refresh=bool(refresh),
+    )
+
+
+@router.get("/swing-brief/{code}")
+async def get_swing_brief(
+    code: str,
+    trade_date: date = Query(None),
+    model: str = Query("deepseek-v3"),
+    refresh: int = Query(0),
+):
+    """波段视角 brief (5-20 日)."""
+    td = _resolve_td(trade_date)
+    key = f"swing_brief:{code}:{td.isoformat()}:{model}"
+    if refresh:
+        invalidate_pg(key)
+    return await cached_brief(
+        key, generate_swing_brief, code, td, model,
+        action="swing_brief", model=model, trade_date=td,
         pg_ttl_h=PG_TTL_H, refresh=bool(refresh),
     )
 

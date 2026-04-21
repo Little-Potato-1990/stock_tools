@@ -7,6 +7,7 @@ import { ThemesPage } from "@/components/pages/ThemesPage";
 import { WatchlistPage } from "@/components/pages/WatchlistPage";
 import { PlansPage } from "@/components/pages/PlansPage";
 import { CapitalPage } from "@/components/pages/CapitalPage";
+import { MidLongPage } from "@/components/pages/MidLongPage";
 import { LhbPage } from "@/components/pages/LhbPage";
 import { StockSearchPage } from "@/components/pages/StockSearchPage";
 import { NewsPage } from "@/components/pages/NewsPage";
@@ -30,6 +31,8 @@ export default function Home() {
       return <PlansPage />;
     case "capital":
       return <CapitalPage />;
+    case "midlong":
+      return <MidLongPage />;
     case "lhb":
       return <LhbPage />;
     case "search":

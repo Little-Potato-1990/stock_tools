@@ -21,6 +21,9 @@ from app.models.capital import (
     AnnouncementEvent,
 )
 from app.models.holder import HolderSnapshotQuarterly, HolderIdentityRegistry
+from app.models.fundamentals import StockFundamentalsQuarterly, StockForecastEvent
+from app.models.valuation import StockValuationDaily
+from app.models.consensus import AnalystConsensusWeekly
 
 __all__ = [
     "Stock", "DailyQuote",
@@ -35,4 +38,7 @@ __all__ = [
     "UserPlan", "UserPlanTrigger",
     "CapitalFlowDaily", "NorthHoldDaily", "EtfFlowDaily", "AnnouncementEvent",
     "HolderSnapshotQuarterly", "HolderIdentityRegistry",
+    "StockFundamentalsQuarterly", "StockForecastEvent",
+    "StockValuationDaily",
+    "AnalystConsensusWeekly",
 ]

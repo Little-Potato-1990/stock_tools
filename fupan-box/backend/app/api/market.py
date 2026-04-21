@@ -230,6 +230,7 @@ async def get_financial_news(
     min_importance: int = Query(0, ge=0, le=5, description="最小重要级 0=不限"),
     sources: str = Query("", description="过滤源, 多个逗号分隔. e.g. cls,ak_global,tushare_wallstreet"),
     sentiment: str = Query("", description="过滤倾向: bullish | neutral | bearish"),
+    impact_horizon: str = Query("", description="影响时间维度过滤: short | swing | long | mixed"),
     code: str = Query("", description="只返回命中此股票代码的"),
     theme: str = Query("", description="只返回命中此题材的"),
     sort: str = Query("default", regex="^(default|time|smart)$"),
@@ -271,6 +272,9 @@ async def get_financial_news(
 
     if sentiment in ("bullish", "neutral", "bearish"):
         items = [it for it in items if it.get("sentiment") == sentiment]
+
+    if impact_horizon in ("short", "swing", "long", "mixed"):
+        items = [it for it in items if it.get("impact_horizon") == impact_horizon]
 
     if not items and fallback_live:
         # DB 空 → 实时跑一次轻量 ingest (不打标, 防阻塞 API)

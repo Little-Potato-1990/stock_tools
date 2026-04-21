@@ -24,21 +24,52 @@ router = APIRouter()
 
 
 TIER_QUOTA: dict[str, dict[str, int]] = {
-    "free":    {"chat": 10,  "why_rose": 3,   "debate": 1,  "trade_review": 1},
-    "monthly": {"chat": 100, "why_rose": 30,  "debate": 10, "trade_review": 10},
-    "yearly":  {"chat": 500, "why_rose": 200, "debate": 80, "trade_review": 80},
+    # anonymous (未登录) 仅由 RateLimitMiddleware 按 IP 限流, 不走 user-quota,
+    # 列在这里仅为 /tiers 端点呈现给前端做引导对比.
+    "anonymous": {"chat": 0,   "why_rose": 0,   "debate": 0,  "trade_review": 0},
+    "free":      {"chat": 10,  "why_rose": 3,   "debate": 1,  "trade_review": 1},
+    "monthly":   {"chat": 100, "why_rose": 30,  "debate": 10, "trade_review": 10},
+    "yearly":    {"chat": 500, "why_rose": 200, "debate": 80, "trade_review": 80},
 }
 
 TIER_LABEL = {
-    "free":    "免费版",
-    "monthly": "月度 Pro",
-    "yearly":  "年度 Master",
+    "anonymous": "访客",
+    "free":      "免费版",
+    "monthly":   "月度 Pro",
+    "yearly":    "年度 Master",
 }
 
 TIER_PRICE_RMB = {
-    "free":    0,
-    "monthly": 39,
-    "yearly":  299,
+    "anonymous": 0,
+    "free":      0,
+    "monthly":   39,
+    "yearly":    299,
+}
+
+TIER_FEATURES: dict[str, list[str]] = {
+    "anonymous": [
+        "全市场行情/涨停/题材/资金/新闻只读",
+        "AI 一句话速读 (短/波段/长 三视角)",
+        "估值回看 3 个月",
+    ],
+    "free": [
+        "访客全部功能",
+        "自选股 + 智能交易计划",
+        "AI 副驾对话 10 次/天",
+        "估值回看 1 年",
+    ],
+    "monthly": [
+        "免费版全部功能",
+        "AI 副驾 100 次/天 + 多空辩论",
+        "估值/财务回看 5 年 / 5 年 / 3 年",
+        "全市场筛选榜单 200 行",
+    ],
+    "yearly": [
+        "Pro 全部功能",
+        "AI 副驾 500 次/天 + 80 次辩论",
+        "全市场筛选榜单 500 行",
+        "数据导出 + API",
+    ],
 }
 
 
@@ -142,6 +173,7 @@ async def get_tiers():
             "tier": tier,
             "tier_label": TIER_LABEL[tier],
             "price_rmb": TIER_PRICE_RMB[tier],
+            "features": TIER_FEATURES.get(tier, []),
             "quota": [
                 {"action": a, "label": _ACTION_LABEL.get(a, a), "quota": q}
                 for a, q in quota.items()

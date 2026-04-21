@@ -15,6 +15,7 @@ export type NavModule =
   | "sentiment"
   | "themes"
   | "capital"
+  | "midlong"
   | "lhb"
   | "search"
   | "news"

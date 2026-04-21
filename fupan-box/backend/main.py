@@ -5,7 +5,9 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.api import market, snapshot, auth, ai_chat, ai_brief, watchlist, trades, quota, intraday, plans, me, news, stock, capital
+from app.config import get_settings
 from app.database import engine, Base
+from app.middleware.rate_limit import RateLimitMiddleware
 from app.embedded_celery import (
     start_embedded_celery,
     stop_embedded_celery,
@@ -64,9 +66,27 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+_settings = get_settings()
+if _settings.rate_limit_enabled:
+    app.add_middleware(
+        RateLimitMiddleware,
+        anonymous_per_min=_settings.rate_limit_anonymous_per_min,
+        user_per_min=_settings.rate_limit_user_per_min,
+    )
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
+    # 显式列出常见 dev origin (localhost / 127.0.0.1 / 局域网 IP, 含 3000 / 3001 fallback).
+    # 同时用 regex 兜底任意私网/本机 origin, 避免浏览器跨 origin 时被 CORS 静默拦掉
+    # (现象: fetch 抛 NetworkError, 后端日志看不到任何请求).
+    allow_origins=[
+        "http://localhost:3000",
+        "http://localhost:3001",
+        "http://127.0.0.1:3000",
+        "http://127.0.0.1:3001",
+        "http://0.0.0.0:3000",
+    ],
+    allow_origin_regex=r"^http://(localhost|127\.0\.0\.1|0\.0\.0\.0|192\.168\.\d+\.\d+|10\.\d+\.\d+\.\d+|172\.(1[6-9]|2\d|3[01])\.\d+\.\d+):\d+$",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -86,6 +106,8 @@ app.include_router(me.router, prefix="/api/me", tags=["me"])
 app.include_router(news.router, prefix="/api/news", tags=["news"])
 app.include_router(stock.router, prefix="/api/stock", tags=["stock"])
 app.include_router(capital.router, prefix="/api/market/capital", tags=["capital"])
+from app.api import midlong
+app.include_router(midlong.router, prefix="/api/midlong", tags=["midlong"])
 
 
 @app.get("/api/health")

@@ -17,6 +17,15 @@ type NewsItem = Awaited<ReturnType<typeof api.getNews>>[number];
 
 type Filt = "all" | "important" | "watch" | "bullish" | "bearish";
 
+type Horizon = "" | "short" | "swing" | "long" | "mixed";
+
+const HORIZON_META: Record<Exclude<Horizon, "">, { label: string; color: string; desc: string }> = {
+  short: { label: "短线", color: "var(--accent-orange)", desc: "1-5 日盘面催化" },
+  swing: { label: "波段", color: "var(--accent-blue)", desc: "5-20 日驱动" },
+  long: { label: "长线", color: "var(--accent-purple)", desc: "6 月+ 产业逻辑" },
+  mixed: { label: "复合", color: "var(--text-secondary)", desc: "多时间维度" },
+};
+
 interface ThreadFocus {
   kind: "thread";
   name: string;
@@ -63,6 +72,7 @@ export function NewsPage() {
   const [news, setNews] = useState<NewsItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [filt, setFilt] = useState<Filt>("all");
+  const [horizon, setHorizon] = useState<Horizon>("");
   const [watch, setWatch] = useState<Set<string>>(new Set());
 
   // Phase 2: brief + SSE headline
@@ -84,6 +94,7 @@ export function NewsPage() {
         hours: 24,
         sort: "smart",
         watch: watchCsv,
+        impact_horizon: horizon || undefined,
       });
       setNews(res);
     } catch (e) {
@@ -230,7 +241,7 @@ export function NewsPage() {
     }
     fetchNews();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [watchKey]);
+  }, [watchKey, horizon]);
 
   const handleRefresh = async () => {
     startStream();             // 先启 SSE 拉打字机 headline
@@ -462,6 +473,50 @@ export function NewsPage() {
             点 AI 主线下钻
           </span>
         </div>
+
+        {/* Phase 2: 影响时间维度过滤 (impact_horizon) - 给短/中/长视角投资者用 */}
+        <div
+          className="flex items-center gap-1 px-2 py-1.5 mt-1.5"
+          style={{
+            background: "var(--bg-card)",
+            border: "1px solid var(--border-color)",
+            borderRadius: 4,
+            opacity: searchResults != null ? 0.45 : 1,
+            pointerEvents: searchResults != null ? "none" : "auto",
+          }}
+          title="按 AI 判定的「影响时间维度」过滤新闻"
+        >
+          <span style={{ fontSize: 10, color: "var(--text-muted)", marginRight: 4 }}>视角</span>
+          <FilterChip
+            active={horizon === ""}
+            onClick={() => setHorizon("")}
+            label="全部"
+          />
+          {(["short", "swing", "long", "mixed"] as const).map((h) => {
+            const meta = HORIZON_META[h];
+            return (
+              <button
+                key={h}
+                onClick={() => setHorizon(horizon === h ? "" : h)}
+                className="flex items-center gap-1 px-2 py-0.5 transition-all"
+                style={{
+                  background: horizon === h ? meta.color : "transparent",
+                  color: horizon === h ? "#fff" : meta.color,
+                  border: `1px solid ${meta.color}`,
+                  borderRadius: 3,
+                  fontSize: 10,
+                  fontWeight: horizon === h ? 700 : 500,
+                }}
+                title={meta.desc}
+              >
+                {meta.label}
+              </button>
+            );
+          })}
+          <span className="ml-auto" style={{ fontSize: 10, color: "var(--text-muted)" }}>
+            {horizon === "" ? "适合所有投资者" : HORIZON_META[horizon].desc}
+          </span>
+        </div>
       </div>
 
       <div className="px-3 pb-3 space-y-1">
@@ -549,6 +604,22 @@ export function NewsPage() {
                         >
                           <SentIcon size={9} />
                           {sent.label}
+                        </span>
+                      )}
+                      {item.impact_horizon && HORIZON_META[item.impact_horizon] && (
+                        <span
+                          className="font-bold"
+                          style={{
+                            padding: "1px 5px",
+                            background: `${HORIZON_META[item.impact_horizon].color}22`,
+                            border: `1px solid ${HORIZON_META[item.impact_horizon].color}`,
+                            color: HORIZON_META[item.impact_horizon].color,
+                            fontSize: 10,
+                            borderRadius: 2,
+                          }}
+                          title={HORIZON_META[item.impact_horizon].desc}
+                        >
+                          {HORIZON_META[item.impact_horizon].label}
                         </span>
                       )}
                       {item.tags && item.tags.length > 0 && item.tags.map((tag) => (

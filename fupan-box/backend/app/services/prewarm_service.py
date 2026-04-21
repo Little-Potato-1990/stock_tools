@@ -29,14 +29,18 @@ from app.ai.brief_generator import generate_brief, _latest_trade_date_with_data
 from app.ai.capital_brief import generate_capital_brief
 from app.ai.institutional_brief import generate_institutional_brief
 from app.ai.ladder_brief import generate_ladder_brief
+from app.ai.long_term_brief import generate_long_term_brief
+from app.ai.multi_perspective import generate_multi_perspective
 from app.ai.news_brief import generate_news_brief
 from app.ai.sentiment_brief import generate_sentiment_brief
+from app.ai.swing_brief import generate_swing_brief
 from app.ai.theme_brief import generate_theme_brief
 from app.ai.why_rose import generate_why_rose
 from app.ai.debate import run_debate
 from app.models.market import LimitUpRecord
 from app.models.stock import DailyQuote
 from app.models.snapshot import DailySnapshot
+from app.models.valuation import StockValuationDaily
 
 logger = logging.getLogger(__name__)
 
@@ -307,3 +311,201 @@ async def prewarm_debate(
         "summary": summary,
         "market": market_res,
     }
+
+
+# ============================================================
+# Phase 2 中长视角预热
+# ============================================================
+
+# 不同视角缓存分级 (与 plan 对齐)
+PG_TTL_H_SHORT = 24.0
+PG_TTL_H_SWING = 24.0
+PG_TTL_H_LONG = 24.0 * 7  # 7 天
+
+
+def _pick_multi_perspective_targets(
+    trade_date: date_type, max_n: int = 50,
+) -> list[str]:
+    """挑预热目标: 当日涨停 + 主力流入 top + 跌幅 top, 去重 capped 50."""
+    settings = get_settings()
+    eng = create_engine(settings.database_url_sync, pool_pre_ping=True)
+    codes: set[str] = set()
+    try:
+        with Session(eng) as s:
+            lu = s.execute(
+                select(LimitUpRecord.stock_code).where(LimitUpRecord.trade_date == trade_date)
+            ).scalars().all()
+            codes.update(c for c in lu if c)
+
+            top_gain = s.execute(
+                select(DailyQuote.stock_code)
+                .where(
+                    DailyQuote.trade_date == trade_date,
+                    DailyQuote.change_pct.isnot(None),
+                )
+                .order_by(desc(DailyQuote.change_pct))
+                .limit(max_n)
+            ).scalars().all()
+            codes.update(top_gain)
+
+            top_amount = s.execute(
+                select(DailyQuote.stock_code)
+                .where(
+                    DailyQuote.trade_date == trade_date,
+                    DailyQuote.amount.isnot(None),
+                )
+                .order_by(desc(DailyQuote.amount))
+                .limit(max_n)
+            ).scalars().all()
+            codes.update(top_amount)
+    finally:
+        eng.dispose()
+    return sorted(codes)[:max_n]
+
+
+def _pick_long_term_targets(trade_date: date_type, max_n: int = 50) -> list[str]:
+    """长线预热: 总市值 top 200 中 PE 5y 分位 < 0.5 或 ROE 5Y > 12 的股票, capped."""
+    settings = get_settings()
+    eng = create_engine(settings.database_url_sync, pool_pre_ping=True)
+    codes: list[str] = []
+    try:
+        with Session(eng) as s:
+            rows = s.execute(
+                select(StockValuationDaily.stock_code, StockValuationDaily.total_mv)
+                .where(
+                    StockValuationDaily.trade_date == trade_date,
+                    StockValuationDaily.total_mv.isnot(None),
+                )
+                .order_by(desc(StockValuationDaily.total_mv))
+                .limit(200)
+            ).all()
+            top_mv = [c for c, _ in rows]
+
+            sub = s.execute(
+                select(StockValuationDaily.stock_code)
+                .where(
+                    StockValuationDaily.trade_date == trade_date,
+                    StockValuationDaily.stock_code.in_(top_mv),
+                    StockValuationDaily.pe_pct_5y.isnot(None),
+                    StockValuationDaily.pe_pct_5y < 0.5,
+                )
+                .order_by(StockValuationDaily.pe_pct_5y)
+                .limit(max_n)
+            ).scalars().all()
+            codes = list(sub)
+    finally:
+        eng.dispose()
+    return codes[:max_n]
+
+
+async def prewarm_multi_perspective(
+    trade_date: date_type | None,
+    model: str = DEFAULT_MODEL,
+    max_n: int = 50,
+    concurrency: int = 4,
+) -> dict[str, Any]:
+    td = resolve_trade_date(trade_date)
+    if not td:
+        return {"status": "no_trade_date"}
+    codes = _pick_multi_perspective_targets(td, max_n)
+    if not codes:
+        return {"trade_date": td.isoformat(), "targets": 0, "results": []}
+
+    sem = asyncio.Semaphore(concurrency)
+
+    async def _one(code: str):
+        async with sem:
+            key = f"multi_perspective:{code}:{td.isoformat()}:{model}"
+            cached = await asyncio.to_thread(pg_get, key)
+            if cached is not None:
+                return {"key": key, "status": "skipped_cached"}
+            try:
+                result = await generate_multi_perspective(code, td, model)
+                await asyncio.to_thread(
+                    pg_set, key, result,
+                    action="multi_perspective", model=model, trade_date=td,
+                    ttl_hours=PG_TTL_H_SHORT, source="prewarm",
+                )
+                return {"key": key, "status": "ok"}
+            except Exception as e:
+                logger.warning(f"prewarm multi_perspective {code} fail: {e}")
+                return {"key": key, "status": "error", "error": str(e)[:120]}
+
+    results = await asyncio.gather(*[_one(c) for c in codes])
+    summary = {"ok": 0, "skipped_cached": 0, "error": 0}
+    for r in results:
+        st = r.get("status", "error")
+        summary[st if st in summary else "error"] = summary.get(st, 0) + 1
+    return {"trade_date": td.isoformat(), "targets": len(codes), "summary": summary}
+
+
+async def prewarm_swing_brief(
+    trade_date: date_type | None,
+    model: str = DEFAULT_MODEL,
+    max_n: int = 50,
+    concurrency: int = 3,
+) -> dict[str, Any]:
+    td = resolve_trade_date(trade_date)
+    if not td:
+        return {"status": "no_trade_date"}
+    codes = _pick_multi_perspective_targets(td, max_n)
+    if not codes:
+        return {"trade_date": td.isoformat(), "targets": 0, "results": []}
+
+    sem = asyncio.Semaphore(concurrency)
+
+    async def _one(code: str):
+        async with sem:
+            return await _gen_and_cache(
+                f"swing_brief:{code}:{td.isoformat()}:{model}",
+                lambda: generate_swing_brief(code, td, model),
+                action="swing_brief", model=model, trade_date=td,
+            )
+
+    results = await asyncio.gather(*[_one(c) for c in codes])
+    summary = {"ok": 0, "skipped_cached": 0, "error": 0}
+    for r in results:
+        st = r.get("status", "error")
+        summary[st if st in summary else "error"] = summary.get(st, 0) + 1
+    return {"trade_date": td.isoformat(), "targets": len(codes), "summary": summary}
+
+
+async def prewarm_long_term_brief(
+    trade_date: date_type | None,
+    model: str = DEFAULT_MODEL,
+    max_n: int = 50,
+    concurrency: int = 2,
+) -> dict[str, Any]:
+    td = resolve_trade_date(trade_date)
+    if not td:
+        return {"status": "no_trade_date"}
+    codes = _pick_long_term_targets(td, max_n)
+    if not codes:
+        return {"trade_date": td.isoformat(), "targets": 0, "results": []}
+
+    sem = asyncio.Semaphore(concurrency)
+
+    async def _one(code: str):
+        async with sem:
+            key = f"long_term_brief:{code}:{td.isoformat()}:{model}"
+            cached = await asyncio.to_thread(pg_get, key)
+            if cached is not None:
+                return {"key": key, "status": "skipped_cached"}
+            try:
+                result = await generate_long_term_brief(code, td, model)
+                await asyncio.to_thread(
+                    pg_set, key, result,
+                    action="long_term_brief", model=model, trade_date=td,
+                    ttl_hours=PG_TTL_H_LONG, source="prewarm",
+                )
+                return {"key": key, "status": "ok"}
+            except Exception as e:
+                logger.warning(f"prewarm long_term_brief {code} fail: {e}")
+                return {"key": key, "status": "error", "error": str(e)[:120]}
+
+    results = await asyncio.gather(*[_one(c) for c in codes])
+    summary = {"ok": 0, "skipped_cached": 0, "error": 0}
+    for r in results:
+        st = r.get("status", "error")
+        summary[st if st in summary else "error"] = summary.get(st, 0) + 1
+    return {"trade_date": td.isoformat(), "targets": len(codes), "summary": summary}

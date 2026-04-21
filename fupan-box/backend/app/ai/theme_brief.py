@@ -191,17 +191,37 @@ def _load_theme_news(pools: dict[str, list[dict]], hours: int = 36, per_theme: i
     return out
 
 
+_PERSPECTIVE_ROLES = {
+    "short": (
+        "你是 A 股短线复盘专家, 专门做题材轮动节奏判断 (1-5 日维度)。"
+        "重点关注涨停数变化、排名跃升、人气切换、龙头/补涨结构。"
+    ),
+    "swing": (
+        "你是 A 股波段策略分析师 (5-20 日维度)。"
+        "重点关注题材的持续性、订单/业绩/扩产驱动、行业景气向上拐点, 而非单日涨停噪音。"
+        "若主力资金 5 日持续净流入或行业景气度上行, 视为可持续题材。"
+    ),
+    "long": (
+        "你是 A 股产业研究员 (6 月+ 维度)。"
+        "重点关注产业链长逻辑、政策周期、国产替代、技术突破、产能扩张节奏。"
+        "短期涨停/排名跳动只是情绪噪音, 真正的判断依据是产业进度与公司订单/利润落地。"
+    ),
+}
+
+
 def _build_prompt(
     trade_date: str,
     agg: dict[str, Any],
     pools: dict[str, list[dict]],
     cross_ctx: str = "",
     theme_news: dict[str, list[dict]] | None = None,
+    perspective: str = "short",
 ) -> tuple[str, str]:
+    role = _PERSPECTIVE_ROLES.get(perspective, _PERSPECTIVE_ROLES["short"])
     system = (
-        "你是 A 股短线复盘专家, 专门做题材轮动节奏判断。"
-        "基于给定的近 5 日题材排名/涨幅/涨停数据, 用中文输出 JSON。"
-        "**严格要求**: name 必须从给定数据中选, 不得编造。判断要直接、精炼、有可操作性。"
+        role
+        + "基于给定的近 5 日题材排名/涨幅/涨停数据, 用中文输出 JSON。"
+        + "**严格要求**: name 必须从给定数据中选, 不得编造。判断要直接、精炼、有可操作性。"
         + NO_FLUFF_RULES
     )
 
@@ -406,7 +426,10 @@ def _merge_llm(
 async def generate_theme_brief(
     trade_date: date | None,
     model_id: str = "deepseek-v3",
+    perspective: str = "short",
 ) -> dict[str, Any]:
+    if perspective not in _PERSPECTIVE_ROLES:
+        perspective = "short"
     if trade_date is None:
         trade_date = _latest_trade_date_with_data() or date.today()
 
@@ -417,6 +440,7 @@ async def generate_theme_brief(
         "trade_date": trade_date.isoformat(),
         "generated_at": datetime.now().isoformat(timespec="seconds"),
         "model": model_id,
+        "perspective": perspective,
         "headline": "",
         "leading": [],
         "fading": [],
@@ -470,7 +494,7 @@ async def generate_theme_brief(
     except Exception:
         pass
 
-    system, user = _build_prompt(trade_date.isoformat(), agg, pools, cross_ctx, theme_news)
+    system, user = _build_prompt(trade_date.isoformat(), agg, pools, cross_ctx, theme_news, perspective)
     llm_out = await _call_llm(system, user, model_id)
     merged = _merge_llm(agg, pools, llm_out, theme_news)
     base.update(merged)

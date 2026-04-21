@@ -23,6 +23,7 @@ const MODULE_LABELS: Record<NavModule, string> = {
   sentiment: "大盘情绪",
   themes: "题材",
   capital: "资金分析",
+  midlong: "中长视角",
   lhb: "龙虎榜",
   search: "搜索",
   news: "资讯",

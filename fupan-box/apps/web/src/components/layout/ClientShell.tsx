@@ -2,6 +2,8 @@
 
 import { useState, useEffect } from "react";
 import { MainLayout } from "./MainLayout";
+import { UrlModuleSync } from "./UrlModuleSync";
+import { AnonymousCTA } from "./AnonymousCTA";
 
 export function ClientShell({ children }: { children: React.ReactNode }) {
   const [mounted, setMounted] = useState(false);
@@ -21,5 +23,11 @@ export function ClientShell({ children }: { children: React.ReactNode }) {
     );
   }
 
-  return <MainLayout>{children}</MainLayout>;
+  return (
+    <>
+      <UrlModuleSync />
+      <MainLayout>{children}</MainLayout>
+      <AnonymousCTA />
+    </>
+  );
 }

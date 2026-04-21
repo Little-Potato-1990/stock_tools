@@ -13,6 +13,7 @@ from app.config import get_settings
 router = APIRouter()
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login")
+oauth2_scheme_optional = OAuth2PasswordBearer(tokenUrl="/api/auth/login", auto_error=False)
 settings = get_settings()
 
 
@@ -51,6 +52,34 @@ async def get_current_user(
     if not user:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "User not found")
     return user
+
+
+async def optional_user(
+    token: str | None = Depends(oauth2_scheme_optional),
+    db: AsyncSession = Depends(get_db),
+) -> User | None:
+    """匿名可选登录依赖. 没 token 或 token 无效都返回 None, 不抛 401.
+
+    用法:
+        @router.get("/foo")
+        async def foo(user: User | None = Depends(optional_user)):
+            if user:
+                # 登录态: 走付费 / 高频通道
+            else:
+                # 匿名态: 走只读缓存通道
+    """
+    if not token:
+        return None
+    try:
+        payload = jwt.decode(token, settings.secret_key, algorithms=[settings.algorithm])
+        user_id = payload.get("sub")
+        if user_id is None:
+            return None
+    except JWTError:
+        return None
+
+    result = await db.execute(select(User).where(User.id == int(user_id)))
+    return result.scalar_one_or_none()
 
 
 @router.post("/register", response_model=TokenResponse)

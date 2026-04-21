@@ -18,6 +18,7 @@ celery.conf.imports = (
     "app.tasks.plan_check",
     "app.tasks.news_ingest",
     "app.tasks.quarterly",
+    "app.tasks.midlong",
 )
 celery.conf.beat_schedule = {
     "daily-pipeline": {
@@ -112,6 +113,43 @@ celery.conf.beat_schedule = {
     "prewarm-institutional-brief": {
         "task": "app.tasks.prewarm.prewarm_institutional_brief",
         "schedule": crontab(hour=16, minute=10, day_of_week="1-5"),
+    },
+    # === 中长视角 (Phase 1) ===
+    # 估值快照: 每日 18:30 (daily pipeline 之后), 拉全市场 daily_basic 全字段
+    "midlong-valuation-daily": {
+        "task": "app.tasks.midlong.run_valuation_task",
+        "schedule": crontab(hour=18, minute=30, day_of_week="1-5"),
+    },
+    # 5年/3年 PE/PB 分位重算: 每月 5 号 22:00
+    "midlong-valuation-percentile-monthly": {
+        "task": "app.tasks.midlong.recompute_valuation_pct_task",
+        "schedule": crontab(hour=22, minute=0, day_of_month="5"),
+    },
+    # 财务指标 + 业绩预告 + 业绩快报: 每月 5/15/30 日 20:00 跑一次
+    "midlong-fundamentals-monthly": {
+        "task": "app.tasks.midlong.run_fundamentals_task",
+        "schedule": crontab(hour=20, minute=0, day_of_month="5,15,30"),
+    },
+    # 卖方一致预期: 每周一 18:00
+    "midlong-consensus-weekly": {
+        "task": "app.tasks.midlong.run_consensus_task",
+        "schedule": crontab(hour=18, minute=0, day_of_week="1"),
+    },
+    # === 中长视角 brief 预热 (Phase 2) ===
+    # 三视角一句话 brief: 每日 17:30, 跑 top 50, 给 Drawer PerspectiveBriefBar 用
+    "prewarm-multi-perspective-daily": {
+        "task": "app.tasks.prewarm.prewarm_multi_perspective",
+        "schedule": crontab(hour=17, minute=30, day_of_week="1-5"),
+    },
+    # 波段 brief 预热: 每日 18:00, 跑 top 50
+    "prewarm-swing-brief-daily": {
+        "task": "app.tasks.prewarm.prewarm_swing_brief",
+        "schedule": crontab(hour=18, minute=0, day_of_week="1-5"),
+    },
+    # 长线 brief 预热: 每周一 19:00, 跑总市值 top 200 中 PE 分位 <50% 的股 (capped 50)
+    "prewarm-long-term-brief-weekly": {
+        "task": "app.tasks.prewarm.prewarm_long_term_brief",
+        "schedule": crontab(hour=19, minute=0, day_of_week="1"),
     },
 }
 celery.conf.timezone = "Asia/Shanghai"

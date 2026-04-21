@@ -40,6 +40,7 @@ async def search_news(
     hours: int = Query(168, ge=1, le=24 * 30, description="回看时长 (小时)"),
     min_importance: int = Query(0, ge=0, le=5),
     sentiment: str = Query("", description="bullish|neutral|bearish"),
+    impact_horizon: str = Query("", description="影响时间维度: short|swing|long|mixed"),
     code: str = Query("", description="只限命中此股票代码"),
     theme: str = Query("", description="只限命中此题材"),
 ):
@@ -84,6 +85,9 @@ async def search_news(
             if sentiment in ("bullish", "neutral", "bearish"):
                 where_clauses.append("sentiment = :sent")
                 params["sent"] = sentiment
+            if impact_horizon in ("short", "swing", "long", "mixed"):
+                where_clauses.append("impact_horizon = :ih")
+                params["ih"] = impact_horizon
             if code.strip():
                 where_clauses.append("related_stocks ?| array[:code]")
                 params["code"] = code.strip()

@@ -185,10 +185,11 @@ def _enrich_raw(items: list[NewsRaw], theme_pool: set[str]) -> list[dict]:
             "related_stocks": codes or None,
             "related_themes": themes or None,
             "raw_tags": list(it.raw_tags or []) or None,
-            # 兜底 importance/sentiment, LLM 后续会覆盖
+            # 兜底 importance/sentiment/impact_horizon, LLM 后续会覆盖
             "importance": int(heur.get("importance", 2)),
             "sentiment": heur.get("sentiment"),
             "tags": heur.get("tags") or None,
+            "impact_horizon": heur.get("impact_horizon"),
             "embedding_status": "pending",
         })
     # 同一批内按 title_hash 去重 (取最早 pub_time + 合并 source_urls)
@@ -296,6 +297,8 @@ async def _llm_tag_recent(hours: int = 24, batch_size: int = 30, model: str = "d
                         upd["sentiment"] = tg["sentiment"]
                     if tg.get("tags"):
                         upd["tags"] = list(tg["tags"])[:5]
+                    if tg.get("impact_horizon") in ("short", "swing", "long", "mixed"):
+                        upd["impact_horizon"] = tg["impact_horizon"]
                     if tg.get("themes"):
                         # LLM 抽出的 themes 可能比 ingest 时更准, 合并
                         existing = list(n.related_themes or [])
@@ -443,4 +446,5 @@ def _row_to_dict(r: NewsSummary) -> dict:
         "raw_tags": list(r.raw_tags or []),
         "importance": int(r.importance or 0),
         "sentiment": r.sentiment,
+        "impact_horizon": r.impact_horizon,
     }

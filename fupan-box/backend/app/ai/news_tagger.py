@@ -34,6 +34,24 @@ _BEARISH_KW = [
     "利空", "下跌", "新低", "亏损", "减持", "立案", "调查", "处罚",
     "下调", "暂停", "停产", "ST", "退市", "诉讼", "黑天鹅",
 ]
+# Phase 2: 影响时间维度的关键词标志
+_HORIZON_SHORT_KW = [
+    "涨停", "跌停", "异动", "快讯", "突发", "盘中", "急拉", "拉升", "封板",
+    "竞价", "炸板", "巨量", "尾盘", "高开", "龙头", "题材",
+]
+_HORIZON_SWING_KW = [
+    "中标", "签约", "订单", "合同", "业绩预增", "业绩预告", "预增", "扭亏",
+    "重组", "并购", "增持", "回购", "扩产", "投产", "试运行", "放量",
+    "财报", "季报", "中报", "年报", "分红", "送转",
+]
+_HORIZON_LONG_KW = [
+    "战略", "五年规划", "十四五", "十五五", "国家战略", "新基建", "国务院",
+    "央行", "降准", "降息", "财政", "顶层设计", "长期", "研发", "技术突破",
+    "产业升级", "国产替代", "自主可控", "产业链", "卡脖子",
+    "上市", "IPO", "分拆", "国际化", "海外扩张", "出海",
+]
+
+
 _HOT_THEMES = [
     "AI", "人工智能", "大模型", "算力", "芯片", "半导体", "光刻机",
     "机器人", "人形机器人", "低空经济", "eVTOL", "新能源", "锂电池",
@@ -89,12 +107,28 @@ def _heuristic_one(item: dict, theme_pool: set[str]) -> dict[str, Any]:
     if importance >= 4:
         tags.append("重磅")
 
+    short_hit = sum(1 for kw in _HORIZON_SHORT_KW if kw in text)
+    swing_hit = sum(1 for kw in _HORIZON_SWING_KW if kw in text)
+    long_hit = sum(1 for kw in _HORIZON_LONG_KW if kw in text)
+    horizons_hit = sum(1 for h in (short_hit, swing_hit, long_hit) if h > 0)
+    if horizons_hit >= 2:
+        impact_horizon = "mixed"
+    elif long_hit > swing_hit and long_hit > short_hit:
+        impact_horizon = "long"
+    elif swing_hit > short_hit and swing_hit > 0:
+        impact_horizon = "swing"
+    elif short_hit > 0:
+        impact_horizon = "short"
+    else:
+        impact_horizon = "swing" if importance >= 3 else "short"
+
     return {
         "tags": tags,
         "themes": themes,
         "rel_codes": rel_codes,
         "importance": importance,
         "sentiment": sentiment,
+        "impact_horizon": impact_horizon,
     }
 
 
@@ -124,11 +158,17 @@ def _build_prompt(items: list[dict]) -> tuple[str, str]:
         '      "themes": ["<=4 个相关概念名"],\n'
         '      "rel_codes": ["<=4 个相关 6 位股票代码"],\n'
         '      "importance": 1,\n'
-        '      "sentiment": "bullish | neutral | bearish"\n'
+        '      "sentiment": "bullish | neutral | bearish",\n'
+        '      "impact_horizon": "short | swing | long | mixed"\n'
         "    }\n"
         "  ]\n"
         "}\n```\n"
-        "重要程度 1-5: 5=重磅政策/行业级别催化, 4=单股大单/大并购, 3=正常题材新闻, 2=普通公告, 1=噪音。"
+        "重要程度 1-5: 5=重磅政策/行业级别催化, 4=单股大单/大并购, 3=正常题材新闻, 2=普通公告, 1=噪音。\n"
+        "影响时间维度 impact_horizon (核心字段, 给短/中/长视角投资者过滤新闻用):\n"
+        "- short: 当日/本周盘面催化, 如涨停/异动/快讯/盘中突发, 时效 1-5 天\n"
+        "- swing: 5-20 日波段催化, 如订单/中标/业绩预告/重组/扩产, 时效 1-3 月\n"
+        "- long: 长期逻辑, 如战略/研发突破/政策周期/产业升级/国家战略, 时效 6 月+\n"
+        "- mixed: 同时具备多个时间维度的影响 (例: 重大并购/行业政策)\n"
         "只判断你能从文本看出的, 不要凭空编。"
     )
     return system, user
@@ -176,6 +216,10 @@ def _merge(items: list[dict], llm_out: dict | None, theme_pool: set[str]) -> lis
         sent = r.get("sentiment")
         if isinstance(sent, str) and sent in valid_sentiment:
             fallback["sentiment"] = sent
+
+        horizon = r.get("impact_horizon")
+        if isinstance(horizon, str) and horizon in {"short", "swing", "long", "mixed"}:
+            fallback["impact_horizon"] = horizon
 
     return base
 

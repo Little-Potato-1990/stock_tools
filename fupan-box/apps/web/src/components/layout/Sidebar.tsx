@@ -15,6 +15,7 @@ import {
   Award,
   BookOpen,
   Wallet,
+  Telescope,
   type LucideIcon,
 } from "lucide-react";
 import { useUIStore, type NavModule } from "@/stores/ui-store";
@@ -33,6 +34,7 @@ const PUBLIC_NAV: NavItem[] = [
   { key: "sentiment", label: "大盘情绪", icon: Activity },
   { key: "themes", label: "题材追踪", icon: Layers },
   { key: "capital", label: "资金风向标", icon: DollarSign },
+  { key: "midlong", label: "中长视角", icon: Telescope, badge: "AI" },
   { key: "lhb", label: "龙虎榜分析", icon: Trophy },
   { key: "search", label: "个股检索", icon: SearchIcon },
   { key: "news", label: "财联社要闻", icon: Newspaper },

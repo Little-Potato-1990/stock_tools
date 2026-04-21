@@ -1,11 +1,12 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { X, ExternalLink, Star, Zap, Sparkles, ChevronRight, RefreshCw } from "lucide-react";
+import { X, ExternalLink, Star, Zap } from "lucide-react";
 import { api } from "@/lib/api";
 import { getCellColor } from "@/lib/colorScale";
 import { useUIStore } from "@/stores/ui-store";
 import { StockCapitalChip } from "./StockCapitalChip";
+import { PerspectiveBriefBar } from "./PerspectiveBriefBar";
 
 interface StockDetail {
   stock_code: string;
@@ -28,15 +29,6 @@ interface StockDetail {
   }>;
 }
 
-type WhyRose = Awaited<ReturnType<typeof api.getWhyRose>>;
-
-const VERDICT_COLOR: Record<WhyRose["verdict"], string> = {
-  S: "var(--accent-purple)",
-  A: "var(--accent-red)",
-  B: "var(--accent-orange)",
-  C: "var(--accent-green)",
-};
-
 interface Props {
   stockCode: string | null;
   onClose: () => void;
@@ -46,9 +38,6 @@ export function StockDetailDrawer({ stockCode, onClose }: Props) {
   const [detail, setDetail] = useState<StockDetail | null>(null);
   const [loading, setLoading] = useState(false);
   const [isWatchlisted, setIsWatchlisted] = useState(false);
-  const [aiSummary, setAiSummary] = useState<WhyRose | null>(null);
-  const [aiLoading, setAiLoading] = useState(false);
-  const [aiError, setAiError] = useState<string | null>(null);
   const openWhyRose = useUIStore((s) => s.openWhyRose);
 
   const fetchDetail = useCallback(async (code: string) => {
@@ -63,30 +52,13 @@ export function StockDetailDrawer({ stockCode, onClose }: Props) {
     }
   }, []);
 
-  const fetchAiSummary = useCallback(async (code: string) => {
-    setAiLoading(true);
-    setAiError(null);
-    try {
-      const d = await api.getWhyRose(code);
-      setAiSummary(d);
-    } catch (e) {
-      setAiError(e instanceof Error ? e.message : "AI 解读暂不可用");
-      setAiSummary(null);
-    } finally {
-      setAiLoading(false);
-    }
-  }, []);
-
   useEffect(() => {
     if (stockCode) {
       fetchDetail(stockCode);
-      fetchAiSummary(stockCode);
     } else {
       setDetail(null);
-      setAiSummary(null);
-      setAiError(null);
     }
-  }, [stockCode, fetchDetail, fetchAiSummary]);
+  }, [stockCode, fetchDetail]);
 
   if (!stockCode) return null;
 
@@ -276,97 +248,14 @@ export function StockDetailDrawer({ stockCode, onClose }: Props) {
           </div>
         )}
 
-        {/* AI 一句话总结 (P0 改造) - 放在价格之下, 用户首屏第二眼必看 */}
-        <div
-          className="px-3 py-2.5"
-          style={{
-            background:
-              "linear-gradient(135deg, rgba(168,85,247,0.08) 0%, var(--bg-secondary) 70%)",
-            borderBottom: "1px solid var(--border-color)",
-          }}
-        >
-          <div className="flex items-center gap-1.5 mb-1">
-            <Sparkles size={12} style={{ color: "var(--accent-purple)" }} />
-            <span
-              className="font-bold"
-              style={{
-                color: "var(--accent-purple)",
-                fontSize: 10,
-                letterSpacing: 1,
-              }}
-            >
-              AI 一句话解读
-            </span>
-            {aiSummary && (
-              <span
-                className="font-bold flex items-center justify-center"
-                style={{
-                  width: 16,
-                  height: 16,
-                  borderRadius: 3,
-                  background: VERDICT_COLOR[aiSummary.verdict],
-                  color: "#fff",
-                  fontSize: 10,
-                }}
-                title={aiSummary.verdict_label}
-              >
-                {aiSummary.verdict}
-              </span>
-            )}
-            <button
-              onClick={() => stockCode && fetchAiSummary(stockCode)}
-              disabled={aiLoading}
-              className="ml-auto p-0.5 transition-opacity hover:opacity-70"
-              title="重新解读"
-              style={{ color: "var(--text-muted)" }}
-            >
-              <RefreshCw size={10} className={aiLoading ? "animate-spin" : ""} />
-            </button>
-          </div>
-          {aiLoading && !aiSummary ? (
-            <div
-              style={{
-                color: "var(--text-muted)",
-                fontSize: "var(--font-sm)",
-                fontStyle: "italic",
-              }}
-            >
-              AI 正在解读…首次约 30 秒, 之后秒回
-            </div>
-          ) : aiError ? (
-            <div
-              className="flex items-center justify-between"
-              style={{ color: "var(--text-muted)", fontSize: 11 }}
-            >
-              <span>AI 解读暂不可用 ({aiError})</span>
-              <button
-                onClick={() => stockCode && fetchAiSummary(stockCode)}
-                style={{ color: "var(--accent-blue)", fontSize: 11 }}
-              >
-                重试
-              </button>
-            </div>
-          ) : aiSummary ? (
-            <button
-              onClick={() => openWhyRose(stockCode!, detail?.stock_name)}
-              className="w-full text-left flex items-start gap-1 group"
-              style={{ color: "var(--text-primary)" }}
-              title="点击查看完整 AI 解读 (驱动 / 卡位 / 高度 / 明日策略)"
-            >
-              <span
-                className="flex-1 font-bold leading-snug"
-                style={{ fontSize: "var(--font-md)", lineHeight: 1.45 }}
-              >
-                {aiSummary.headline}
-              </span>
-              <ChevronRight
-                size={12}
-                className="flex-shrink-0 mt-0.5 transition-transform group-hover:translate-x-0.5"
-                style={{ color: "var(--accent-purple)" }}
-              />
-            </button>
-          ) : null}
-        </div>
+        {/* AI 三视角速读条 (短/波段/长) - 放在价格之下, 用户首屏第二眼必看 */}
+        {stockCode && (
+          <PerspectiveBriefBar
+            stockCode={stockCode}
+            stockName={detail?.stock_name}
+            onOpenShortDetail={() => openWhyRose(stockCode, detail?.stock_name)}
+          />
+        )}
 
         {loading ? (
           <div className="px-3 py-3 space-y-2">

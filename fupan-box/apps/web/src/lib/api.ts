@@ -42,6 +42,18 @@ export interface TradePattern {
   mode_desc: string;
 }
 
+export interface TierMeta {
+  tier: "anonymous" | "free" | "monthly" | "yearly" | string;
+  valuation_days_cap: number;
+  history_cap: {
+    consensus_weeks: number;
+    fundamentals_periods: number;
+    holders_quarters: number;
+    screener_limit: number;
+  };
+  upgrade_hint: string | null;
+}
+
 export interface QuotaUsage {
   tier: string;
   tier_label: string;
@@ -61,6 +73,7 @@ export interface TierInfo {
   tier: string;
   tier_label: string;
   price_rmb: number;
+  features?: string[];
   quota: Array<{ action: string; label: string; quota: number }>;
 }
 
@@ -185,6 +198,25 @@ class ApiClient {
 
     const res = await fetch(`${API_BASE}${path}`, { ...options, headers });
     if (!res.ok) {
+      // 401: 匿名访问受保护接口 -> 抛 NotLoggedInError, 调用方应静默处理 (展示登录 CTA 而非弹错误)
+      if (res.status === 401) {
+        // token 过期: 清掉本地 token, 让 UI 切回匿名态
+        if (this.token) {
+          this.token = null;
+          if (typeof window !== "undefined") localStorage.removeItem("token");
+        }
+        const err = new Error("requires_login") as Error & { code?: string; status?: number };
+        err.code = "REQUIRES_LOGIN";
+        err.status = 401;
+        throw err;
+      }
+      // 429: 匿名访问触发限流
+      if (res.status === 429) {
+        const err = new Error("rate_limited") as Error & { code?: string; status?: number };
+        err.code = "RATE_LIMITED";
+        err.status = 429;
+        throw err;
+      }
       const body = await res.json().catch(() => ({}));
       throw new Error(body.detail || `API error: ${res.status}`);
     }
@@ -273,6 +305,7 @@ class ApiClient {
     min_importance?: number;
     sources?: string;
     sentiment?: "bullish" | "neutral" | "bearish";
+    impact_horizon?: "short" | "swing" | "long" | "mixed";
     code?: string;
     theme?: string;
     sort?: "default" | "time" | "smart";
@@ -287,6 +320,7 @@ class ApiClient {
     if (params?.min_importance) sp.set("min_importance", String(params.min_importance));
     if (params?.sources) sp.set("sources", params.sources);
     if (params?.sentiment) sp.set("sentiment", params.sentiment);
+    if (params?.impact_horizon) sp.set("impact_horizon", params.impact_horizon);
     if (params?.code) sp.set("code", params.code);
     if (params?.theme) sp.set("theme", params.theme);
     if (params?.sort) sp.set("sort", params.sort);
@@ -308,6 +342,7 @@ class ApiClient {
       raw_tags?: string[];
       importance?: number;
       sentiment?: "bullish" | "neutral" | "bearish";
+      impact_horizon?: "short" | "swing" | "long" | "mixed";
     }>>(`/api/market/news?${sp.toString()}`);
   }
 
@@ -627,10 +662,11 @@ class ApiClient {
     return this.get<Record<string, unknown>>(`/api/ai/sentiment-brief${q}`);
   }
 
-  getThemeBrief(tradeDate?: string, refresh = false) {
+  getThemeBrief(tradeDate?: string, refresh = false, perspective: "short" | "swing" | "long" = "short") {
     const params = new URLSearchParams();
     if (tradeDate) params.set("trade_date", tradeDate);
     if (refresh) params.set("refresh", "1");
+    if (perspective !== "short") params.set("perspective", perspective);
     const q = params.toString() ? `?${params}` : "";
     return this.get<Record<string, unknown>>(`/api/ai/theme-brief${q}`);
   }
@@ -1004,6 +1040,207 @@ class ApiClient {
       } | null;
       stale_minutes: number | null;
     }>(`/api/snapshot/status/health`);
+  }
+
+  // ===== Phase 2/3: 中长视角 (Mid-Long Perspective) =====
+
+  /** 个股近 N 季度财务指标 + 业绩预告事件 */
+  getMidlongFundamentals(code: string, periods = 8) {
+    return this.get<{
+      stock_code: string;
+      quarterly: Array<{
+        report_date: string;
+        revenue: number | null;
+        revenue_yoy: number | null;
+        net_profit: number | null;
+        net_profit_yoy: number | null;
+        gross_margin: number | null;
+        net_margin: number | null;
+        roe: number | null;
+        roa: number | null;
+        debt_ratio: number | null;
+        eps: number | null;
+        bps: number | null;
+        ann_date: string | null;
+      }>;
+      forecast: Array<{
+        ann_date: string;
+        period: string;
+        type: string;
+        nature: string | null;
+        change_pct_low: number | null;
+        change_pct_high: number | null;
+        summary: string | null;
+      }>;
+      count: number;
+      tier_meta?: TierMeta;
+    }>(`/api/midlong/fundamentals/${code}?periods=${periods}`);
+  }
+
+  /** 个股估值时序 + 5y/3y 分位 */
+  getMidlongValuation(code: string, days = 250) {
+    return this.get<{
+      stock_code: string;
+      series: Array<{
+        trade_date: string;
+        pe: number | null;
+        pe_ttm: number | null;
+        pb: number | null;
+        ps_ttm: number | null;
+        dv_ttm: number | null;
+        total_mv: number | null;
+        circ_mv: number | null;
+      }>;
+      latest: {
+        trade_date: string;
+        pe: number | null;
+        pe_ttm: number | null;
+        pb: number | null;
+        ps_ttm: number | null;
+        dv_ttm: number | null;
+        pe_pct_5y: number | null;
+        pe_pct_3y: number | null;
+        pb_pct_5y: number | null;
+        pb_pct_3y: number | null;
+        total_mv: number | null;
+        circ_mv: number | null;
+      } | null;
+      count: number;
+      tier_meta?: TierMeta;
+    }>(`/api/midlong/valuation/${code}?days=${days}`);
+  }
+
+  /** 个股卖方一致预期 (周维度) */
+  getMidlongConsensus(code: string, weeks = 26) {
+    return this.get<{
+      stock_code: string;
+      series: Array<{
+        week_end: string;
+        target_price_avg: number | null;
+        target_price_median: number | null;
+        target_price_chg_4w_pct: number | null;
+        eps_fy1: number | null;
+        eps_fy1_chg_4w_pct: number | null;
+        report_count: number | null;
+      }>;
+      latest: {
+        week_end: string;
+        target_price_avg: number | null;
+        target_price_median: number | null;
+        target_price_min: number | null;
+        target_price_max: number | null;
+        target_price_chg_4w_pct: number | null;
+        eps_fy1: number | null;
+        eps_fy2: number | null;
+        eps_fy3: number | null;
+        eps_fy1_chg_4w_pct: number | null;
+        rating: { buy: number; outperform: number; hold: number; underperform: number; sell: number };
+        report_count: number | null;
+        institution_count: number | null;
+      } | null;
+      count: number;
+      tier_meta?: TierMeta;
+    }>(`/api/midlong/consensus/${code}?weeks=${weeks}`);
+  }
+
+  /** 个股近 N 季度十大股东 + 当季变动汇总 */
+  getMidlongHolders(code: string, quarters = 4) {
+    return this.get<{
+      stock_code: string;
+      by_period: Array<{
+        report_date: string;
+        holders: Array<{
+          holder_name: string;
+          canonical_name: string | null;
+          holder_type: string;
+          fund_company: string | null;
+          is_free_float: boolean;
+          rank: number | null;
+          change_type: string | null;
+        }>;
+      }>;
+      latest_summary: { new: number; add: number; reduce: number; exit: number } | null;
+      tier_meta?: TierMeta;
+    }>(`/api/midlong/holders/${code}?quarters=${quarters}`);
+  }
+
+  /** AI 长线 brief (7 天缓存) */
+  getLongTermBrief(code: string, opts?: { tradeDate?: string; refresh?: boolean }) {
+    const sp = new URLSearchParams();
+    if (opts?.tradeDate) sp.set("trade_date", opts.tradeDate);
+    if (opts?.refresh) sp.set("refresh", "1");
+    const qs = sp.toString();
+    return this.get<{
+      stock_code: string;
+      trade_date: string;
+      headline: string;
+      thesis: string;
+      strengths: string[];
+      risks: string[];
+      valuation_view: string;
+      time_horizon: string;
+      evidence: string[];
+    }>(`/api/midlong/long-brief/${code}${qs ? `?${qs}` : ""}`);
+  }
+
+  /** 估值/财务筛选榜 */
+  getMidlongScreener(opts?: {
+    metric?: "low_pe_pct_5y" | "low_pb_pct_5y" | "high_total_mv" | "high_dv_ttm";
+    limit?: number;
+    minTotalMv?: number;
+  }) {
+    const sp = new URLSearchParams();
+    if (opts?.metric) sp.set("metric", opts.metric);
+    if (opts?.limit) sp.set("limit", String(opts.limit));
+    if (opts?.minTotalMv) sp.set("min_total_mv", String(opts.minTotalMv));
+    return this.get<{
+      items: Array<{
+        stock_code: string;
+        trade_date: string;
+        pe_ttm: number | null;
+        pb: number | null;
+        pe_pct_5y: number | null;
+        pb_pct_5y: number | null;
+        dv_ttm: number | null;
+        total_mv: number | null;
+      }>;
+      tier_meta?: TierMeta;
+    }>(`/api/midlong/screener?${sp.toString()}`);
+  }
+
+  /** 三视角一句话速读 (短/波段/长线) */
+  getMultiPerspectiveBrief(code: string, opts?: { tradeDate?: string; refresh?: boolean }) {
+    const sp = new URLSearchParams();
+    if (opts?.tradeDate) sp.set("trade_date", opts.tradeDate);
+    if (opts?.refresh) sp.set("refresh", "1");
+    const qs = sp.toString();
+    return this.get<{
+      stock_code: string;
+      trade_date: string;
+      perspectives: {
+        short: { headline: string; stance: string; evidence: string[] };
+        swing: { headline: string; stance: string; evidence: string[] };
+        long: { headline: string; stance: string; evidence: string[] };
+      };
+    }>(`/api/ai/multi-perspective/${code}${qs ? `?${qs}` : ""}`);
+  }
+
+  /** 波段 brief */
+  getSwingBrief(code: string, opts?: { tradeDate?: string; refresh?: boolean }) {
+    const sp = new URLSearchParams();
+    if (opts?.tradeDate) sp.set("trade_date", opts.tradeDate);
+    if (opts?.refresh) sp.set("refresh", "1");
+    const qs = sp.toString();
+    return this.get<{
+      stock_code: string;
+      trade_date: string;
+      headline: string;
+      bias: "bullish" | "neutral" | "bearish";
+      time_horizon: string;
+      drivers: string[];
+      risks: string[];
+      evidence: string[];
+    }>(`/api/ai/swing-brief/${code}${qs ? `?${qs}` : ""}`);
   }
 
   listAiConversations() {
