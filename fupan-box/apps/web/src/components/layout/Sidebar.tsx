@@ -9,6 +9,7 @@ import {
   Search as SearchIcon,
   Newspaper,
   Star,
+  Target,
   Bot,
   Sparkles,
   Award,
@@ -17,6 +18,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { useUIStore, type NavModule } from "@/stores/ui-store";
+import { usePrivateStatus } from "@/stores/private-status-store";
 import { DataHealthChip } from "./DataHealthChip";
 
 interface NavItem {
@@ -26,26 +28,172 @@ interface NavItem {
   badge?: string;
 }
 
-const NAV: NavItem[] = [
+const PUBLIC_NAV: NavItem[] = [
   { key: "today", label: "今日复盘", icon: Sparkles, badge: "AI" },
   { key: "sentiment", label: "大盘情绪", icon: Activity },
   { key: "ladder", label: "连板天梯", icon: TrendingUp },
   { key: "themes", label: "题材追踪", icon: Layers },
-  { key: "capital", label: "资金 & 风向标", icon: DollarSign },
+  { key: "capital", label: "资金风向标", icon: DollarSign },
   { key: "lhb", label: "龙虎榜分析", icon: Trophy },
   { key: "search", label: "个股检索", icon: SearchIcon },
   { key: "news", label: "财联社要闻", icon: Newspaper },
-  { key: "watchlist", label: "我的自选", icon: Star },
-  { key: "my_review", label: "我的复盘", icon: BookOpen, badge: "AI" },
-  { key: "ai_track", label: "AI 战绩", icon: Award, badge: "AI" },
+];
+
+const SETTINGS_NAV: NavItem[] = [
   { key: "account", label: "账户套餐", icon: Wallet },
 ];
+
+interface PrivateNavItem extends NavItem {
+  unlocked: boolean;
+  /** 状态文字 (右侧灰色小字, 解锁前为引导, 解锁后为计数) */
+  hint: string;
+  /** 触发数 > 0 时, 用 highlight 颜色显示数字 */
+  highlight?: number;
+}
+
+function SectionTitle({ children }: { children: string }) {
+  return (
+    <div
+      className="px-3"
+      style={{
+        marginTop: 12,
+        marginBottom: 4,
+        fontSize: 9,
+        letterSpacing: "0.12em",
+        color: "var(--text-tertiary)",
+        textTransform: "uppercase",
+        fontWeight: 700,
+      }}
+    >
+      {children}
+    </div>
+  );
+}
 
 export function Sidebar() {
   const activeModule = useUIStore((s) => s.activeModule);
   const setActiveModule = useUIStore((s) => s.setActiveModule);
   const aiPanelOpen = useUIStore((s) => s.aiPanelOpen);
   const toggleAi = useUIStore((s) => s.toggleAiPanel);
+  const status = usePrivateStatus();
+
+  const privateNav: PrivateNavItem[] = [
+    {
+      key: "watchlist",
+      label: "我的自选",
+      icon: Star,
+      unlocked: status?.watchlist.unlocked ?? false,
+      hint: status?.watchlist.unlocked
+        ? `${status.watchlist.count}`
+        : "+ 加自选",
+    },
+    {
+      key: "plans",
+      label: "我的计划",
+      icon: Target,
+      unlocked: status?.plans.unlocked ?? false,
+      hint: status?.plans.unlocked
+        ? status.plans.today_triggers > 0
+          ? `${status.plans.today_triggers}`
+          : `${status.plans.active + status.plans.triggered}`
+        : "+ 建计划",
+      highlight: status?.plans.today_triggers ?? 0,
+    },
+    {
+      key: "my_review",
+      label: "我的复盘",
+      icon: BookOpen,
+      badge: "AI",
+      unlocked: status?.trades.unlocked ?? false,
+      hint: status?.trades.unlocked
+        ? `7日 ${status.trades.count_7d}`
+        : "+ 记交易",
+    },
+    {
+      key: "ai_track",
+      label: "AI 战绩",
+      icon: Award,
+      badge: "AI",
+      unlocked: status?.ai_track.unlocked ?? false,
+      hint: status?.ai_track.unlocked
+        ? `已验 ${status.ai_track.verified_7d}`
+        : "待累计",
+    },
+  ];
+
+  const renderItem = (item: NavItem, opts?: Partial<PrivateNavItem>) => {
+    const Icon = item.icon;
+    const isActive = activeModule === item.key;
+    const unlocked = opts?.unlocked ?? true;
+    const hint = opts?.hint;
+    const highlight = (opts?.highlight ?? 0) > 0;
+    const dimmed = !isActive && !unlocked;
+
+    return (
+      <button
+        key={item.key}
+        onClick={() => setActiveModule(item.key)}
+        className="w-full flex items-center gap-2 transition-colors"
+        style={{
+          padding: "8px 12px",
+          background: isActive ? "var(--accent-orange)" : "transparent",
+          color: isActive
+            ? "#1a1d28"
+            : dimmed
+            ? "var(--text-tertiary)"
+            : "var(--text-secondary)",
+          fontSize: "var(--font-md)",
+          fontWeight: isActive ? 700 : 500,
+          textAlign: "left",
+          opacity: dimmed ? 0.65 : 1,
+        }}
+        onMouseEnter={(e) => {
+          if (!isActive)
+            e.currentTarget.style.background = "rgba(255,255,255,0.04)";
+        }}
+        onMouseLeave={(e) => {
+          if (!isActive) e.currentTarget.style.background = "transparent";
+        }}
+      >
+        <Icon size={14} strokeWidth={isActive ? 2.4 : 1.8} />
+        <span className="flex-1 truncate">{item.label}</span>
+        {hint !== undefined && (
+          <span
+            style={{
+              fontSize: 10,
+              fontWeight: 700,
+              color: isActive
+                ? "#1a1d28"
+                : highlight
+                ? "var(--accent-red)"
+                : dimmed
+                ? "var(--text-tertiary)"
+                : "var(--text-secondary)",
+            }}
+          >
+            {hint}
+          </span>
+        )}
+        {item.badge && hint === undefined && (
+          <span
+            className="font-bold"
+            style={{
+              padding: "1px 5px",
+              borderRadius: 3,
+              fontSize: 9,
+              letterSpacing: "0.04em",
+              background: isActive
+                ? "rgba(26,29,40,0.85)"
+                : "var(--accent-purple)",
+              color: isActive ? "var(--accent-orange)" : "#fff",
+            }}
+          >
+            {item.badge}
+          </span>
+        )}
+      </button>
+    );
+  };
 
   return (
     <aside
@@ -77,56 +225,22 @@ export function Sidebar() {
         </span>
       </div>
 
-      {/* 主导航 */}
+      {/* 主导航: 三分区 */}
       <nav className="flex-1 overflow-y-auto py-2">
-        {NAV.map((item) => {
-          const Icon = item.icon;
-          const isActive = activeModule === item.key;
+        <SectionTitle>公共复盘</SectionTitle>
+        {PUBLIC_NAV.map((item) => renderItem(item))}
 
-          return (
-            <div key={item.key}>
-              <button
-                onClick={() => setActiveModule(item.key)}
-                className="w-full flex items-center gap-2 transition-colors"
-                style={{
-                  padding: "8px 12px",
-                  background: isActive ? "var(--accent-orange)" : "transparent",
-                  color: isActive ? "#1a1d28" : "var(--text-secondary)",
-                  fontSize: "var(--font-md)",
-                  fontWeight: isActive ? 700 : 500,
-                  textAlign: "left",
-                }}
-                onMouseEnter={(e) => {
-                  if (!isActive)
-                    e.currentTarget.style.background = "rgba(255,255,255,0.04)";
-                }}
-                onMouseLeave={(e) => {
-                  if (!isActive) e.currentTarget.style.background = "transparent";
-                }}
-              >
-                <Icon size={14} strokeWidth={isActive ? 2.4 : 1.8} />
-                <span className="flex-1">{item.label}</span>
-                {item.badge && (
-                  <span
-                    className="font-bold"
-                    style={{
-                      padding: "1px 5px",
-                      borderRadius: 3,
-                      fontSize: 9,
-                      letterSpacing: "0.04em",
-                      background: isActive
-                        ? "rgba(26,29,40,0.85)"
-                        : "var(--accent-purple)",
-                      color: isActive ? "var(--accent-orange)" : "#fff",
-                    }}
-                  >
-                    {item.badge}
-                  </span>
-                )}
-              </button>
-            </div>
-          );
-        })}
+        <SectionTitle>我的</SectionTitle>
+        {privateNav.map((item) =>
+          renderItem(item, {
+            unlocked: item.unlocked,
+            hint: item.hint,
+            highlight: item.highlight,
+          }),
+        )}
+
+        <SectionTitle>设置</SectionTitle>
+        {SETTINGS_NAV.map((item) => renderItem(item))}
       </nav>
 
       {/* 用户中心 / AI 入口 (急速复盘的底部卡片样式) */}

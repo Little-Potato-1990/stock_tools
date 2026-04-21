@@ -28,6 +28,7 @@ const MODULE_LABELS: Record<NavModule, string> = {
   search: "搜索",
   news: "资讯",
   watchlist: "自选股",
+  plans: "我的计划",
   ai_track: "AI 预测追踪",
   my_review: "我的复盘",
   account: "账户套餐",

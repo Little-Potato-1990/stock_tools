@@ -7,6 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.config import get_settings
+from app.ai.cross_context import get_chat_persona
 from app.models.snapshot import DailySnapshot
 
 logger = logging.getLogger(__name__)
@@ -34,6 +35,7 @@ _MODULE_LABELS = {
     "search": "搜索",
     "news": "资讯",
     "watchlist": "自选股",
+    "plans": "我的计划",
     "ai_track": "AI 战绩",
     "my_review": "我的复盘 (个人交易)",
     "account": "账户套餐",
@@ -104,10 +106,15 @@ def build_system_prompt(
 ) -> str:
     """Construct system prompt with market context for the given trade date."""
     base = (
-        "你是「复盘 AI 助手」，专注于 A 股超短线复盘分析。"
+        "你是「复盘 AI 副驾」，专注于 A 股超短线复盘分析。"
         "用户会询问涨停、连板、题材、行业、情绪等问题。"
         "请简洁专业地回答，使用中文，适当引用具体数据。"
     )
+
+    current_view = user_context.get("module") if user_context else None
+    persona = get_chat_persona(current_view)
+    if persona:
+        base += "\n\n[当前页面副驾职责] " + persona
 
     base += _format_user_context(user_context)
 

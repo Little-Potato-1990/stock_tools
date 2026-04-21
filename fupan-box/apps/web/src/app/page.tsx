@@ -6,6 +6,7 @@ import { SentimentPage } from "@/components/pages/SentimentPage";
 import { LadderPage } from "@/components/pages/LadderPage";
 import { ThemesPage } from "@/components/pages/ThemesPage";
 import { WatchlistPage } from "@/components/pages/WatchlistPage";
+import { PlansPage } from "@/components/pages/PlansPage";
 import { CapitalPage } from "@/components/pages/CapitalPage";
 import { LhbPage } from "@/components/pages/LhbPage";
 import { StockSearchPage } from "@/components/pages/StockSearchPage";
@@ -28,6 +29,8 @@ export default function Home() {
       return <ThemesPage />;
     case "watchlist":
       return <WatchlistPage />;
+    case "plans":
+      return <PlansPage />;
     case "capital":
       return <CapitalPage />;
     case "lhb":

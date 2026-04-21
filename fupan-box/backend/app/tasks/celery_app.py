@@ -15,6 +15,7 @@ celery.conf.imports = (
     "app.tasks.intraday_scan",
     "app.tasks.ai_verify",
     "app.tasks.prewarm",
+    "app.tasks.plan_check",
 )
 celery.conf.beat_schedule = {
     "daily-pipeline": {
@@ -34,6 +35,15 @@ celery.conf.beat_schedule = {
     # P2: 13:00 - 15:00 每分钟扫描盘中异动
     "intraday-scan-afternoon": {
         "task": "app.tasks.intraday_scan.intraday_scan_task",
+        "schedule": crontab(minute="*/1", hour="13-14", day_of_week="1-5"),
+    },
+    # P0-用户计划池触发: 复用 intraday_scan 的 spot 窗口, 每分钟检查一次
+    "plan-check-morning": {
+        "task": "app.tasks.plan_check.plan_check_task",
+        "schedule": crontab(minute="*/1", hour="9-11", day_of_week="1-5"),
+    },
+    "plan-check-afternoon": {
+        "task": "app.tasks.plan_check.plan_check_task",
         "schedule": crontab(minute="*/1", hour="13-14", day_of_week="1-5"),
     },
     # AI 预热: pipeline 完成后 5min, 大盘四类 brief

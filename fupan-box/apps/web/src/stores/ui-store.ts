@@ -2,6 +2,14 @@ import { create } from "zustand";
 
 export type LhbScope = "daily" | "office_history" | "hot_money";
 
+/**
+ * AI 卡片信息密度: 三层折叠
+ * - headline: 一句话结论 (默认仅看头条 + 状态徽章)
+ * - concise: 结论 + 关键支持证据 (默认 1-2 屏)
+ * - detailed: 完整数据 + 趋势 + 复杂图表
+ */
+export type AiDensity = "headline" | "concise" | "detailed";
+
 export type NavModule =
   | "today"
   | "sentiment"
@@ -12,6 +20,7 @@ export type NavModule =
   | "search"
   | "news"
   | "watchlist"
+  | "plans"
   | "ai_track"
   | "my_review"
   | "account";
@@ -119,11 +128,23 @@ interface UIState {
   recentInteractions: RecentInteraction[];
   /** 推入一条交互记录, 自动去重 + 截断 */
   pushInteraction: (it: Omit<RecentInteraction, "ts">) => void;
+
+  /** AI 卡片信息密度偏好 (持久化到 localStorage) */
+  aiStyle: AiDensity;
+  setAiStyle: (s: AiDensity) => void;
 }
 
 const getStoredModel = () => {
   if (typeof window === "undefined") return "deepseek-v3";
   return localStorage.getItem("selectedModel") || "deepseek-v3";
+};
+
+const AI_STYLE_KEY = "ui:ai_style";
+const getStoredAiStyle = (): AiDensity => {
+  if (typeof window === "undefined") return "concise";
+  const v = localStorage.getItem(AI_STYLE_KEY);
+  if (v === "headline" || v === "concise" || v === "detailed") return v;
+  return "concise";
 };
 
 export const useUIStore = create<UIState>((set) => ({
@@ -215,5 +236,17 @@ export const useUIStore = create<UIState>((set) => ({
       persistRecent(next);
       return { recentInteractions: next };
     });
+  },
+
+  aiStyle: getStoredAiStyle(),
+  setAiStyle: (s) => {
+    if (typeof window !== "undefined") {
+      try {
+        localStorage.setItem(AI_STYLE_KEY, s);
+      } catch {
+        /* ignore */
+      }
+    }
+    set({ aiStyle: s });
   },
 }));

@@ -1,12 +1,13 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Sparkles, RefreshCw, Activity, MessageSquare } from "lucide-react";
+import { Sparkles, RefreshCw, Activity } from "lucide-react";
 import { api } from "@/lib/api";
 import { useUIStore } from "@/stores/ui-store";
 import { AiCardError, AiCardFooter, AiCardLoading } from "./AiCardChrome";
-import { EvidenceBadge } from "./EvidenceBadge";
 import { StreamHeadlineControl } from "./StreamHeadlineControl";
+import { AiDensitySwitch } from "./AiDensitySwitch";
+import { AiActionBar } from "./AiActionBar";
 import { useStreamingHeadline } from "@/hooks/useStreamingHeadline";
 
 interface TrendPoint {
@@ -48,7 +49,7 @@ export function SentimentAiCard({ hero = false }: Props = {}) {
   const [data, setData] = useState<SentimentBrief | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const askAI = useUIStore((s) => s.askAI);
+  const aiStyle = useUIStore((s) => s.aiStyle);
   const stream = useStreamingHeadline("sentiment", data?.trade_date, data?.model);
 
   const load = async (refresh = false) => {
@@ -118,7 +119,7 @@ export function SentimentAiCard({ hero = false }: Props = {}) {
           {data.trade_date} · {data.model}
         </span>
         <div className="ml-auto flex items-center gap-1.5">
-          <EvidenceBadge evidence={data.evidence} accent={PHASE_COLOR[data.phase]} />
+          <AiDensitySwitch accent={PHASE_COLOR[data.phase]} />
           <StreamHeadlineControl
             isStreaming={stream.isStreaming}
             hasOverride={stream.hasOverride}
@@ -164,74 +165,76 @@ export function SentimentAiCard({ hero = false }: Props = {}) {
         )}
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-2 mb-2">
-        <div
-          style={{
-            padding: "6px 10px",
-            background: "var(--bg-card)",
-            borderRadius: 4,
-            border: "1px solid var(--border-color)",
-          }}
-        >
+      {aiStyle !== "headline" && (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-2 mb-2">
           <div
-            className="flex items-center gap-1 mb-1.5"
-            style={{ fontSize: 10, color: "var(--accent-orange)", fontWeight: 700 }}
+            style={{
+              padding: "6px 10px",
+              background: "var(--bg-card)",
+              borderRadius: 4,
+              border: "1px solid var(--border-color)",
+            }}
           >
-            <Activity size={10} />
-            关键信号
-          </div>
-          {data.signals.map((s, i) => (
             <div
-              key={i}
-              className="flex items-start gap-1.5 mb-1"
-              style={{ fontSize: "var(--font-xs)" }}
+              className="flex items-center gap-1 mb-1.5"
+              style={{ fontSize: 10, color: "var(--accent-orange)", fontWeight: 700 }}
             >
-              <span
-                className="font-bold flex-shrink-0"
-                style={{ color: "var(--text-muted)", width: 50 }}
-              >
-                {s.label}
-              </span>
-              <span style={{ color: "var(--text-secondary)" }}>{s.text}</span>
+              <Activity size={10} />
+              关键信号
             </div>
-          ))}
-        </div>
+            {data.signals.map((s, i) => (
+              <div
+                key={i}
+                className="flex items-start gap-1.5 mb-1"
+                style={{ fontSize: "var(--font-xs)" }}
+              >
+                <span
+                  className="font-bold flex-shrink-0"
+                  style={{ color: "var(--text-muted)", width: 50 }}
+                >
+                  {s.label}
+                </span>
+                <span style={{ color: "var(--text-secondary)" }}>{s.text}</span>
+              </div>
+            ))}
+          </div>
 
-        <div
-          style={{
-            padding: "6px 10px",
-            background: "var(--bg-card)",
-            borderRadius: 4,
-            border: "1px solid var(--border-color)",
-          }}
-        >
           <div
-            className="flex items-center gap-1 mb-1.5"
-            style={{ fontSize: 10, color: "var(--accent-red)", fontWeight: 700 }}
+            style={{
+              padding: "6px 10px",
+              background: "var(--bg-card)",
+              borderRadius: 4,
+              border: "1px solid var(--border-color)",
+            }}
           >
-            <Sparkles size={10} />
-            短线对策
-          </div>
-          {data.playbook.map((s, i) => (
             <div
-              key={i}
-              className="flex items-start gap-1.5 mb-1"
-              style={{ fontSize: "var(--font-xs)" }}
+              className="flex items-center gap-1 mb-1.5"
+              style={{ fontSize: 10, color: "var(--accent-red)", fontWeight: 700 }}
             >
-              <span
-                className="font-bold flex-shrink-0"
-                style={{ color: "var(--text-muted)", width: 50 }}
-              >
-                {s.label}
-              </span>
-              <span style={{ color: "var(--text-primary)" }}>{s.action}</span>
+              <Sparkles size={10} />
+              短线对策
             </div>
-          ))}
+            {data.playbook.map((s, i) => (
+              <div
+                key={i}
+                className="flex items-start gap-1.5 mb-1"
+                style={{ fontSize: "var(--font-xs)" }}
+              >
+                <span
+                  className="font-bold flex-shrink-0"
+                  style={{ color: "var(--text-muted)", width: 50 }}
+                >
+                  {s.label}
+                </span>
+                <span style={{ color: "var(--text-primary)" }}>{s.action}</span>
+              </div>
+            ))}
+          </div>
         </div>
-      </div>
+      )}
 
-      {data.trend_5d.length > 0 && (
-        <div className="flex items-center gap-2">
+      {aiStyle === "detailed" && data.trend_5d.length > 0 && (
+        <div className="flex items-center gap-2 mb-2">
           <span style={{ fontSize: 10, color: "var(--text-muted)" }}>近 5 日:</span>
           <div className="flex items-end gap-2 flex-1">
             {data.trend_5d.map((p) => (
@@ -255,31 +258,18 @@ export function SentimentAiCard({ hero = false }: Props = {}) {
               </div>
             ))}
           </div>
-          <button
-            onClick={() =>
-              askAI(
-                `当前情绪阶段判断为「${data.phase_label}」: ${data.judgment}\n请基于近 5 日数据进一步推演明日可能的走势, 并给出更具体的应对建议。`
-              )
-            }
-            className="ml-auto transition-opacity hover:opacity-80"
-            title="问 AI"
-            style={{
-              padding: "3px 8px",
-              background: "var(--accent-purple)",
-              color: "#fff",
-              borderRadius: 3,
-              display: "inline-flex",
-              alignItems: "center",
-              gap: 3,
-              fontSize: 10,
-              fontWeight: 700,
-            }}
-          >
-            <MessageSquare size={10} />
-            追问 AI
-          </button>
         </div>
       )}
+
+      <div className="flex items-center justify-end mb-1">
+        <AiActionBar
+          summary={`大盘情绪「${data.phase_label}」: ${data.judgment}`}
+          evidence={data.evidence}
+          askPrompt={`当前情绪阶段判断为「${data.phase_label}」: ${data.judgment}\n请基于近 5 日数据进一步推演明日可能的走势, 并给出更具体的应对建议。`}
+          accent={PHASE_COLOR[data.phase]}
+        />
+      </div>
+
       <AiCardFooter
         kind="sentiment"
         tradeDate={data.trade_date}

@@ -3,6 +3,7 @@
 import { Sidebar } from "./Sidebar";
 import { AiPanel } from "./AiPanel";
 import { FloatingStockBadge } from "./FloatingStockBadge";
+import { MyDigestFloating } from "./MyDigestFloating";
 import { StockDetailDrawer } from "@/components/market/StockDetailDrawer";
 import { ThemeDetailDrawer } from "@/components/market/ThemeDetailDrawer";
 import { WhyRoseModal } from "@/components/market/WhyRoseModal";
@@ -27,6 +28,7 @@ export function MainLayout({ children }: { children: React.ReactNode }) {
 
       <FloatingStockBadge />
       <AnomalyBell />
+      <MyDigestFloating />
       <AnomalyDrawer />
       <AiPanel />
       <StockDetailDrawer stockCode={stockDetailCode} onClose={closeStockDetail} />

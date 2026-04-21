@@ -64,6 +64,83 @@ export interface TierInfo {
   quota: Array<{ action: string; label: string; quota: number }>;
 }
 
+export type PlanDirection = "buy" | "sell" | "add" | "reduce";
+export type PlanStatus = "active" | "triggered" | "executed" | "expired" | "cancelled";
+export type PlanConditionType =
+  | "price_above"
+  | "price_below"
+  | "change_pct_above"
+  | "change_pct_below"
+  | "limit_up"
+  | "limit_up_break";
+
+export interface PlanCondition {
+  type: PlanConditionType | string;
+  value?: number | null;
+  label?: string | null;
+}
+
+export interface UserPlanRecord {
+  id: number;
+  code: string;
+  name: string | null;
+  direction: PlanDirection;
+  trigger_conditions: PlanCondition[] | null;
+  position_plan: Record<string, unknown> | null;
+  stop_loss_pct: number | null;
+  take_profit_pct: number | null;
+  invalid_conditions: PlanCondition[] | null;
+  notes: string | null;
+  status: PlanStatus;
+  first_triggered_at: string | null;
+  last_checked_at: string | null;
+  expires_at: string | null;
+  created_at: string;
+  updated_at: string;
+  triggered_today_count: number;
+}
+
+export interface PlanTriggerRecord {
+  id: number;
+  plan_id: number;
+  trade_date: string;
+  triggered_at: string;
+  condition_idx: number;
+  condition_kind: "trigger" | "invalid" | string | null;
+  condition_type: string | null;
+  condition_label: string | null;
+  price: number | null;
+  change_pct: number | null;
+}
+
+export interface PlanCreatePayload {
+  code: string;
+  name?: string;
+  direction: PlanDirection;
+  trigger_conditions: PlanCondition[];
+  invalid_conditions?: PlanCondition[];
+  position_plan?: Record<string, unknown>;
+  stop_loss_pct?: number | null;
+  take_profit_pct?: number | null;
+  notes?: string | null;
+  expires_at?: string | null;
+}
+
+export type PlanUpdatePayload = Partial<PlanCreatePayload> & { status?: PlanStatus };
+
+export interface PrivateStatus {
+  watchlist: { unlocked: boolean; count: number; codes: string[] };
+  plans: {
+    unlocked: boolean;
+    active: number;
+    triggered: number;
+    today_triggers: number;
+    triggered_codes: string[];
+  };
+  trades: { unlocked: boolean; count_total: number; count_7d: number };
+  ai_track: { unlocked: boolean; verified_7d: number };
+}
+
 export interface Anomaly {
   id: number;
   trade_date: string;
@@ -553,6 +630,61 @@ class ApiClient {
 
   markAnomaliesSeen(ids?: number[], allToday = false) {
     return this.post<{ ok: boolean }>("/api/intraday/anomalies/seen", { ids, all_today: allToday });
+  }
+
+  // ===== P0 我的计划池 =====
+  listPlans(params?: { status?: PlanStatus; code?: string }) {
+    const qs = new URLSearchParams();
+    if (params?.status) qs.set("status", params.status);
+    if (params?.code) qs.set("code", params.code);
+    const q = qs.toString() ? `?${qs.toString()}` : "";
+    return this.get<UserPlanRecord[]>(`/api/plans/${q}`);
+  }
+
+  getPlanDetail(id: number) {
+    return this.get<{ plan: UserPlanRecord; triggers: PlanTriggerRecord[] }>(
+      `/api/plans/${id}`,
+    );
+  }
+
+  createPlan(payload: PlanCreatePayload) {
+    return this.post<UserPlanRecord>("/api/plans/", payload);
+  }
+
+  updatePlan(id: number, payload: PlanUpdatePayload) {
+    return this.request<UserPlanRecord>(`/api/plans/${id}`, {
+      method: "PUT",
+      body: JSON.stringify(payload),
+    });
+  }
+
+  deletePlan(id: number) {
+    return this.delete<{ ok: boolean }>(`/api/plans/${id}`);
+  }
+
+  getPlanBadge() {
+    return this.get<{
+      active: number;
+      triggered: number;
+      today_triggers: number;
+      triggered_codes: string[];
+    }>("/api/plans/badge");
+  }
+
+  getPlanTriggersToday() {
+    return this.get<PlanTriggerRecord[]>("/api/plans/triggers/today");
+  }
+
+  triggerPlanCheckNow() {
+    return this.post<{ status: string; checked: number; new_triggers: number; new_invalids: number; plans_status_changed: number }>(
+      "/api/plans/check-triggers",
+      {},
+    );
+  }
+
+  // 私人维度聚合 — 给 Sidebar 解锁判断 + MyDigestFloating 用
+  getPrivateStatus() {
+    return this.get<PrivateStatus>("/api/me/private-status");
   }
 
   getDataHealth() {

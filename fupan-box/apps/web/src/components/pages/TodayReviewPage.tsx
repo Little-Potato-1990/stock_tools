@@ -14,13 +14,17 @@ import {
   Zap,
   X,
   Scale,
+  Star,
 } from "lucide-react";
 import { api } from "@/lib/api";
 import { useUIStore } from "@/stores/ui-store";
+import { usePrivateStatus } from "@/stores/private-status-store";
 import { EvidenceBadge } from "@/components/market/EvidenceBadge";
 import { StreamHeadlineControl } from "@/components/market/StreamHeadlineControl";
 import { useStreamingHeadline } from "@/hooks/useStreamingHeadline";
 import { FeedbackThumbs } from "@/components/market/FeedbackThumbs";
+import { AiDensitySwitch } from "@/components/market/AiDensitySwitch";
+import { AiActionBar } from "@/components/market/AiActionBar";
 import type {
   AiBrief,
   KeyMetric,
@@ -134,6 +138,7 @@ function SectionHeader({
 
 function HeroBlock({ brief }: { brief: AiBrief }) {
   const openDebate = useUIStore((s) => s.openDebate);
+  const aiStyle = useUIStore((s) => s.aiStyle);
   const stream = useStreamingHeadline("today", brief.trade_date, brief.model);
   return (
     <div
@@ -162,6 +167,7 @@ function HeroBlock({ brief }: { brief: AiBrief }) {
           </span>
         </div>
         <div className="flex items-center gap-2">
+          <AiDensitySwitch />
           <button
             onClick={() => openDebate("market", undefined, "今日大盘")}
             className="flex items-center gap-1 px-2 py-1 rounded font-bold transition-colors"
@@ -218,17 +224,25 @@ function HeroBlock({ brief }: { brief: AiBrief }) {
         )}
       </div>
 
-      <div className="flex flex-wrap gap-2 mt-3">
-        {brief.key_metrics.map((m) => (
-          <MetricBadge key={m.label} metric={m} />
-        ))}
-      </div>
-      <div className="mt-3 pt-2" style={{ borderTop: "1px dashed rgba(139,92,246,0.28)" }}>
+      {aiStyle !== "headline" && (
+        <div className="flex flex-wrap gap-2 mt-3">
+          {brief.key_metrics.map((m) => (
+            <MetricBadge key={m.label} metric={m} />
+          ))}
+        </div>
+      )}
+
+      <div className="flex items-center justify-between gap-2 mt-3 pt-2" style={{ borderTop: "1px dashed rgba(139,92,246,0.28)" }}>
         <FeedbackThumbs
           kind="today"
           tradeDate={brief.trade_date}
           model={brief.model}
           snapshot={{ headline: brief.tagline, evidence: brief.evidence, regime: brief.regime }}
+        />
+        <AiActionBar
+          summary={`今日定调「${brief.regime_label}」: ${brief.tagline}`}
+          evidence={brief.evidence}
+          askPrompt={`今日 AI 给出的定调是「${brief.regime_label}」: ${brief.tagline}\n请基于今日盘口、主线、龙头数据, 给出明日的具体动作建议 (仓位 / 主攻方向 / 止损位)。`}
         />
       </div>
     </div>
@@ -725,16 +739,43 @@ function Timeline({ annotations }: { annotations: Leader["annotations"] }) {
   );
 }
 
+interface UserMarksData {
+  watchlistCodes: Set<string>;
+  triggeredCodes: Set<string>;
+}
+
+function UserMarks({ code, marks }: { code: string; marks: UserMarksData }) {
+  const isWatch = marks.watchlistCodes.has(code);
+  const isTrig = marks.triggeredCodes.has(code);
+  if (!isWatch && !isTrig) return null;
+  return (
+    <span className="inline-flex items-center gap-0.5 ml-0.5">
+      {isWatch && (
+        <span title="在我的自选" className="inline-flex">
+          <Star size={11} style={{ color: "#ffaa33", fill: "#ffaa33" }} />
+        </span>
+      )}
+      {isTrig && (
+        <span title="命中我的计划触发条件" className="inline-flex">
+          <Zap size={11} style={{ color: "var(--accent-purple)" }} />
+        </span>
+      )}
+    </span>
+  );
+}
+
 function PlanBlock({
   plan,
   similar,
   judgment,
   onPickSimilar,
+  marks,
 }: {
   plan: AiBrief["tomorrow_plan"];
   similar: SimilarDay[];
   judgment?: AiBrief["similar_judgment"];
   onPickSimilar: (d: SimilarDay) => void;
+  marks: UserMarksData;
 }) {
   return (
     <div className="grid grid-cols-1 lg:grid-cols-3 gap-2">
@@ -745,10 +786,10 @@ function PlanBlock({
           hint="AI 给出触发条件，盘口直接对照"
         />
         <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-          <PromotionCard items={plan.promotion} />
-          <FirstBoardCard items={plan.first_board} />
-          <ResealCard items={plan.reseal} />
-          <AvoidCard items={plan.avoid} />
+          <PromotionCard items={plan.promotion} marks={marks} />
+          <FirstBoardCard items={plan.first_board} marks={marks} />
+          <ResealCard items={plan.reseal} marks={marks} />
+          <AvoidCard items={plan.avoid} marks={marks} />
         </div>
       </div>
 
@@ -894,7 +935,7 @@ function PlanCardShell({
   );
 }
 
-function PromotionCard({ items }: { items: PlanPromotion[] }) {
+function PromotionCard({ items, marks }: { items: PlanPromotion[]; marks: UserMarksData }) {
   const open = useUIStore((s) => s.openStockDetail);
   return (
     <PlanCardShell title="高位接力" accent="var(--accent-orange)" count={items.length}>
@@ -907,6 +948,7 @@ function PromotionCard({ items }: { items: PlanPromotion[] }) {
               style={{ fontSize: "var(--font-md)", color: "var(--text-primary)" }}
             >
               {it.name}
+              <UserMarks code={it.code} marks={marks} />
               <span
                 className="font-bold"
                 style={{
@@ -929,7 +971,7 @@ function PromotionCard({ items }: { items: PlanPromotion[] }) {
   );
 }
 
-function FirstBoardCard({ items }: { items: PlanFirstBoard[] }) {
+function FirstBoardCard({ items, marks }: { items: PlanFirstBoard[]; marks: UserMarksData }) {
   const open = useUIStore((s) => s.openStockDetail);
   return (
     <PlanCardShell title="低位首板" accent="var(--accent-yellow)" count={items.length}>
@@ -942,6 +984,7 @@ function FirstBoardCard({ items }: { items: PlanFirstBoard[] }) {
               style={{ fontSize: "var(--font-md)", color: "var(--text-primary)" }}
             >
               {it.name}
+              <UserMarks code={it.code} marks={marks} />
               <span style={{ fontSize: 10, color: "var(--text-muted)" }}>
                 · {it.theme}
               </span>
@@ -955,7 +998,7 @@ function FirstBoardCard({ items }: { items: PlanFirstBoard[] }) {
   );
 }
 
-function ResealCard({ items }: { items: PlanReseal[] }) {
+function ResealCard({ items, marks }: { items: PlanReseal[]; marks: UserMarksData }) {
   const open = useUIStore((s) => s.openStockDetail);
   return (
     <PlanCardShell title="修复反包" accent="var(--accent-green)" count={items.length}>
@@ -964,10 +1007,11 @@ function ResealCard({ items }: { items: PlanReseal[] }) {
           <div className="flex items-center justify-between mb-1">
             <button
               onClick={() => open(it.code, it.name)}
-              className="font-bold"
+              className="flex items-center gap-1.5 font-bold"
               style={{ fontSize: "var(--font-md)", color: "var(--text-primary)" }}
             >
               {it.name}
+              <UserMarks code={it.code} marks={marks} />
             </button>
             <RiskTag risk={it.risk} />
           </div>
@@ -978,7 +1022,7 @@ function ResealCard({ items }: { items: PlanReseal[] }) {
   );
 }
 
-function AvoidCard({ items }: { items: PlanAvoid[] }) {
+function AvoidCard({ items, marks }: { items: PlanAvoid[]; marks: UserMarksData }) {
   return (
     <PlanCardShell title="避雷名单" accent="var(--accent-red)" count={items.length}>
       {items.map((it) => (
@@ -986,10 +1030,11 @@ function AvoidCard({ items }: { items: PlanAvoid[] }) {
           <div className="flex items-center gap-1.5 mb-1">
             <AlertTriangle size={12} style={{ color: "var(--accent-red)" }} />
             <span
-              className="font-bold"
+              className="font-bold flex items-center gap-1.5"
               style={{ fontSize: "var(--font-md)", color: "var(--text-primary)" }}
             >
               {it.name}
+              <UserMarks code={it.code} marks={marks} />
             </span>
           </div>
           <p
@@ -1388,6 +1433,12 @@ export function TodayReviewPage() {
   const [brief, setBrief] = useState<AiBrief | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [picked, setPicked] = useState<SimilarDay | null>(null);
+  const status = usePrivateStatus();
+
+  const marks: UserMarksData = {
+    watchlistCodes: new Set(status?.watchlist.codes ?? []),
+    triggeredCodes: new Set(status?.plans.triggered_codes ?? []),
+  };
 
   useEffect(() => {
     let aborted = false;
@@ -1440,6 +1491,7 @@ export function TodayReviewPage() {
         similar={brief.similar_days}
         judgment={brief.similar_judgment}
         onPickSimilar={setPicked}
+        marks={marks}
       />
       {picked && (
         <CompareModal
