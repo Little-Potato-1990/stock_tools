@@ -10,6 +10,7 @@ import { WhyRoseModal } from "@/components/market/WhyRoseModal";
 import { DebateModal } from "@/components/market/DebateModal";
 import { AnomalyBell } from "@/components/market/AnomalyBell";
 import { AnomalyDrawer } from "@/components/market/AnomalyDrawer";
+import { LadderMatrixDrawer } from "@/components/market/LadderMatrixDrawer";
 import { useUIStore } from "@/stores/ui-store";
 
 export function MainLayout({ children }: { children: React.ReactNode }) {
@@ -30,6 +31,7 @@ export function MainLayout({ children }: { children: React.ReactNode }) {
       <AnomalyBell />
       <MyDigestFloating />
       <AnomalyDrawer />
+      <LadderMatrixDrawer />
       <AiPanel />
       <StockDetailDrawer stockCode={stockDetailCode} onClose={closeStockDetail} />
       <ThemeDetailDrawer themeName={themeDetailName} onClose={closeThemeDetail} />

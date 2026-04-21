@@ -13,7 +13,6 @@ export type AiDensity = "headline" | "concise" | "detailed";
 export type NavModule =
   | "today"
   | "sentiment"
-  | "ladder"
   | "themes"
   | "capital"
   | "lhb"
@@ -115,6 +114,11 @@ interface UIState {
   openAnomalyDrawer: () => void;
   closeAnomalyDrawer: () => void;
 
+  /** 连板矩阵抽屉 (从今日复盘的 LeadersBlock 唤起) */
+  ladderMatrixOpen: boolean;
+  openLadderMatrix: () => void;
+  closeLadderMatrix: () => void;
+
   /** 右下角浮动徽章里的股票 */
   focusedStock: FocusedStock | null;
   setFocusedStock: (s: FocusedStock | null) => void;
@@ -206,6 +210,10 @@ export const useUIStore = create<UIState>((set) => ({
   anomalyDrawerOpen: false,
   openAnomalyDrawer: () => set({ anomalyDrawerOpen: true }),
   closeAnomalyDrawer: () => set({ anomalyDrawerOpen: false }),
+
+  ladderMatrixOpen: false,
+  openLadderMatrix: () => set({ ladderMatrixOpen: true }),
+  closeLadderMatrix: () => set({ ladderMatrixOpen: false }),
 
   focusedStock: null,
   setFocusedStock: (s) => set({ focusedStock: s }),

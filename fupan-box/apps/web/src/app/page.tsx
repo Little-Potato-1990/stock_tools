@@ -3,7 +3,6 @@
 import { useUIStore } from "@/stores/ui-store";
 import { TodayReviewPage } from "@/components/pages/TodayReviewPage";
 import { SentimentPage } from "@/components/pages/SentimentPage";
-import { LadderPage } from "@/components/pages/LadderPage";
 import { ThemesPage } from "@/components/pages/ThemesPage";
 import { WatchlistPage } from "@/components/pages/WatchlistPage";
 import { PlansPage } from "@/components/pages/PlansPage";
@@ -23,8 +22,6 @@ export default function Home() {
       return <TodayReviewPage />;
     case "sentiment":
       return <SentimentPage />;
-    case "ladder":
-      return <LadderPage />;
     case "themes":
       return <ThemesPage />;
     case "watchlist":

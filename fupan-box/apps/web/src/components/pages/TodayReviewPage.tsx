@@ -128,10 +128,12 @@ function SectionHeader({
   title,
   hint,
   icon,
+  action,
 }: {
   title: string;
   hint?: string;
   icon?: React.ReactNode;
+  action?: React.ReactNode;
 }) {
   return (
     <div className="flex items-center gap-2 mb-2">
@@ -142,6 +144,7 @@ function SectionHeader({
       {hint && (
         <span style={{ fontSize: "var(--font-xs)", color: "var(--text-muted)" }}>{hint}</span>
       )}
+      {action && <div className="ml-auto flex items-center gap-1">{action}</div>}
     </div>
   );
 }
@@ -613,12 +616,38 @@ function StatusBadge({ status }: { status: MainLine["status"] }) {
 function LeadersBlock({ leaders }: { leaders: Leader[] }) {
   const openStockDetail = useUIStore((s) => s.openStockDetail);
   const openWhyRose = useUIStore((s) => s.openWhyRose);
+  const openLadderMatrix = useUIStore((s) => s.openLadderMatrix);
   return (
     <div>
       <SectionHeader
         icon={<Zap size={16} style={{ color: "var(--accent-orange)" }} />}
         title="高度龙头 + AI 盘口注解"
         hint="时间轴叠加 AI 标记的关键拐点"
+        action={
+          <button
+            onClick={openLadderMatrix}
+            className="flex items-center gap-1 font-bold transition-colors"
+            style={{
+              padding: "3px 9px",
+              borderRadius: 3,
+              background: "rgba(139,92,246,0.14)",
+              color: "var(--accent-purple)",
+              border: "1px solid rgba(139,92,246,0.32)",
+              fontSize: 11,
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.background = "rgba(139,92,246,0.24)";
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.background = "rgba(139,92,246,0.14)";
+            }}
+            title="展开多日连板矩阵 (7 天 × 板级, 可向左滚加载更多)"
+          >
+            <Layers size={11} />
+            连板矩阵
+            <ChevronRight size={11} />
+          </button>
+        }
       />
       {leaders.length === 0 ? (
         <SectionEmptyHint message="今日尚无龙头股 — 涨停板数据为 0，待盘后 17:30 后 Tushare 数据更新自动补齐。" />

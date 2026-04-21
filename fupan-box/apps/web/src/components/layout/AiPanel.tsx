@@ -21,7 +21,6 @@ interface Message {
 const MODULE_LABELS: Record<NavModule, string> = {
   today: "今日复盘",
   sentiment: "大盘情绪",
-  ladder: "连板天梯",
   themes: "题材",
   capital: "资金分析",
   lhb: "龙虎榜",

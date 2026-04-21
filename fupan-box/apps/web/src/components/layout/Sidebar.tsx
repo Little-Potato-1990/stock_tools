@@ -31,7 +31,6 @@ interface NavItem {
 const PUBLIC_NAV: NavItem[] = [
   { key: "today", label: "今日复盘", icon: Sparkles, badge: "AI" },
   { key: "sentiment", label: "大盘情绪", icon: Activity },
-  { key: "ladder", label: "连板天梯", icon: TrendingUp },
   { key: "themes", label: "题材追踪", icon: Layers },
   { key: "capital", label: "资金风向标", icon: DollarSign },
   { key: "lhb", label: "龙虎榜分析", icon: Trophy },
