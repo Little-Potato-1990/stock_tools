@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback } from "react";
 import { X, RefreshCw, Sparkles, MessageSquare, ExternalLink, Zap, ChevronRight, AlertTriangle, Newspaper, TrendingUp, TrendingDown } from "lucide-react";
 import { useUIStore } from "@/stores/ui-store";
 import { api } from "@/lib/api";
+import { StockCapitalChip } from "./StockCapitalChip";
 
 type WhyRose = Awaited<ReturnType<typeof api.getWhyRose>>;
 
@@ -154,6 +155,16 @@ export function WhyRoseModal() {
               <X size={14} />
             </button>
           </div>
+        </div>
+
+        <div
+          className="px-4 py-2"
+          style={{
+            borderBottom: "1px solid var(--border-color)",
+            background: "var(--bg-secondary)",
+          }}
+        >
+          <StockCapitalChip code={target.code} variant="full" />
         </div>
 
         <div className="overflow-y-auto" style={{ maxHeight: "calc(85vh - 102px)" }}>

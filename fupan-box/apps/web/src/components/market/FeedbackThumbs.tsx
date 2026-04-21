@@ -4,7 +4,7 @@ import { useState } from "react";
 import { ThumbsUp, ThumbsDown, CheckCheck, X } from "lucide-react";
 import { api } from "@/lib/api";
 
-export type FeedbackKind = "today" | "sentiment" | "theme" | "ladder" | "lhb";
+export type FeedbackKind = "today" | "sentiment" | "theme" | "ladder" | "lhb" | "capital" | "institutional";
 
 interface Props {
   kind: FeedbackKind;

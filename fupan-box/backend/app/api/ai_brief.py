@@ -22,8 +22,10 @@ from pydantic import BaseModel, Field
 from app.ai.brief_cache import cache_stats, cached_brief, invalidate_pg, pg_get
 from app.ai.brief_generator import _latest_trade_date_with_data, generate_brief
 from app.ai.brief_stream import stream_headline
+from app.ai.capital_brief import generate_capital_brief
 from app.ai.debate import run_debate, stream_debate
 from app.ai.feedback_service import get_feedback_stats, record_feedback
+from app.ai.institutional_brief import generate_institutional_brief
 from app.ai.ladder_brief import generate_ladder_brief
 from app.ai.lhb_brief import generate_lhb_brief
 from app.ai.news_brief import generate_news_brief
@@ -39,6 +41,7 @@ from app.database import get_db
 from app.models.user import User
 from app.services.prewarm_service import (
     prewarm_debate,
+    prewarm_institutional_brief,
     prewarm_market_briefs,
     prewarm_news_brief,
     prewarm_why_rose,
@@ -161,6 +164,49 @@ async def get_lhb_brief(
         key, generate_lhb_brief, td, model,
         action="lhb_brief", model=model, trade_date=td,
         pg_ttl_h=PG_TTL_H, refresh=bool(refresh),
+    )
+
+
+@router.get("/capital-brief")
+async def get_capital_brief(
+    trade_date: date = Query(None),
+    model: str = Query("deepseek-v3"),
+    refresh: int = Query(0),
+):
+    """资金面 AI brief: 大盘 / 北向 / 主力 / 国家队 ETF 一句话定调."""
+    td = _resolve_td(trade_date)
+    key = f"capital_brief:{td.isoformat()}:{model}"
+    if refresh:
+        invalidate("capital_brief")
+        invalidate_pg(key)
+    return await cached_brief(
+        key, generate_capital_brief, td, model,
+        action="capital_brief", model=model, trade_date=td,
+        pg_ttl_h=PG_TTL_H, refresh=bool(refresh),
+    )
+
+
+@router.get("/institutional-brief")
+async def get_institutional_brief(
+    trade_date: date = Query(None),
+    model: str = Query("deepseek-v3"),
+    refresh: int = Query(0),
+):
+    """主力身份动向 brief: 季报 + 近30天公告事件流, 谁在加仓."""
+    td = _resolve_td(trade_date)
+    key = f"institutional_brief:{td.isoformat()}:{model}"
+    if refresh:
+        invalidate("institutional_brief")
+        invalidate_pg(key)
+
+    async def _gen(td_arg, model_arg):
+        return await generate_institutional_brief(td_arg, None, model_arg)
+
+    return await cached_brief(
+        key, _gen, td, model,
+        action="institutional_brief", model=model, trade_date=td,
+        pg_ttl_h=PG_TTL_H * 7,  # 季报变化慢, 缓存 7 天
+        refresh=bool(refresh),
     )
 
 
@@ -343,7 +389,7 @@ async def get_headline_stream(
 
 
 class FeedbackPayload(BaseModel):
-    brief_kind: str = Field(..., pattern="^(today|sentiment|theme|ladder|lhb|news)$")
+    brief_kind: str = Field(..., pattern="^(today|sentiment|theme|ladder|lhb|news|capital|institutional)$")
     trade_date: date
     rating: int = Field(..., ge=-1, le=1)
     model: str | None = None
@@ -409,10 +455,13 @@ async def trigger_prewarm(
         return await prewarm_debate(td, model, top_n_themes, max(2, concurrency))
     if job == "news_brief":
         return await prewarm_news_brief(td, model)
+    if job == "institutional_brief":
+        return await prewarm_institutional_brief(td, model)
     if job == "all":
         return {
             "market_briefs": await prewarm_market_briefs(td, model),
             "news_brief": await prewarm_news_brief(td, model),
+            "institutional_brief": await prewarm_institutional_brief(td, model),
             "why_rose": await prewarm_why_rose(td, model, max_per_dir, concurrency),
             "debate": await prewarm_debate(td, model, top_n_themes, max(2, concurrency)),
         }

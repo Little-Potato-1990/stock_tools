@@ -379,7 +379,19 @@ def _build_prompt(ctx: dict[str, Any]) -> tuple[str, str]:
         "**风格**: 直接、专业, 只用中文。"
     )
 
+    # === P3 资金画像注入: 让 driver 引用真实资金动向, 而非编造 ===
+    capital_block = ""
+    try:
+        from datetime import date as _date
+        from app.services.stock_context import get_stock_capital_sync
+        from app.ai.cross_context import build_stock_context_block
+        cap_ctx = get_stock_capital_sync(ctx["code"], _date.fromisoformat(ctx["trade_date"]))
+        capital_block = build_stock_context_block(ctx["code"], cap_ctx)
+    except Exception:
+        capital_block = ""
+
     user = (
+        f"{capital_block}"
         f"```json\n{json.dumps(ctx, ensure_ascii=False)[:6000]}\n```\n\n"
         "请输出 JSON, schema 如下:\n"
         "```json\n"

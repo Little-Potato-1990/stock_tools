@@ -75,6 +75,15 @@ def _build_evidence(topic_type: str, topic_key: str | None, trade_date: date) ->
                 "theme_peer": ctx.get("theme_peer"),
                 "recent": ctx.get("recent"),
             }
+            try:
+                from app.services.stock_context import get_stock_capital_sync
+                cap = get_stock_capital_sync(topic_key.strip().zfill(6), trade_date)
+                if cap.get("capital") or cap.get("institutional"):
+                    ev["stock"]["capital_dim"] = cap.get("capital")
+                    ev["stock"]["institutional_dim"] = cap.get("institutional")
+                    ev["stock"]["seat_30d"] = cap.get("seat")
+            except Exception:
+                pass
     return ev
 
 

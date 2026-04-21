@@ -529,7 +529,7 @@ class ApiClient {
   }
 
   postFeedback(payload: {
-    brief_kind: "today" | "sentiment" | "theme" | "ladder" | "lhb" | "news";
+    brief_kind: "today" | "sentiment" | "theme" | "ladder" | "lhb" | "news" | "capital" | "institutional";
     trade_date: string;
     rating: 1 | -1;
     model?: string | null;
@@ -641,6 +641,124 @@ class ApiClient {
     if (refresh) params.set("refresh", "1");
     const q = params.toString() ? `?${params}` : "";
     return this.get<Record<string, unknown>>(`/api/ai/lhb-brief${q}`);
+  }
+
+  getCapitalBrief(tradeDate?: string, refresh = false) {
+    const params = new URLSearchParams();
+    if (tradeDate) params.set("trade_date", tradeDate);
+    if (refresh) params.set("refresh", "1");
+    const q = params.toString() ? `?${params}` : "";
+    return this.get<Record<string, unknown>>(`/api/ai/capital-brief${q}`);
+  }
+
+  getInstitutionalBrief(tradeDate?: string, refresh = false) {
+    const params = new URLSearchParams();
+    if (tradeDate) params.set("trade_date", tradeDate);
+    if (refresh) params.set("refresh", "1");
+    const q = params.toString() ? `?${params}` : "";
+    return this.get<Record<string, unknown>>(`/api/ai/institutional-brief${q}`);
+  }
+
+  // ===== L3a Capital module =====
+  getCapitalMarket(tradeDate?: string) {
+    const q = tradeDate ? `?trade_date=${tradeDate}` : "";
+    return this.get<Record<string, unknown>>(`/api/market/capital/market${q}`);
+  }
+
+  getCapitalNorth(days = 30) {
+    return this.get<{ items: Array<Record<string, unknown>> }>(
+      `/api/market/capital/north?days=${days}`,
+    );
+  }
+
+  getCapitalNorthHolds(tradeDate?: string, limit = 50) {
+    const params = new URLSearchParams({ limit: String(limit) });
+    if (tradeDate) params.set("trade_date", tradeDate);
+    return this.get<{ items: Array<Record<string, unknown>> }>(
+      `/api/market/capital/north/holds?${params}`,
+    );
+  }
+
+  getCapitalConcept(tradeDate?: string, limit = 30) {
+    const params = new URLSearchParams({ limit: String(limit) });
+    if (tradeDate) params.set("trade_date", tradeDate);
+    return this.get<{ items: Array<Record<string, unknown>> }>(
+      `/api/market/capital/concept?${params}`,
+    );
+  }
+
+  getCapitalIndustry(tradeDate?: string, limit = 30) {
+    const params = new URLSearchParams({ limit: String(limit) });
+    if (tradeDate) params.set("trade_date", tradeDate);
+    return this.get<{ items: Array<Record<string, unknown>> }>(
+      `/api/market/capital/industry?${params}`,
+    );
+  }
+
+  getCapitalStockRank(tradeDate?: string, limit = 50, direction: "in" | "out" = "in") {
+    const params = new URLSearchParams({ limit: String(limit), direction });
+    if (tradeDate) params.set("trade_date", tradeDate);
+    return this.get<{ items: Array<Record<string, unknown>> }>(
+      `/api/market/capital/stock-rank?${params}`,
+    );
+  }
+
+  getCapitalLimitOrder(tradeDate?: string, by: "theme" | "industry" = "theme") {
+    const params = new URLSearchParams({ by });
+    if (tradeDate) params.set("trade_date", tradeDate);
+    return this.get<{ items: Array<Record<string, unknown>> }>(
+      `/api/market/capital/limit-order?${params}`,
+    );
+  }
+
+  getCapitalEtf(tradeDate?: string, category?: string) {
+    const params = new URLSearchParams();
+    if (tradeDate) params.set("trade_date", tradeDate);
+    if (category) params.set("category", category);
+    const q = params.toString() ? `?${params}` : "";
+    return this.get<{ items: Array<Record<string, unknown>> }>(`/api/market/capital/etf${q}`);
+  }
+
+  getCapitalAnnounce(eventType?: string, days = 14, limit = 100) {
+    const params = new URLSearchParams({ days: String(days), limit: String(limit) });
+    if (eventType) params.set("event_type", eventType);
+    return this.get<{ items: Array<Record<string, unknown>> }>(
+      `/api/market/capital/announce?${params}`,
+    );
+  }
+
+  getCapitalHolders(reportDate?: string, holderType?: string, limit = 100) {
+    const params = new URLSearchParams({ limit: String(limit) });
+    if (reportDate) params.set("report_date", reportDate);
+    if (holderType) params.set("holder_type", holderType);
+    return this.get<{ items: Array<Record<string, unknown>> }>(
+      `/api/market/capital/holders?${params}`,
+    );
+  }
+
+  getCapitalMovements(canonicalName?: string, days = 90, limit = 100) {
+    const params = new URLSearchParams({ days: String(days), limit: String(limit) });
+    if (canonicalName) params.set("canonical_name", canonicalName);
+    return this.get<{ items: Array<Record<string, unknown>> }>(
+      `/api/market/capital/movements?${params}`,
+    );
+  }
+
+  getCapitalSummary(tradeDate?: string) {
+    const q = tradeDate ? `?trade_date=${tradeDate}` : "";
+    return this.get<Record<string, unknown>>(`/api/market/capital/summary${q}`);
+  }
+
+  getStockContext(code: string) {
+    return this.get<Record<string, unknown>>(
+      `/api/stock/context/${encodeURIComponent(code)}`,
+    );
+  }
+
+  getStockContextBatch(codes: string[]) {
+    return this.post<Record<string, Record<string, unknown>>>(`/api/stock/context/batch`, {
+      codes,
+    });
   }
 
   getWhyRose(code: string, tradeDate?: string, refresh = false) {

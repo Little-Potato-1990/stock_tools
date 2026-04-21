@@ -5,6 +5,7 @@ import { X, ExternalLink, Star, Zap, Sparkles, ChevronRight, RefreshCw } from "l
 import { api } from "@/lib/api";
 import { getCellColor } from "@/lib/colorScale";
 import { useUIStore } from "@/stores/ui-store";
+import { StockCapitalChip } from "./StockCapitalChip";
 
 interface StockDetail {
   stock_code: string;
@@ -259,6 +260,19 @@ export function StockDetailDrawer({ stockCode, onClose }: Props) {
                 {(latest.amount / 1e8).toFixed(2)}亿
               </div>
             </div>
+          </div>
+        )}
+
+        {/* 资金面 chip - 主力 / 北向 / 主力身份 一行紧凑展示 */}
+        {stockCode && (
+          <div
+            className="px-3 py-2"
+            style={{
+              borderBottom: "1px solid var(--border-color)",
+              background: "var(--bg-secondary)",
+            }}
+          >
+            <StockCapitalChip code={stockCode} variant="full" />
           </div>
         )}
 

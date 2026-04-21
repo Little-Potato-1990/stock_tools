@@ -14,6 +14,13 @@ from app.models.ai import (
 from app.models.anomaly import IntradayAnomaly
 from app.models.ai_cache import AIBriefCache
 from app.models.plan import UserPlan, UserPlanTrigger
+from app.models.capital import (
+    CapitalFlowDaily,
+    NorthHoldDaily,
+    EtfFlowDaily,
+    AnnouncementEvent,
+)
+from app.models.holder import HolderSnapshotQuarterly, HolderIdentityRegistry
 
 __all__ = [
     "Stock", "DailyQuote",
@@ -26,4 +33,6 @@ __all__ = [
     "IntradayAnomaly",
     "AIBriefCache",
     "UserPlan", "UserPlanTrigger",
+    "CapitalFlowDaily", "NorthHoldDaily", "EtfFlowDaily", "AnnouncementEvent",
+    "HolderSnapshotQuarterly", "HolderIdentityRegistry",
 ]

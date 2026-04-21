@@ -10,6 +10,7 @@ import {
   type LhbTrendPoint,
 } from "@/components/market/LhbAiCard";
 import { LhbEvidenceGrid } from "@/components/market/LhbEvidenceGrid";
+import { StockCapitalChip } from "@/components/market/StockCapitalChip";
 import { api } from "@/lib/api";
 import { fmtSignedAmount, fmtPctChange, fmtAmountRate } from "@/lib/format";
 import { flashGlow } from "@/lib/scrollGlow";
@@ -548,6 +549,9 @@ function LhbDailyTab({ highlight }: { highlight: LhbDialAnchor | null }) {
                       >
                         {code}
                       </button>
+                      <div className="mt-0.5" onClick={(e) => e.stopPropagation()}>
+                        <StockCapitalChip code={code} variant="compact" silent />
+                      </div>
                     </div>
                     <div className="text-right tabular-nums font-medium" style={{ flex: "0.6 1 0", color: chgColor }}>
                       {fmtPctChange(stock.pct_change)}

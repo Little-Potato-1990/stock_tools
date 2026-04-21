@@ -122,12 +122,58 @@ def _load_macro_news(hours: int = 24, limit: int = 8) -> list[dict]:
     return out
 
 
+def _load_market_capital_series(trade_date: date, days: int = 5) -> list[dict]:
+    """近 N 日大盘资金 (主力 / 北向)."""
+    from app.models.capital import CapitalFlowDaily, NorthHoldDaily
+    settings = get_settings()
+    engine = create_engine(settings.database_url_sync)
+    try:
+        with Session(engine) as s:
+            cap_rows = s.execute(
+                select(CapitalFlowDaily)
+                .where(
+                    CapitalFlowDaily.scope == "market",
+                    CapitalFlowDaily.trade_date <= trade_date,
+                )
+                .order_by(CapitalFlowDaily.trade_date.desc())
+                .limit(days)
+            ).scalars().all()
+            n_rows = s.execute(
+                select(NorthHoldDaily)
+                .where(
+                    NorthHoldDaily.stock_code.is_(None),
+                    NorthHoldDaily.trade_date <= trade_date,
+                )
+                .order_by(NorthHoldDaily.trade_date.desc())
+                .limit(days)
+            ).scalars().all()
+            n_map = {r.trade_date.isoformat(): r for r in n_rows}
+            out = []
+            for row in reversed(cap_rows):
+                d = (row.data or {})
+                key = row.trade_date.isoformat()
+                n = n_map.get(key)
+                out.append({
+                    "date": key,
+                    "main_inflow": d.get("main_inflow"),
+                    "huge_inflow": d.get("huge_inflow"),
+                    "north_chg": (n.chg_amount if n else None),
+                })
+            return out
+    except Exception as exc:
+        logger.debug("[market-cap] err=%s", exc)
+        return []
+    finally:
+        engine.dispose()
+
+
 def _build_prompt(
     trade_date: str,
     series: list[dict],
     phase: str,
     phase_label: str,
     macro_news: list[dict] | None = None,
+    capital_market_5d: list[dict] | None = None,
 ) -> tuple[str, str]:
     system = (
         "你是 A 股短线情绪分析师。"
@@ -141,12 +187,19 @@ def _build_prompt(
             "\n近 24h 重要新闻 (用于校验情绪是否被消息面驱动, 必要时在 evidence 引用 news_id):\n"
             f"```json\n{json.dumps(macro_news, ensure_ascii=False)[:1400]}\n```\n"
         )
+    capital_block = ""
+    if capital_market_5d:
+        capital_block = (
+            "\n近 5 日大盘资金流 (主力 / 北向, 单位元):\n"
+            f"```json\n{json.dumps(capital_market_5d, ensure_ascii=False)[:1200]}\n```\n"
+            "请在 signals 或 evidence 引用 5日累计主力净流向 / 北向连续买卖天数。\n"
+        )
 
     user = (
         f"今日 {trade_date}, 情绪序列(从早到晚)如下:\n\n"
         f"```json\n{json.dumps(series, ensure_ascii=False)}\n```\n\n"
         f"规则版预判: 当前阶段 = `{phase}` ({phase_label})。如有不同意见请覆盖。\n"
-        f"{macro_block}\n"
+        f"{macro_block}{capital_block}\n"
         "请输出 JSON, 严格按以下 schema:\n"
         "```json\n"
         "{\n"
@@ -322,6 +375,7 @@ async def generate_sentiment_brief(
 
     series = _load_sentiment_series(trade_date, days=7)
     macro_news = _load_macro_news(hours=24, limit=8)
+    capital_market_5d = _load_market_capital_series(trade_date, days=5)
     base: dict[str, Any] = {
         "trade_date": trade_date.isoformat(),
         "generated_at": datetime.now().isoformat(timespec="seconds"),
@@ -342,7 +396,10 @@ async def generate_sentiment_brief(
         return base
 
     phase, phase_label = _heuristic_phase(series)
-    system, user = _build_prompt(trade_date.isoformat(), series, phase, phase_label, macro_news)
+    system, user = _build_prompt(
+        trade_date.isoformat(), series, phase, phase_label, macro_news,
+        capital_market_5d=capital_market_5d,
+    )
     llm_out = await _call_llm(system, user, model_id)
     merged = _merge_llm(series, phase, phase_label, llm_out, macro_news)
     base.update(merged)

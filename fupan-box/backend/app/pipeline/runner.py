@@ -12,7 +12,11 @@ from app.database import Base
 from app.models.stock import Stock, DailyQuote
 from app.models.market import LimitUpRecord, LimitDownRecord, MarketSentiment, LadderSummary
 from app.models.snapshot import DailySnapshot, DataUpdateLog
+from app.models.capital import (
+    CapitalFlowDaily, NorthHoldDaily, EtfFlowDaily, AnnouncementEvent,
+)
 from app.pipeline.akshare_adapter import AKShareAdapter
+from app.services.etf_registry import all_tracked_etfs, by_code as etf_meta_by_code
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
@@ -76,6 +80,10 @@ def run_daily_pipeline(trade_date: date | None = None):
             _step_collect(session, adapter, trade_date)
             _step_compute(session, trade_date)
             _step_aggregate(session, adapter, trade_date)
+            _step_collect_capital(session, adapter, trade_date)
+            _step_collect_north_hold(session, adapter, trade_date)
+            _step_collect_etf(session, adapter, trade_date)
+            _step_collect_announce(session, adapter, trade_date)
             logger.info(f"Pipeline completed for {trade_date}")
         except Exception as e:
             logger.exception(f"Pipeline failed for {trade_date}")
@@ -574,3 +582,219 @@ def _step_aggregate(session: Session, adapter, trade_date: date):
     added = sum(1 for obj in session.new if isinstance(obj, DailySnapshot))
     session.commit()
     _log_step(session, trade_date, "aggregate", "success", records_count=added)
+
+
+def _step_collect_capital(session: Session, adapter, trade_date: date):
+    """Step 4: 资金流采集——大盘 / 北向 / 概念 / 行业 / 个股 / 涨停封单."""
+    _log_step(session, trade_date, "capital", "running")
+    total = 0
+    try:
+        session.execute(
+            delete(CapitalFlowDaily).where(CapitalFlowDaily.trade_date == trade_date)
+        )
+
+        market = adapter.fetch_market_fund_flow(trade_date)
+        if market:
+            session.add(CapitalFlowDaily(
+                trade_date=trade_date, scope="market", scope_key="", data=market,
+            ))
+            total += 1
+
+        north = adapter.fetch_north_fund_flow(trade_date)
+        if north:
+            session.add(CapitalFlowDaily(
+                trade_date=trade_date, scope="north", scope_key="", data=north,
+            ))
+            total += 1
+
+        for c in adapter.fetch_concept_fund_flow(trade_date):
+            session.add(CapitalFlowDaily(
+                trade_date=trade_date, scope="concept",
+                scope_key=c["name"], data=c,
+            ))
+            total += 1
+
+        for i in adapter.fetch_industry_fund_flow(trade_date):
+            session.add(CapitalFlowDaily(
+                trade_date=trade_date, scope="industry",
+                scope_key=i["name"], data=i,
+            ))
+            total += 1
+
+        for s in adapter.fetch_stock_fund_flow_rank(trade_date):
+            session.add(CapitalFlowDaily(
+                trade_date=trade_date, scope="stock",
+                scope_key=s["stock_code"], data=s,
+            ))
+            total += 1
+
+        # 涨停封单按题材汇总
+        from collections import defaultdict
+        agg: dict[str, dict] = defaultdict(lambda: {"theme": None, "stocks": [], "limit_order_total": 0.0})
+        rows = session.query(LimitUpRecord).filter(LimitUpRecord.trade_date == trade_date).all()
+        for r in rows:
+            order_amt = float(r.limit_order_amount or 0)
+            for theme in (r.theme_names or [r.industry] if r.industry else (r.theme_names or [])):
+                if not theme:
+                    continue
+                agg[theme]["theme"] = theme
+                agg[theme]["stocks"].append({
+                    "stock_code": r.stock_code, "stock_name": r.stock_name,
+                    "continuous_days": r.continuous_days, "limit_order_amount": order_amt,
+                })
+                agg[theme]["limit_order_total"] += order_amt
+        for theme, data in agg.items():
+            session.add(CapitalFlowDaily(
+                trade_date=trade_date, scope="limit_order",
+                scope_key=theme, data=data,
+            ))
+            total += 1
+
+        session.commit()
+        _log_step(session, trade_date, "capital", "success", records_count=total)
+    except Exception as e:
+        session.rollback()
+        logger.exception("capital flow collect failed")
+        _log_step(session, trade_date, "capital", "failed", error_message=str(e))
+
+
+def _step_collect_north_hold(session: Session, adapter, trade_date: date):
+    """Step 5: 北向单股持股快照."""
+    _log_step(session, trade_date, "north_hold", "running")
+    try:
+        rows = adapter.fetch_north_hold(trade_date, top=300)
+        if not rows:
+            _log_step(session, trade_date, "north_hold", "empty")
+            return
+        session.execute(
+            delete(NorthHoldDaily).where(NorthHoldDaily.trade_date == trade_date)
+        )
+        for r in rows:
+            session.add(NorthHoldDaily(
+                trade_date=trade_date,
+                stock_code=r["stock_code"],
+                stock_name=r.get("stock_name"),
+                hold_shares=r.get("hold_shares"),
+                hold_amount=r.get("hold_amount"),
+                hold_pct=r.get("hold_pct"),
+                chg_shares=r.get("chg_shares"),
+                chg_amount=r.get("chg_amount"),
+            ))
+        session.commit()
+        _log_step(session, trade_date, "north_hold", "success", records_count=len(rows))
+    except Exception as e:
+        session.rollback()
+        logger.exception("north hold collect failed")
+        _log_step(session, trade_date, "north_hold", "failed", error_message=str(e))
+
+
+def _step_collect_etf(session: Session, adapter, trade_date: date):
+    """Step 6: ETF 行情 + 关键宽基/行业 ETF 份额变化(净申购代理)."""
+    _log_step(session, trade_date, "etf", "running")
+    try:
+        spot_rows = adapter.fetch_etf_spot()
+        if not spot_rows:
+            _log_step(session, trade_date, "etf", "empty")
+            return
+        spot_map = {r["etf_code"]: r for r in spot_rows}
+
+        session.execute(delete(EtfFlowDaily).where(EtfFlowDaily.trade_date == trade_date))
+
+        # 重点 ETF 拉份额历史
+        tracked = all_tracked_etfs()
+        tracked_codes = {e.code for e in tracked}
+        for meta in tracked:
+            spot = spot_map.get(meta.code)
+            if not spot:
+                continue
+            shares = None
+            shares_change = None
+            inflow_estimate = None
+            try:
+                share_info = adapter.fetch_etf_share(meta.code)
+                hist = (share_info or {}).get("history", []) if share_info else []
+                if len(hist) >= 2:
+                    today_share = float(hist[-1].get("基金份额", 0) or hist[-1].get("份额", 0) or 0)
+                    prev_share = float(hist[-2].get("基金份额", 0) or hist[-2].get("份额", 0) or 0)
+                    shares = today_share
+                    shares_change = today_share - prev_share
+                    nav = float(hist[-1].get("单位净值", 0) or 0) or spot.get("nav") or spot.get("close")
+                    if nav:
+                        inflow_estimate = shares_change * nav * 1e8  # 份额(亿份) × 净值
+            except Exception as e:
+                logger.warning(f"etf share {meta.code}: {e}")
+            session.add(EtfFlowDaily(
+                trade_date=trade_date,
+                etf_code=meta.code,
+                etf_name=meta.name,
+                category=meta.category,
+                shares=shares,
+                shares_change=shares_change,
+                amount=spot.get("amount"),
+                nav=spot.get("nav"),
+                premium_rate=spot.get("premium_rate"),
+                inflow_estimate=inflow_estimate,
+                close=spot.get("close"),
+                change_pct=spot.get("change_pct"),
+            ))
+
+        # 其他 ETF 仅落基础行情(不算 inflow)
+        for code, spot in spot_map.items():
+            if code in tracked_codes:
+                continue
+            session.add(EtfFlowDaily(
+                trade_date=trade_date,
+                etf_code=code,
+                etf_name=spot.get("etf_name"),
+                category="other",
+                amount=spot.get("amount"),
+                nav=spot.get("nav"),
+                premium_rate=spot.get("premium_rate"),
+                close=spot.get("close"),
+                change_pct=spot.get("change_pct"),
+            ))
+        session.commit()
+        _log_step(session, trade_date, "etf", "success", records_count=len(spot_rows))
+    except Exception as e:
+        session.rollback()
+        logger.exception("etf collect failed")
+        _log_step(session, trade_date, "etf", "failed", error_message=str(e))
+
+
+def _step_collect_announce(session: Session, adapter, trade_date: date):
+    """Step 7: 公告事件流(增减持/回购/举牌)."""
+    _log_step(session, trade_date, "announce", "running")
+    try:
+        events = []
+        events.extend(adapter.fetch_announce_increase_decrease(trade_date))
+        events.extend(adapter.fetch_announce_repurchase(trade_date))
+        events.extend(adapter.fetch_announce_placard(trade_date))
+        if not events:
+            _log_step(session, trade_date, "announce", "empty")
+            return
+        for r in events:
+            try:
+                td = r.get("trade_date") or trade_date.isoformat()
+                td_obj = datetime.strptime(td[:10], "%Y-%m-%d").date()
+            except Exception:
+                td_obj = trade_date
+            session.add(AnnouncementEvent(
+                trade_date=td_obj,
+                stock_code=r["stock_code"],
+                stock_name=r.get("stock_name"),
+                event_type=r["event_type"],
+                actor=r.get("actor"),
+                actor_type=r.get("actor_type", "unknown"),
+                scale=r.get("scale"),
+                shares=r.get("shares"),
+                progress=r.get("progress"),
+                detail=r.get("detail"),
+                tags=r.get("tags"),
+                source_url=r.get("source_url"),
+            ))
+        session.commit()
+        _log_step(session, trade_date, "announce", "success", records_count=len(events))
+    except Exception as e:
+        session.rollback()
+        logger.exception("announce collect failed")
+        _log_step(session, trade_date, "announce", "failed", error_message=str(e))

@@ -5,6 +5,7 @@ import { api } from "@/lib/api";
 import { Plus, Trash2, LogIn, UserPlus } from "lucide-react";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { WatchlistAiCard } from "@/components/market/WatchlistAiCard";
+import { StockCapitalChip } from "@/components/market/StockCapitalChip";
 
 interface WatchlistItem {
   id: number;
@@ -225,6 +226,7 @@ export function WatchlistPage() {
               <thead>
                 <tr style={{ background: "var(--bg-tertiary)" }}>
                   <th className="px-4 py-2.5 text-left font-medium" style={{ color: "var(--text-muted)" }}>股票代码</th>
+                  <th className="px-4 py-2.5 text-left font-medium" style={{ color: "var(--text-muted)" }}>资金动向</th>
                   <th className="px-4 py-2.5 text-left font-medium" style={{ color: "var(--text-muted)" }}>备注</th>
                   <th className="px-4 py-2.5 text-left font-medium" style={{ color: "var(--text-muted)" }}>AI 理由</th>
                   <th className="px-4 py-2.5 text-left font-medium" style={{ color: "var(--text-muted)" }}>添加时间</th>
@@ -238,6 +240,9 @@ export function WatchlistPage() {
                     style={{ borderTop: "1px solid var(--border-color)", background: idx % 2 === 0 ? "var(--bg-secondary)" : "var(--bg-primary)" }}
                   >
                     <td className="px-4 py-2.5 font-medium" style={{ color: "var(--accent-orange)" }}>{item.stock_code}</td>
+                    <td className="px-4 py-2.5">
+                      <StockCapitalChip code={item.stock_code} variant="compact" silent />
+                    </td>
                     <td className="px-4 py-2.5" style={{ color: "var(--text-secondary)" }}>{item.note || "-"}</td>
                     <td className="px-4 py-2.5 text-xs" style={{ color: "var(--accent-purple)" }}>{item.ai_reason || "-"}</td>
                     <td className="px-4 py-2.5 text-xs" style={{ color: "var(--text-muted)" }}>{item.created_at.slice(0, 10)}</td>

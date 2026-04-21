@@ -92,6 +92,86 @@ def get_ladder_hint(trade_date: date, model_id: str = "deepseek-v3") -> str:
     return " · ".join(parts)
 
 
+def get_stock_capital_hint(code: str, ctx: dict | None) -> str:
+    """根据 StockContextService 返回的 ctx, 拼接个股资金 + 主力身份要点(<=120字).
+
+    ctx 形如 stock_context.get_stock_context() 的返回值. 不传或缺字段都安全降级.
+    """
+    if not ctx:
+        return ""
+    parts: list[str] = []
+
+    cap = ctx.get("capital") or {}
+    main = cap.get("main") or {}
+    if main:
+        ti = main.get("today_main_inflow")
+        n5 = main.get("net_5d")
+        if ti is not None or n5 is not None:
+            seg = []
+            if ti is not None:
+                seg.append(f"今日主力{ti / 1e8:+.2f}亿")
+            if n5 is not None:
+                seg.append(f"5日累计{n5 / 1e8:+.2f}亿")
+            parts.append("/".join(seg))
+    north = cap.get("north") or {}
+    if north and north.get("hold_amount"):
+        chg5 = north.get("chg_amount_5d")
+        if chg5 is not None:
+            parts.append(f"北向5日{chg5 / 1e8:+.2f}亿")
+    score = cap.get("strength_score")
+    if score is not None and score != 0:
+        parts.append(f"资金强度{score:+d}")
+
+    inst = ctx.get("institutional") or {}
+    badges = []
+    if inst.get("has_national_team"):
+        badges.append("国家队")
+    if inst.get("has_social"):
+        badges.append("社保")
+    if inst.get("has_insurance"):
+        badges.append("险资")
+    if inst.get("has_qfii"):
+        badges.append("QFII")
+    if badges:
+        parts.append("主力身份: " + "/".join(badges))
+    es = inst.get("event_summary") or {}
+    flags = []
+    if es.get("increase"):
+        flags.append(f"增持×{es['increase']}")
+    if es.get("decrease"):
+        flags.append(f"减持×{es['decrease']}")
+    if es.get("repurchase"):
+        flags.append(f"回购×{es['repurchase']}")
+    if es.get("placard"):
+        flags.append(f"举牌×{es['placard']}")
+    if flags:
+        parts.append("近30天: " + " ".join(flags))
+
+    seat = ctx.get("seat") or {}
+    if seat.get("appear_30d"):
+        seg = f"龙虎榜30日{seat['appear_30d']}次"
+        if seat.get("famous_seat_30d"):
+            seg += f"(知名席位{seat['famous_seat_30d']}次)"
+        parts.append(seg)
+
+    if not parts:
+        return ""
+    return f"{code}资金画像: " + " · ".join(parts)
+
+
+def build_stock_context_block(
+    code: str,
+    ctx: dict | None,
+    *,
+    title: str = "个股资金 + 主力身份证据",
+) -> str:
+    """把单股 ctx 渲染成 prompt markdown 段."""
+    line = get_stock_capital_hint(code, ctx)
+    if not line:
+        return ""
+    return f"\n## {title}\n- {line}\n"
+
+
 def build_cross_context_block(
     trade_date: date,
     model_id: str = "deepseek-v3",

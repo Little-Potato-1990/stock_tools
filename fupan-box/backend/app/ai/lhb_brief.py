@@ -355,6 +355,38 @@ async def generate_lhb_brief(
     cross_ctx = build_cross_context_block(
         trade_date, model_id, include_theme=True, include_ladder=True
     )
+
+    # P3 资金画像注入: 给上榜 top 5 个股补充主力/北向/机构股东标签
+    try:
+        from app.services.stock_context import get_stock_capital_sync
+        top_codes = [s.get("code") for s in (struct.get("top_stocks") or [])[:5] if s.get("code")]
+        cap_lines = ["", "【上榜个股资金画像 (Top 5)】"]
+        for c in top_codes:
+            cap = get_stock_capital_sync(c, trade_date)
+            parts = [c]
+            cap_d = cap.get("capital") or {}
+            main = cap_d.get("main") or {}
+            if main.get("today_main_inflow") is not None:
+                parts.append(f"主力{main['today_main_inflow']/1e8:+.2f}亿")
+            if main.get("net_5d") is not None:
+                parts.append(f"5日{main['net_5d']/1e8:+.2f}亿")
+            north = cap_d.get("north") or {}
+            if north.get("chg_amount_5d") is not None:
+                parts.append(f"北向5日{north['chg_amount_5d']/1e8:+.2f}亿")
+            inst = cap.get("institutional") or {}
+            tags = []
+            if inst.get("has_national_team"): tags.append("国家队")
+            if inst.get("has_social"): tags.append("社保")
+            if inst.get("has_insurance"): tags.append("险资")
+            if inst.get("has_qfii"): tags.append("QFII")
+            if tags: parts.append("|".join(tags))
+            if len(parts) > 1:
+                cap_lines.append("- " + " ".join(parts))
+        if len(cap_lines) > 2:
+            cross_ctx = (cross_ctx or "") + "\n".join(cap_lines) + "\n"
+    except Exception:
+        pass
+
     system, user = _build_prompt(trade_date.isoformat(), struct, cross_ctx)
     llm_out = await _call_llm(system, user, model_id)
     merged = _merge_llm(struct, llm_out)

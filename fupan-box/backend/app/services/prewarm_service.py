@@ -26,6 +26,8 @@ from sqlalchemy.orm import Session
 from app.config import get_settings
 from app.ai.brief_cache import pg_get, pg_set
 from app.ai.brief_generator import generate_brief, _latest_trade_date_with_data
+from app.ai.capital_brief import generate_capital_brief
+from app.ai.institutional_brief import generate_institutional_brief
 from app.ai.ladder_brief import generate_ladder_brief
 from app.ai.news_brief import generate_news_brief
 from app.ai.sentiment_brief import generate_sentiment_brief
@@ -125,9 +127,28 @@ async def prewarm_market_briefs(
             lambda: generate_theme_brief(td, model),
             action="theme_brief", model=model, trade_date=td,
         ),
+        _gen_and_cache(
+            f"capital_brief:{td_s}:{model}",
+            lambda: generate_capital_brief(td, model),
+            action="capital_brief", model=model, trade_date=td,
+        ),
     ]
     results = await asyncio.gather(*tasks, return_exceptions=False)
     return {"trade_date": td_s, "results": results}
+
+
+async def prewarm_institutional_brief(
+    trade_date: date_type | None, model: str = DEFAULT_MODEL,
+) -> dict[str, Any]:
+    """主力身份 brief 预热: 季报变化慢, 缓存 7 天."""
+    td = resolve_trade_date(trade_date)
+    td_s = _td_str(td)
+    key = f"institutional_brief:{td_s}:{model}"
+    return await _gen_and_cache(
+        key,
+        lambda: generate_institutional_brief(td, None, model),
+        action="institutional_brief", model=model, trade_date=td,
+    )
 
 
 def _pick_why_rose_targets(trade_date: date_type, max_per_dir: int = 30) -> list[str]:

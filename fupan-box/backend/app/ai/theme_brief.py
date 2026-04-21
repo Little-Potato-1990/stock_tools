@@ -437,6 +437,39 @@ async def generate_theme_brief(
     cross_ctx = build_cross_context_block(
         trade_date, model_id, include_sentiment=True
     )
+
+    # P3 题材资金画像注入: 给主线 / 新生 / 退潮 题材标注当日资金 (concept scope)
+    try:
+        from app.models.capital import CapitalFlowDaily
+        from sqlalchemy import create_engine, select
+        from sqlalchemy.orm import Session as _Sess
+        settings = get_settings()
+        eng = create_engine(settings.database_url_sync)
+        cand_names = set()
+        for grp in ("leading", "fading", "emerging"):
+            for it in (pools.get(grp) or [])[:5]:
+                if it.get("name"): cand_names.add(it["name"])
+        cap_lines = []
+        if cand_names:
+            with _Sess(eng) as sess:
+                rows = sess.execute(
+                    select(CapitalFlowDaily).where(
+                        CapitalFlowDaily.scope == "concept",
+                        CapitalFlowDaily.trade_date == trade_date,
+                        CapitalFlowDaily.scope_key.in_(list(cand_names)),
+                    )
+                ).scalars().all()
+                for r in rows:
+                    d = r.data or {}
+                    mi = d.get("main_inflow")
+                    if mi is None: continue
+                    cap_lines.append(f"- {r.scope_key}: 主力{mi/1e8:+.2f}亿")
+        eng.dispose()
+        if cap_lines:
+            cross_ctx = (cross_ctx or "") + "\n【题材资金动向】\n" + "\n".join(cap_lines) + "\n"
+    except Exception:
+        pass
+
     system, user = _build_prompt(trade_date.isoformat(), agg, pools, cross_ctx, theme_news)
     llm_out = await _call_llm(system, user, model_id)
     merged = _merge_llm(agg, pools, llm_out, theme_news)

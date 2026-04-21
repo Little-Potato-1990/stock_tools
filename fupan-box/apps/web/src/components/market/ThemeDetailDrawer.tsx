@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 import { X, TrendingUp, TrendingDown } from "lucide-react";
 import { api } from "@/lib/api";
 import { useUIStore } from "@/stores/ui-store";
+import { StockCapitalChip } from "./StockCapitalChip";
 
 interface ThemeStock {
   stock_code: string;
@@ -188,6 +189,9 @@ export function ThemeDetailDrawer({ themeName, onClose }: Props) {
                   <div className="flex items-center gap-2 text-[9px] mt-0.5" style={{ color: "var(--text-muted)" }}>
                     <span>{(s.amount / 1e8).toFixed(1)}亿</span>
                     <span>换手{s.turnover_rate.toFixed(1)}%</span>
+                  </div>
+                  <div className="mt-1" onClick={(e) => e.stopPropagation()}>
+                    <StockCapitalChip code={s.stock_code} variant="compact" silent />
                   </div>
                 </div>
                 <span

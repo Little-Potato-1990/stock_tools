@@ -4,7 +4,7 @@ import os
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.api import market, snapshot, auth, ai_chat, ai_brief, watchlist, trades, quota, intraday, plans, me, news
+from app.api import market, snapshot, auth, ai_chat, ai_brief, watchlist, trades, quota, intraday, plans, me, news, stock, capital
 from app.database import engine, Base
 from app.embedded_celery import (
     start_embedded_celery,
@@ -84,6 +84,8 @@ app.include_router(intraday.router, prefix="/api/intraday", tags=["intraday"])
 app.include_router(plans.router, prefix="/api/plans", tags=["plans"])
 app.include_router(me.router, prefix="/api/me", tags=["me"])
 app.include_router(news.router, prefix="/api/news", tags=["news"])
+app.include_router(stock.router, prefix="/api/stock", tags=["stock"])
+app.include_router(capital.router, prefix="/api/market/capital", tags=["capital"])
 
 
 @app.get("/api/health")

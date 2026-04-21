@@ -17,6 +17,7 @@ celery.conf.imports = (
     "app.tasks.prewarm",
     "app.tasks.plan_check",
     "app.tasks.news_ingest",
+    "app.tasks.quarterly",
 )
 celery.conf.beat_schedule = {
     "daily-pipeline": {
@@ -101,6 +102,16 @@ celery.conf.beat_schedule = {
     "prewarm-news-brief-close": {
         "task": "app.tasks.prewarm.prewarm_news_brief",
         "schedule": crontab(hour=15, minute=55, day_of_week="1-5"),
+    },
+    # 季报股东快照——每季度公告期密集出现, 每月 1 号扫一次最新可用季度
+    "quarterly-holder-pipeline": {
+        "task": "app.tasks.quarterly.run_quarterly_holder_task",
+        "schedule": crontab(hour=20, minute=0, day_of_month="1"),
+    },
+    # 主力身份 brief 预热: 季报变化慢, 每天 16:10 跑一次即可
+    "prewarm-institutional-brief": {
+        "task": "app.tasks.prewarm.prewarm_institutional_brief",
+        "schedule": crontab(hour=16, minute=10, day_of_week="1-5"),
     },
 }
 celery.conf.timezone = "Asia/Shanghai"

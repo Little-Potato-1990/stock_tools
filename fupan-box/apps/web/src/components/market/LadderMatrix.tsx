@@ -5,6 +5,7 @@ import { Sparkles } from "lucide-react";
 import { api } from "@/lib/api";
 import { useUIStore } from "@/stores/ui-store";
 import { getBoardLevelColor } from "@/lib/colorScale";
+import { StockCapitalChip } from "./StockCapitalChip";
 
 const PAGE_SIZE = 7;
 const MAX_DAYS = 60;
@@ -365,6 +366,17 @@ export function LadderMatrix({
 
   /** 题材交叉高亮 (hover 同名题材) */
   const [hoverTheme, setHoverTheme] = useState<string | null>(null);
+  // P3 资金 chip hover: 悬停 stock cell 300ms 后弹出主力/北向/机构标签
+  const [hoverChip, setHoverChip] = useState<{ key: string; code: string } | null>(null);
+  const hoverTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const scheduleChip = useCallback((key: string, code: string) => {
+    if (hoverTimerRef.current) clearTimeout(hoverTimerRef.current);
+    hoverTimerRef.current = setTimeout(() => setHoverChip({ key, code }), 280);
+  }, []);
+  const cancelChip = useCallback(() => {
+    if (hoverTimerRef.current) clearTimeout(hoverTimerRef.current);
+    setHoverChip(null);
+  }, []);
   /** 题材弹窗: 选中题材名 + 选中日期 (当前仅 KPL 题材可点开) */
   const [activeTheme, setActiveTheme] = useState<{
     name: string;
@@ -855,9 +867,16 @@ export function LadderMatrix({
                     const aiBorder = aiHit
                       ? AI_TAG_COLOR[aiHit.tag] || "var(--accent-purple)"
                       : null;
+                    const cellKey = `${d.trade_date}-${s.stock_code}`;
+                    const chipOpen = hoverChip?.key === cellKey;
                     return (
+                      <div
+                        key={cellKey}
+                        style={{ position: "relative" }}
+                        onMouseEnter={() => scheduleChip(cellKey, s.stock_code)}
+                        onMouseLeave={cancelChip}
+                      >
                       <button
-                        key={`${d.trade_date}-${s.stock_code}`}
                         onClick={() =>
                           openStockDetail(s.stock_code, s.stock_name)
                         }
@@ -1007,6 +1026,32 @@ export function LadderMatrix({
                           </div>
                         )}
                       </button>
+                      {chipOpen && (
+                        <div
+                          style={{
+                            position: "absolute",
+                            top: "100%",
+                            left: 0,
+                            zIndex: 50,
+                            marginTop: 4,
+                            minWidth: 280,
+                            maxWidth: 360,
+                            padding: 8,
+                            background: "var(--bg-card)",
+                            border: "1px solid var(--border-color)",
+                            borderRadius: 6,
+                            boxShadow: "0 4px 12px rgba(0,0,0,0.18)",
+                            pointerEvents: "none",
+                          }}
+                        >
+                          <StockCapitalChip
+                            code={s.stock_code}
+                            variant="full"
+                            silent
+                          />
+                        </div>
+                      )}
+                      </div>
                     );
                   })}
                 </div>
