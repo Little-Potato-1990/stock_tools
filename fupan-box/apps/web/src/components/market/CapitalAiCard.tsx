@@ -35,11 +35,11 @@ export function CapitalAiCard({ hero = false }: { hero?: boolean } = {}) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const load = async (refresh = false) => {
+  const load = async (refresh = false, dateOverride?: string) => {
     setLoading(true);
     setError(null);
     try {
-      const d = await api.getCapitalBrief(undefined, refresh);
+      const d = await api.getCapitalBrief(dateOverride, refresh);
       setData(d as unknown as CapitalBrief);
     } catch (e) {
       setError(e instanceof Error ? e.message : "load failed");
@@ -205,6 +205,7 @@ export function CapitalAiCard({ hero = false }: { hero?: boolean } = {}) {
         model={data.model}
         snapshot={{ headline: data.headline, stance: data.stance, evidence: data.evidence }}
         cacheMeta={getCacheMeta(data)}
+        onPickDate={(iso) => load(false, iso)}
       />
     </div>
   );

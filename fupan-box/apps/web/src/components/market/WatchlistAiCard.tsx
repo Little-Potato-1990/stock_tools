@@ -27,7 +27,7 @@ export function WatchlistAiCard({ itemCount }: Props) {
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
-  const load = useCallback(async (refresh = false) => {
+  const load = useCallback(async (refresh = false, dateOverride?: string) => {
     if (itemCount === 0) {
       setData(null);
       return;
@@ -35,7 +35,7 @@ export function WatchlistAiCard({ itemCount }: Props) {
     setLoading(true);
     setErr(null);
     try {
-      const d = await api.getWatchlistBrief(undefined, refresh);
+      const d = await api.getWatchlistBrief(dateOverride, refresh);
       setData(d);
     } catch (e: unknown) {
       setErr(e instanceof Error ? e.message : "AI 生成失败");
@@ -148,6 +148,7 @@ export function WatchlistAiCard({ itemCount }: Props) {
             model={data.model}
             snapshot={{ headline: data.headline, focus: data.focus, evidence: data.evidence }}
             cacheMeta={getCacheMeta(data)}
+            onPickDate={(iso) => load(false, iso)}
           />
         </>
       )}

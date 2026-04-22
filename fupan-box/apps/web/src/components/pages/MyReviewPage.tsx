@@ -14,6 +14,10 @@ import {
   Wallet,
   Trophy,
   Activity,
+  Upload,
+  Zap,
+  ChevronDown,
+  ChevronUp,
 } from "lucide-react";
 import { api, type TradeRecord, type TradePattern, type TradeCreate } from "@/lib/api";
 import { useUIStore } from "@/stores/ui-store";
@@ -180,7 +184,27 @@ export function MyReviewPage() {
       </div>
 
       <div className="p-3 space-y-3">
-        {showForm && <TradeForm form={form} onChange={setForm} onSubmit={submitTrade} />}
+        {showForm && (
+          <TradeForm
+            form={form}
+            onChange={setForm}
+            onSubmit={submitTrade}
+            onBulkImport={async (rows) => {
+              let ok = 0;
+              let fail = 0;
+              for (const r of rows) {
+                try {
+                  await api.createTrade(r);
+                  ok++;
+                } catch {
+                  fail++;
+                }
+              }
+              alert(`批量导入完成: 成功 ${ok} 条, 失败 ${fail} 条`);
+              await load();
+            }}
+          />
+        )}
 
         {pattern && <PatternCards pattern={pattern} />}
 
@@ -203,17 +227,101 @@ export function MyReviewPage() {
   );
 }
 
+/**
+ * 解析 CSV/TSV 粘贴文本.
+ * 支持表头列名: trade_date, code, name, buy_price, sell_price, qty, intraday_chg_at_buy, holding_minutes, reason
+ * 也支持位置列 (无表头, 顺序固定为上面)
+ * 兼容 \t 和 , 分隔符.
+ */
+function parseTradesCsv(text: string): { rows: TradeCreate[]; errors: string[] } {
+  const errors: string[] = [];
+  const rows: TradeCreate[] = [];
+  const lines = text.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+  if (lines.length === 0) return { rows, errors: ["内容为空"] };
+
+  const splitLine = (l: string) => l.split(/[,\t]/).map((s) => s.trim());
+
+  let header: string[] | null = null;
+  const first = splitLine(lines[0]);
+  const looksLikeHeader = first.some((c) => /^(code|trade_date|buy|sell|qty|name)/i.test(c));
+  let dataStart = 0;
+  if (looksLikeHeader) {
+    header = first.map((s) => s.toLowerCase());
+    dataStart = 1;
+  } else {
+    header = ["trade_date", "code", "name", "buy_price", "sell_price", "qty", "intraday_chg_at_buy", "holding_minutes", "reason"];
+  }
+
+  const idx = (key: string) => header!.indexOf(key);
+  for (let i = dataStart; i < lines.length; i++) {
+    const cells = splitLine(lines[i]);
+    if (cells.length < 4) {
+      errors.push(`第 ${i + 1} 行字段太少: ${lines[i]}`);
+      continue;
+    }
+    const get = (key: string) => {
+      const j = idx(key);
+      return j >= 0 ? cells[j] : undefined;
+    };
+    const code = (get("code") || "").replace(/\D/g, "").slice(0, 6);
+    const buy = Number(get("buy_price"));
+    const sell = Number(get("sell_price"));
+    const qty = Number(get("qty"));
+    if (code.length !== 6 || !buy || !sell || !qty) {
+      errors.push(`第 ${i + 1} 行解析失败 (代码/买价/卖价/数量必填): ${lines[i]}`);
+      continue;
+    }
+    const tradeDate = get("trade_date") || new Date().toISOString().slice(0, 10);
+    const intradayRaw = get("intraday_chg_at_buy");
+    const holdingRaw = get("holding_minutes");
+    rows.push({
+      trade_date: tradeDate,
+      code,
+      name: get("name") || "",
+      buy_price: buy,
+      sell_price: sell,
+      qty,
+      intraday_chg_at_buy: intradayRaw !== undefined && intradayRaw !== "" ? Number(intradayRaw) : undefined,
+      holding_minutes: holdingRaw !== undefined && holdingRaw !== "" ? Number(holdingRaw) : undefined,
+      reason: get("reason") || "",
+    });
+  }
+  return { rows, errors };
+}
+
 function TradeForm({
   form,
   onChange,
   onSubmit,
+  onBulkImport,
 }: {
   form: TradeCreate;
   onChange: (f: TradeCreate) => void;
   onSubmit: (e: React.FormEvent) => void;
+  onBulkImport: (rows: TradeCreate[]) => void | Promise<void>;
 }) {
   const set = <K extends keyof TradeCreate>(k: K, v: TradeCreate[K]) =>
     onChange({ ...form, [k]: v });
+
+  /** P1 #8: 简化录入 - 默认仅显示核心 4 字段 */
+  const [advanced, setAdvanced] = useState(false);
+  const [showCsv, setShowCsv] = useState(false);
+  const [csvText, setCsvText] = useState("");
+  const [csvParseMsg, setCsvParseMsg] = useState<string | null>(null);
+
+  const handleCsvImport = () => {
+    const { rows, errors } = parseTradesCsv(csvText);
+    if (rows.length === 0) {
+      setCsvParseMsg(`未识别到任何有效行${errors.length ? "; " + errors.slice(0, 2).join(" / ") : ""}`);
+      return;
+    }
+    setCsvParseMsg(`解析成功 ${rows.length} 条${errors.length ? `, ${errors.length} 行被忽略` : ""}; 正在批量上传...`);
+    Promise.resolve(onBulkImport(rows)).then(() => {
+      setCsvText("");
+      setShowCsv(false);
+      setCsvParseMsg(null);
+    });
+  };
 
   return (
     <form
@@ -226,20 +334,97 @@ function TradeForm({
       }}
     >
       <div className="flex items-center gap-2 mb-2">
-        <PlusCircle size={13} style={{ color: "var(--accent-blue)" }} />
+        <Zap size={13} style={{ color: "var(--accent-blue)" }} />
         <span className="font-bold" style={{ fontSize: 12, color: "var(--text-primary)" }}>
-          录入一笔已平仓交易
+          {showCsv ? "批量粘贴导入交易" : "快速录入一笔已平仓交易"}
         </span>
+        <span style={{ fontSize: 10, color: "var(--text-muted)" }}>
+          {showCsv ? "支持 CSV / TSV / 复制券商表格" : "只填 4 个核心字段, 其它默认"}
+        </span>
+        <button
+          type="button"
+          onClick={() => setShowCsv((v) => !v)}
+          className="ml-auto inline-flex items-center gap-1 px-2 py-1 rounded"
+          style={{
+            background: showCsv ? "var(--accent-purple)" : "var(--bg-tertiary)",
+            color: showCsv ? "#fff" : "var(--text-secondary)",
+            border: "1px solid var(--border-color)",
+            fontSize: 10,
+            fontWeight: 700,
+            cursor: "pointer",
+          }}
+          title="批量从 CSV / 券商导出粘贴"
+        >
+          <Upload size={11} />
+          {showCsv ? "返回单笔" : "CSV 粘贴"}
+        </button>
       </div>
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
-        <Field label="交易日">
-          <input
-            type="date"
-            value={form.trade_date}
-            onChange={(e) => set("trade_date", e.target.value)}
-            className="form-input"
+
+      {showCsv ? (
+        <div className="space-y-2">
+          <div
+            className="text-xs px-2 py-1.5 rounded"
+            style={{
+              background: "var(--bg-secondary)",
+              color: "var(--text-muted)",
+              border: "1px solid var(--border-color)",
+              lineHeight: 1.6,
+            }}
+          >
+            支持表头: <code>trade_date,code,name,buy_price,sell_price,qty,intraday_chg_at_buy,holding_minutes,reason</code>
+            <br />
+            或不带表头, 按顺序排列即可. 制表符 / 逗号都可作为分隔符.
+          </div>
+          <textarea
+            value={csvText}
+            onChange={(e) => setCsvText(e.target.value)}
+            placeholder={"例如:\ntrade_date,code,name,buy_price,sell_price,qty\n2025-04-10,600519,贵州茅台,1700,1730,100\n2025-04-11,000001,平安银行,12.5,12.8,500"}
+            rows={6}
+            className="w-full"
+            style={{
+              background: "var(--bg-secondary)",
+              border: "1px solid var(--border-color)",
+              borderRadius: 4,
+              padding: 8,
+              color: "var(--text-primary)",
+              fontSize: 11,
+              fontFamily: "ui-monospace, monospace",
+            }}
           />
-        </Field>
+          {csvParseMsg && (
+            <div
+              className="text-xs px-2 py-1 rounded"
+              style={{
+                background: "rgba(245,158,11,0.10)",
+                border: "1px solid rgba(245,158,11,0.4)",
+                color: "var(--accent-orange)",
+              }}
+            >
+              {csvParseMsg}
+            </div>
+          )}
+          <div className="flex items-center justify-end gap-2">
+            <button
+              type="button"
+              onClick={handleCsvImport}
+              disabled={!csvText.trim()}
+              className="px-3 py-1 rounded font-bold"
+              style={{
+                background: "var(--accent-purple)",
+                color: "#fff",
+                fontSize: 11,
+                border: "none",
+                opacity: csvText.trim() ? 1 : 0.5,
+                cursor: csvText.trim() ? "pointer" : "not-allowed",
+              }}
+            >
+              解析并批量导入
+            </button>
+          </div>
+        </div>
+      ) : (
+        <>
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
         <Field label="代码*">
           <input
             type="text"
@@ -247,23 +432,7 @@ function TradeForm({
             onChange={(e) => set("code", e.target.value.replace(/\D/g, "").slice(0, 6))}
             placeholder="6 位"
             className="form-input"
-          />
-        </Field>
-        <Field label="名称">
-          <input
-            type="text"
-            value={form.name || ""}
-            onChange={(e) => set("name", e.target.value)}
-            placeholder="可选"
-            className="form-input"
-          />
-        </Field>
-        <Field label="数量(股)*">
-          <input
-            type="number"
-            value={form.qty || 0}
-            onChange={(e) => set("qty", Number(e.target.value))}
-            className="form-input"
+            autoFocus
           />
         </Field>
         <Field label="买入价*">
@@ -284,41 +453,90 @@ function TradeForm({
             className="form-input"
           />
         </Field>
-        <Field label="介入时涨幅(%)">
+        <Field label="数量(股)*">
           <input
             type="number"
-            step="0.1"
-            value={form.intraday_chg_at_buy ?? ""}
-            onChange={(e) =>
-              set("intraday_chg_at_buy", e.target.value === "" ? undefined : Number(e.target.value))
-            }
-            placeholder="追高识别"
+            value={form.qty || 0}
+            onChange={(e) => set("qty", Number(e.target.value))}
             className="form-input"
           />
         </Field>
-        <Field label="持仓时长(分钟)">
-          <input
-            type="number"
-            value={form.holding_minutes ?? ""}
-            onChange={(e) =>
-              set("holding_minutes", e.target.value === "" ? undefined : Number(e.target.value))
-            }
-            placeholder="可选"
-            className="form-input"
-          />
-        </Field>
-        <div className="col-span-2 md:col-span-4">
-          <Field label="介入逻辑 (你为什么买?)">
+      </div>
+
+      {/* 高级字段折叠 (默认隐藏, 用户主动展开才填) */}
+      <button
+        type="button"
+        onClick={() => setAdvanced((v) => !v)}
+        className="mt-2 inline-flex items-center gap-1 px-1.5 py-0.5 rounded transition-opacity hover:opacity-80"
+        style={{
+          background: "var(--bg-tertiary)",
+          color: "var(--text-muted)",
+          border: "1px solid var(--border-color)",
+          fontSize: 10,
+          cursor: "pointer",
+        }}
+        title="补充交易日 / 名称 / 介入涨幅 / 持仓时长 / 介入逻辑 (用于追高识别和 AI 复盘画像)"
+      >
+        {advanced ? <ChevronUp size={11} /> : <ChevronDown size={11} />}
+        高级 (可选: 交易日/名称/介入涨幅/持仓/逻辑)
+      </button>
+
+      {advanced && (
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mt-2">
+          <Field label="交易日">
             <input
-              type="text"
-              value={form.reason || ""}
-              onChange={(e) => set("reason", e.target.value)}
-              placeholder="如: 追AI龙头/低吸跌停反包/埋伏次日打板..."
+              type="date"
+              value={form.trade_date}
+              onChange={(e) => set("trade_date", e.target.value)}
               className="form-input"
             />
           </Field>
+          <Field label="名称">
+            <input
+              type="text"
+              value={form.name || ""}
+              onChange={(e) => set("name", e.target.value)}
+              placeholder="可选"
+              className="form-input"
+            />
+          </Field>
+          <Field label="介入时涨幅(%)">
+            <input
+              type="number"
+              step="0.1"
+              value={form.intraday_chg_at_buy ?? ""}
+              onChange={(e) =>
+                set("intraday_chg_at_buy", e.target.value === "" ? undefined : Number(e.target.value))
+              }
+              placeholder="追高识别"
+              className="form-input"
+            />
+          </Field>
+          <Field label="持仓时长(分钟)">
+            <input
+              type="number"
+              value={form.holding_minutes ?? ""}
+              onChange={(e) =>
+                set("holding_minutes", e.target.value === "" ? undefined : Number(e.target.value))
+              }
+              placeholder="可选"
+              className="form-input"
+            />
+          </Field>
+          <div className="col-span-2 md:col-span-4">
+            <Field label="介入逻辑 (你为什么买?)">
+              <input
+                type="text"
+                value={form.reason || ""}
+                onChange={(e) => set("reason", e.target.value)}
+                placeholder="如: 追AI龙头/低吸跌停反包/埋伏次日打板..."
+                className="form-input"
+              />
+            </Field>
+          </div>
         </div>
-      </div>
+      )}
+
       <div className="mt-2 flex items-center justify-end gap-2">
         <button
           type="submit"
@@ -334,6 +552,8 @@ function TradeForm({
           保存
         </button>
       </div>
+        </>
+      )}
       <style jsx>{`
         :global(.form-input) {
           width: 100%;

@@ -246,11 +246,11 @@ export function ThemeAiCard({ hero = false, onEvidenceClick, onBriefLoad }: Prop
   const aiStyle = useUIStore((s) => s.aiStyle);
   const stream = useStreamingHeadline("theme", data?.trade_date, data?.model);
 
-  const load = async (refresh = false) => {
+  const load = async (refresh = false, dateOverride?: string) => {
     setLoading(true);
     setError(null);
     try {
-      const d = await api.getThemeBrief(undefined, refresh);
+      const d = await api.getThemeBrief(dateOverride, refresh);
       const brief = d as unknown as ThemeBriefData;
       setData(brief);
       if (onBriefLoad) onBriefLoad(brief);
@@ -538,6 +538,7 @@ export function ThemeAiCard({ hero = false, onEvidenceClick, onBriefLoad }: Prop
         model={data.model}
         snapshot={{ headline: data.headline, evidence: data.evidence, next_bet: data.next_bet }}
         cacheMeta={getCacheMeta(data)}
+        onPickDate={(iso) => load(false, iso)}
       />
     </div>
   );

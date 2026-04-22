@@ -15,6 +15,7 @@ import {
 import { useUIStore } from "@/stores/ui-store";
 import { api } from "@/lib/api";
 import { CacheMetaBadge, getCacheMeta } from "./CacheMetaBadge";
+import { ShareCardButton } from "@/components/common/ShareCardButton";
 
 type Debate = Awaited<ReturnType<typeof api.getDebate>>;
 
@@ -308,6 +309,31 @@ export function DebateModal() {
             )}
           </div>
           <div className="flex items-center gap-1.5">
+            {data && (
+              <ShareCardButton
+                title={data.topic_label || target.label || target.key || ""}
+                subtitle={`AI 多空辩论 · ${data.trade_date} · ${data.model}`}
+                verdict={`裁判: ${data.judge.verdict} (${data.judge.win_margin}分)`}
+                verdictColor={
+                  data.judge.verdict === "看多"
+                    ? "#ef4444"
+                    : data.judge.verdict === "看空"
+                      ? "#22c55e"
+                      : data.judge.verdict === "分歧"
+                        ? "#f59e0b"
+                        : "#6b7280"
+                }
+                headline={data.judge.summary}
+                sections={[
+                  { label: `多头 (置信度 ${data.bull.confidence})`, text: data.bull.headline },
+                  { label: `空头 (置信度 ${data.bear.confidence})`, text: data.bear.headline },
+                  { label: "关键变量", text: data.judge.key_variable },
+                  { label: "下一步", text: data.judge.next_step },
+                ]}
+                variant="inline"
+                buttonLabel="生成分享卡"
+              />
+            )}
             <button
               onClick={close}
               className="px-2.5 py-1 rounded"

@@ -35,7 +35,8 @@ const PUBLIC_NAV: NavItem[] = [
   { key: "capital", label: "资金风向标", icon: DollarSign },
   { key: "midlong", label: "个股深度", icon: SearchIcon, badge: "AI" },
   { key: "lhb", label: "龙虎榜分析", icon: Trophy },
-  { key: "news", label: "财联社要闻", icon: Newspaper },
+  { key: "news", label: "财经要闻", icon: Newspaper },
+  { key: "methodology", label: "方法论文库", icon: BookOpen },
 ];
 
 const SETTINGS_NAV: NavItem[] = [

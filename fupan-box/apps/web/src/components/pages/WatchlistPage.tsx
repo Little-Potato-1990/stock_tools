@@ -2,10 +2,11 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { api } from "@/lib/api";
-import { Plus, Trash2, LogIn, UserPlus } from "lucide-react";
+import { Plus, Trash2, LogIn, UserPlus, Search, Target, AlertTriangle } from "lucide-react";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { WatchlistAiCard } from "@/components/market/WatchlistAiCard";
 import { StockCapitalChip } from "@/components/market/StockCapitalChip";
+import { useUIStore } from "@/stores/ui-store";
 
 interface WatchlistItem {
   id: number;
@@ -20,6 +21,10 @@ export function WatchlistPage() {
   const [items, setItems] = useState<WatchlistItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+
+  const openStockDetail = useUIStore((s) => s.openStockDetail);
+  const requestPlanFor = useUIStore((s) => s.requestPlanFor);
+  const setAnomalyFilterCode = useUIStore((s) => s.setAnomalyFilterCode);
 
   const [authMode, setAuthMode] = useState<"login" | "register">("login");
   const [username, setUsername] = useState("");
@@ -230,7 +235,7 @@ export function WatchlistPage() {
                   <th className="px-4 py-2.5 text-left font-medium" style={{ color: "var(--text-muted)" }}>备注</th>
                   <th className="px-4 py-2.5 text-left font-medium" style={{ color: "var(--text-muted)" }}>AI 理由</th>
                   <th className="px-4 py-2.5 text-left font-medium" style={{ color: "var(--text-muted)" }}>添加时间</th>
-                  <th className="px-4 py-2.5 text-center font-medium w-16" style={{ color: "var(--text-muted)" }}>操作</th>
+                  <th className="px-4 py-2.5 text-center font-medium" style={{ color: "var(--text-muted)", width: 180 }}>操作</th>
                 </tr>
               </thead>
               <tbody>
@@ -239,21 +244,55 @@ export function WatchlistPage() {
                     key={item.id}
                     style={{ borderTop: "1px solid var(--border-color)", background: idx % 2 === 0 ? "var(--bg-secondary)" : "var(--bg-primary)" }}
                   >
-                    <td className="px-4 py-2.5 font-medium" style={{ color: "var(--accent-orange)" }}>{item.stock_code}</td>
+                    <td
+                      className="px-4 py-2.5 font-medium cursor-pointer hover:opacity-80"
+                      style={{ color: "var(--accent-orange)" }}
+                      onClick={() => openStockDetail(item.stock_code)}
+                      title="点击打开个股详情"
+                    >
+                      {item.stock_code}
+                    </td>
                     <td className="px-4 py-2.5">
                       <StockCapitalChip code={item.stock_code} variant="compact" silent />
                     </td>
                     <td className="px-4 py-2.5" style={{ color: "var(--text-secondary)" }}>{item.note || "-"}</td>
                     <td className="px-4 py-2.5 text-xs" style={{ color: "var(--accent-purple)" }}>{item.ai_reason || "-"}</td>
                     <td className="px-4 py-2.5 text-xs" style={{ color: "var(--text-muted)" }}>{item.created_at.slice(0, 10)}</td>
-                    <td className="px-4 py-2.5 text-center">
-                      <button
-                        onClick={() => handleRemove(item.stock_code)}
-                        className="p-1 rounded hover:opacity-70"
-                        style={{ color: "var(--accent-red)" }}
-                      >
-                        <Trash2 size={14} />
-                      </button>
+                    <td className="px-4 py-2.5">
+                      <div className="flex items-center justify-center gap-0.5">
+                        <button
+                          onClick={() => openStockDetail(item.stock_code)}
+                          title="个股详情"
+                          className="p-1 rounded transition-colors"
+                          style={{ color: "var(--accent-blue)" }}
+                        >
+                          <Search size={13} />
+                        </button>
+                        <button
+                          onClick={() => requestPlanFor(item.stock_code, item.note || undefined)}
+                          title="为这只股建一条计划 (跳到我的计划并预填)"
+                          className="p-1 rounded transition-colors"
+                          style={{ color: "var(--accent-purple)" }}
+                        >
+                          <Target size={13} />
+                        </button>
+                        <button
+                          onClick={() => setAnomalyFilterCode(item.stock_code)}
+                          title="只看这只股的盘中异动"
+                          className="p-1 rounded transition-colors"
+                          style={{ color: "var(--accent-orange)" }}
+                        >
+                          <AlertTriangle size={13} />
+                        </button>
+                        <button
+                          onClick={() => handleRemove(item.stock_code)}
+                          title="移出自选"
+                          className="p-1 rounded hover:opacity-70"
+                          style={{ color: "var(--accent-red)" }}
+                        >
+                          <Trash2 size={13} />
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}

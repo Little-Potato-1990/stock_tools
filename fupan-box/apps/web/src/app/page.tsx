@@ -10,6 +10,7 @@ import { CapitalPage } from "@/components/pages/CapitalPage";
 import { MidLongPage } from "@/components/pages/MidLongPage";
 import { LhbPage } from "@/components/pages/LhbPage";
 import { NewsPage } from "@/components/pages/NewsPage";
+import { MethodologyPage } from "@/components/pages/MethodologyPage";
 import { AiTrackPage } from "@/components/pages/AiTrackPage";
 import { MyReviewPage } from "@/components/pages/MyReviewPage";
 import { AccountPage } from "@/components/pages/AccountPage";
@@ -36,6 +37,8 @@ export default function Home() {
       return <LhbPage />;
     case "news":
       return <NewsPage />;
+    case "methodology":
+      return <MethodologyPage />;
     case "ai_track":
       return <AiTrackPage />;
     case "my_review":

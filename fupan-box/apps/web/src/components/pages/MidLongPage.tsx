@@ -20,6 +20,7 @@ import { PerspectiveBriefBar } from "@/components/market/PerspectiveBriefBar";
 import { StockQuoteSection } from "@/components/market/StockQuoteSection";
 import { NewsTimelineList, type NewsItemLite } from "@/components/market/NewsTimelineList";
 import { CacheMetaBadge, getCacheMeta } from "@/components/market/CacheMetaBadge";
+import { ShareCardButton } from "@/components/common/ShareCardButton";
 
 type TabId =
   | "quote"
@@ -635,6 +636,22 @@ function BriefTab({ code }: { code: string }) {
           >
             刷新
           </button>
+          <ShareCardButton
+            title={code}
+            subtitle={`长线 AI 评估 · ${data.trade_date}`}
+            verdict="长线视角"
+            verdictColor="#a855f7"
+            headline={data.headline}
+            sections={[
+              { label: "核心论点", text: data.thesis },
+              ...(data.strengths.slice(0, 2).map((s, i) => ({ label: `优势 ${i + 1}`, text: s }))),
+              ...(data.risks.slice(0, 2).map((s, i) => ({ label: `风险 ${i + 1}`, text: s }))),
+              { label: "估值看法", text: data.valuation_view },
+              { label: "建议持有周期", text: data.time_horizon },
+            ]}
+            variant="chip"
+            buttonLabel="分享"
+          />
         </div>
         <div className="font-bold mb-2" style={{ fontSize: "var(--font-lg)", color: "var(--text-primary)", lineHeight: 1.5 }}>
           {data.headline}

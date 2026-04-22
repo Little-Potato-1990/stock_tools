@@ -251,12 +251,12 @@ export function LhbAiCard({ hero = false, onEvidenceClick, onTrendLoad }: Props 
   const setLhbOfficeQuery = useUIStore((s) => s.setLhbOfficeQuery);
   const stream = useStreamingHeadline("lhb", data?.trade_date, data?.model);
 
-  const load = async (refresh = false) => {
+  const load = async (refresh = false, dateOverride?: string) => {
     setLoading(true);
     setError(null);
     try {
       const [brief, snap] = await Promise.all([
-        api.getLhbBrief(undefined, refresh),
+        api.getLhbBrief(dateOverride, refresh),
         api.getSnapshotRange("lhb", 5) as unknown as Promise<LhbSnapshotRow[]>,
       ]);
       setData(brief as unknown as LhbBrief);
@@ -530,6 +530,7 @@ export function LhbAiCard({ hero = false, onEvidenceClick, onTrendLoad }: Props 
         model={data.model}
         snapshot={{ headline: data.headline, evidence: data.evidence, key_offices: data.key_offices }}
         cacheMeta={getCacheMeta(data)}
+        onPickDate={(iso) => load(false, iso)}
       />
     </div>
   );

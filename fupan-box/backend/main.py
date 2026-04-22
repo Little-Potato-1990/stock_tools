@@ -4,7 +4,7 @@ import os
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.api import market, snapshot, auth, ai_chat, ai_brief, watchlist, trades, quota, intraday, plans, me, news, stock, capital
+from app.api import market, snapshot, auth, ai_chat, ai_brief, watchlist, trades, quota, intraday, plans, me, news, stock, capital, methodology
 from app.config import get_settings
 from app.database import engine, Base
 from app.middleware.rate_limit import RateLimitMiddleware
@@ -108,6 +108,7 @@ app.include_router(stock.router, prefix="/api/stock", tags=["stock"])
 app.include_router(capital.router, prefix="/api/market/capital", tags=["capital"])
 from app.api import midlong
 app.include_router(midlong.router, prefix="/api/midlong", tags=["midlong"])
+app.include_router(methodology.router, prefix="/api/methodology", tags=["methodology"])
 
 
 @app.get("/api/health")

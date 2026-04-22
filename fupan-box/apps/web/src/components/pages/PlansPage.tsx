@@ -24,6 +24,7 @@ import {
   type PlanStatus,
 } from "@/lib/api";
 import { PageHeader } from "@/components/layout/PageHeader";
+import { useUIStore } from "@/stores/ui-store";
 
 const DIRECTION_LABEL: Record<PlanDirection, string> = {
   buy: "买入",
@@ -134,10 +135,25 @@ export function PlansPage() {
   const [submitting, setSubmitting] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
 
+  const consumePendingPlan = useUIStore((s) => s.consumePendingPlan);
+  const pendingPlan = useUIStore((s) => s.pendingPlanForCode);
+
   useEffect(() => {
     api.restoreToken();
     setLoggedIn(api.isLoggedIn());
   }, []);
+
+  // P1 #6: 从自选/异动/Drawer 跳过来时, 自动打开新建 form 并预填
+  useEffect(() => {
+    if (!loggedIn || !pendingPlan) return;
+    const seed = consumePendingPlan();
+    if (!seed) return;
+    const f = emptyForm();
+    f.code = seed.code;
+    f.name = seed.name ?? "";
+    setForm(f);
+    setShowForm(true);
+  }, [loggedIn, pendingPlan, consumePendingPlan]);
 
   const fetchList = useCallback(async () => {
     if (!api.isLoggedIn()) return;

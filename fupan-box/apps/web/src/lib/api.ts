@@ -1324,6 +1324,71 @@ class ApiClient {
       }
     }
   }
+
+  // === Methodology (方法论文库) ===
+  getMethodologyList(params?: {
+    category?: string;
+    tag?: string;
+    q?: string;
+    limit?: number;
+  }) {
+    const sp = new URLSearchParams();
+    if (params?.category) sp.set("category", params.category);
+    if (params?.tag) sp.set("tag", params.tag);
+    if (params?.q) sp.set("q", params.q);
+    if (params?.limit) sp.set("limit", String(params.limit));
+    const qs = sp.toString();
+    return this.get<{ total: number; items: MethodologyMeta[] }>(
+      `/api/methodology/list${qs ? `?${qs}` : ""}`,
+    );
+  }
+
+  getMethodologyCategories() {
+    return this.get<{
+      categories: MethodologyCategoryStat[];
+      category_meta: Array<{ key: string; label: string; desc: string; color: string }>;
+    }>("/api/methodology/categories");
+  }
+
+  getMethodologyTags() {
+    return this.get<{ tags: Array<{ tag: string; count: number }> }>(
+      "/api/methodology/tags",
+    );
+  }
+
+  getMethodologyDetail(slug: string) {
+    return this.get<MethodologyDetail>(
+      `/api/methodology/${encodeURIComponent(slug)}`,
+    );
+  }
+}
+
+export interface MethodologyMeta {
+  slug: string;
+  title: string;
+  category: string;
+  category_label: string;
+  inspired_by: string;
+  applicable_to: string[];
+  market_phase: string[];
+  estimated_read_min: number;
+  tags: string[];
+  skill_id: string | null;
+  summary: string;
+  word_count: number;
+}
+
+export interface MethodologyDetail extends MethodologyMeta {
+  content: string;
+}
+
+export interface MethodologyCategoryStat {
+  key: string;
+  label: string;
+  desc: string;
+  color: string;
+  count: number;
+  top_tags: Array<{ tag: string; count: number }>;
 }
 
 export const api = new ApiClient();

@@ -328,7 +328,7 @@ export function NewsPage() {
   return (
     <div>
       <PageHeader
-        title="财联社要闻"
+        title="财经要闻"
         subtitle={subtitle}
         actions={
           <button

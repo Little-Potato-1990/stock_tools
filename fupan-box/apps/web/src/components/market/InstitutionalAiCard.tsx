@@ -63,11 +63,11 @@ export function InstitutionalAiCard({ hero = false }: { hero?: boolean } = {}) {
   const [error, setError] = useState<string | null>(null);
   const openStockDetail = useUIStore((s) => s.openStockDetail);
 
-  const load = async (refresh = false) => {
+  const load = async (refresh = false, dateOverride?: string) => {
     setLoading(true);
     setError(null);
     try {
-      const d = await api.getInstitutionalBrief(undefined, refresh);
+      const d = await api.getInstitutionalBrief(dateOverride, refresh);
       setData(d as unknown as InstitutionalBrief);
     } catch (e) {
       setError(e instanceof Error ? e.message : "load failed");
@@ -281,6 +281,7 @@ export function InstitutionalAiCard({ hero = false }: { hero?: boolean } = {}) {
         model={data.model}
         snapshot={{ headline: data.headline, stance: data.stance, evidence: data.evidence }}
         cacheMeta={getCacheMeta(data)}
+        onPickDate={(iso) => load(false, iso)}
       />
     </div>
   );

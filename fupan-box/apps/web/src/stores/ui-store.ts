@@ -18,6 +18,7 @@ export type NavModule =
   | "midlong"
   | "lhb"
   | "news"
+  | "methodology"
   | "watchlist"
   | "plans"
   | "ai_track"
@@ -145,6 +146,19 @@ interface UIState {
   /** AI 卡片信息密度偏好 (持久化到 localStorage) */
   aiStyle: AiDensity;
   setAiStyle: (s: AiDensity) => void;
+
+  /**
+   * P1 #6 联动: 让 WatchlistPage / AnomalyDrawer / StockDetailDrawer 一键
+   * "为这只股建计划". 设值后跳转到 plans 模块, PlansPage 拾取后自动打开新建
+   * Form 并预填 code/name, 之后 consume 清空.
+   */
+  pendingPlanForCode: { code: string; name?: string } | null;
+  requestPlanFor: (code: string, name?: string) => void;
+  consumePendingPlan: () => { code: string; name?: string } | null;
+
+  /** P1 #6 联动: AnomalyDrawer 默认筛选某只股 (从自选/计划页跳过来时) */
+  anomalyFilterCode: string | null;
+  setAnomalyFilterCode: (code: string | null) => void;
 }
 
 const getStoredModel = () => {
@@ -266,4 +280,24 @@ export const useUIStore = create<UIState>((set) => ({
     }
     set({ aiStyle: s });
   },
+
+  pendingPlanForCode: null,
+  requestPlanFor: (code, name) =>
+    set({
+      pendingPlanForCode: { code, name },
+      activeModule: "plans",
+      focusedStock: { code, name },
+    }),
+  consumePendingPlan: () => {
+    let val: { code: string; name?: string } | null = null;
+    set((s) => {
+      val = s.pendingPlanForCode;
+      return { pendingPlanForCode: null };
+    });
+    return val;
+  },
+
+  anomalyFilterCode: null,
+  setAnomalyFilterCode: (code) =>
+    set({ anomalyFilterCode: code, anomalyDrawerOpen: code != null }),
 }));

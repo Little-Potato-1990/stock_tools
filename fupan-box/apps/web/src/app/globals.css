@@ -64,6 +64,45 @@
   --rank-other: #6b7280;
 }
 
+/*
+ * 涨跌色偏好覆盖
+ * --------------------------------------------------------------
+ * 默认 (无 data 属性 或 data-color-pref="red-up") = A 股红涨绿跌
+ * data-color-pref="green-up"                      = 美股绿涨红跌
+ *
+ * 实现思路: 全站约 4000+ 处直接引用 var(--accent-red) 表示"涨"、
+ * var(--accent-green) 表示"跌". 我们不在调用点改名, 而是在 :root
+ * 上交换这两个颜色变量本身, 让所有现存代码无侵入完成切换.
+ *
+ * 同理交换 cell-red-* / cell-green-* 用于热力图色阶.
+ */
+:root[data-color-pref="green-up"] {
+  --accent-red: #22c55e;
+  --accent-green: #ef4444;
+
+  --cell-red-1: #14532d;
+  --cell-red-2: #166534;
+  --cell-red-3: #15803d;
+  --cell-red-4: #16a34a;
+  --cell-red-5: #1cb454;
+
+  --cell-green-1: #5e1a1a;
+  --cell-green-2: #842020;
+  --cell-green-3: #a82424;
+  --cell-green-4: #cb2727;
+  --cell-green-5: #e02828;
+}
+
+/* 紧凑密度 (预留, 当前仅顶部 status bar / 卡片间距使用) */
+:root[data-density="compact"] {
+  --pad-card: 8px 10px;
+  --gap-section: 8px;
+}
+:root[data-density="comfortable"] {
+  --pad-card: 12px 14px;
+  --gap-section: 12px;
+}
+
 @theme inline {
   --color-bg-primary: var(--bg-primary);
   --color-bg-secondary: var(--bg-secondary);

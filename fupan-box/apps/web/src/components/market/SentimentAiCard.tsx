@@ -282,11 +282,11 @@ export function SentimentAiCard({ hero = false, onEvidenceClick, onTrendLoad, on
   const aiStyle = useUIStore((s) => s.aiStyle);
   const stream = useStreamingHeadline("sentiment", data?.trade_date, data?.model);
 
-  const load = async (refresh = false) => {
+  const load = async (refresh = false, dateOverride?: string) => {
     setLoading(true);
     setError(null);
     try {
-      const d = await api.getSentimentBrief(undefined, refresh);
+      const d = await api.getSentimentBrief(dateOverride, refresh);
       const brief = d as unknown as SentimentBrief;
       setData(brief);
       if (onTrendLoad) onTrendLoad(brief.trend_5d ?? []);
@@ -512,6 +512,7 @@ export function SentimentAiCard({ hero = false, onEvidenceClick, onTrendLoad, on
         model={data.model}
         snapshot={{ headline: data.judgment, phase: data.phase, evidence: data.evidence }}
         cacheMeta={getCacheMeta(data)}
+        onPickDate={(iso) => load(false, iso)}
       />
     </div>
   );
