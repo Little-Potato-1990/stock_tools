@@ -382,6 +382,17 @@ class ApiClient {
         news_id: number; title: string; codes: string[];
         importance: number; sentiment: string; pub_time: string;
       }>;
+      global_signals?: Array<{
+        news_id?: number;
+        title: string;
+        pub_time?: string | null;
+        importance: number;
+        sentiment?: string | null;
+        overseas_event: string;
+        transmission: string;
+        beneficiary_codes: string[];
+        confidence: "high" | "medium" | "low";
+      }>;
     }>(`/api/ai/news-brief${q ? `?${q}` : ""}`);
   }
 
@@ -644,6 +655,7 @@ class ApiClient {
       };
       per_stock: Array<{ code: string; tag: string; note: string }>;
       evidence: string[];
+      stocks_risk?: Record<string, Array<{ level: "high" | "medium"; tag: string; detail: string }>>;
     }>(`/api/ai/watchlist-brief${q}`);
   }
 
@@ -845,6 +857,11 @@ class ApiClient {
         pub_time?: string | null;
         match?: "code" | "theme";
       }>;
+      risk_alerts?: Array<{
+        level: "high" | "medium";
+        tag: string;
+        detail: string;
+      }>;
     }>(`/api/ai/why-rose?${params.toString()}`);
   }
 
@@ -924,6 +941,48 @@ class ApiClient {
       miss: number;
       skip: number;
     }>(`/api/ai/track/verify?horizon=${horizon}`, {});
+  }
+
+  getAiTrackDiagnosis(days = 60) {
+    return this.get<{
+      window_days: number;
+      total_verified: number;
+      items: {
+        hit_rate_trend?: Array<{
+          start: string;
+          end: string;
+          total: number;
+          hits: number;
+          hit_rate: number;
+        }>;
+        regime_failures?: Array<{
+          trade_date: string;
+          kind: string;
+          predicted: string | null;
+          actual: Record<string, unknown> | null;
+        }>;
+        stock_bias?: Record<
+          string,
+          { total: number; hits: number; hit_rate: number | null; avg_score: number | null }
+        >;
+        high_conf_calibration?: {
+          high_score: { total: number; hits: number; hit_rate: number | null };
+          low_score: { total: number; hits: number; hit_rate: number | null };
+        };
+        time_decay?: Array<{
+          segment: string;
+          date_range: string;
+          total: number;
+          hits: number;
+          hit_rate: number;
+        }>;
+        model_comparison?: Record<
+          string,
+          { total: number; hits: number; hit_rate: number }
+        >;
+      };
+      summary: string;
+    }>(`/api/ai/track/diagnosis?days=${days}`);
   }
 
   // ===== P0 我的交易复盘 =====

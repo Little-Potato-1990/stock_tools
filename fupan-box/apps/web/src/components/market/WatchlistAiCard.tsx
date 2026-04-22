@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
-import { Sparkles, RotateCcw, Loader2 } from "lucide-react";
+import { Sparkles, RotateCcw, Loader2, AlertTriangle } from "lucide-react";
 import { api } from "@/lib/api";
 import { AiCardFooter } from "./AiCardChrome";
 import { EvidenceBadge } from "./EvidenceBadge";
@@ -118,22 +118,38 @@ export function WatchlistAiCard({ itemCount }: Props) {
 
           {data.per_stock?.length > 0 && (
             <div className="space-y-1 mb-2">
-              {data.per_stock.slice(0, 8).map((s) => (
-                <div key={s.code} className="flex items-center gap-2 text-xs">
-                  <span className="font-medium" style={{ color: "var(--accent-orange)", minWidth: 56 }}>{s.code}</span>
-                  <span
-                    className="px-1.5 rounded"
-                    style={{
-                      background: "var(--bg-tertiary)",
-                      color: TAG_COLOR[s.tag] || "var(--text-secondary)",
-                      fontSize: 10,
-                    }}
-                  >
-                    {s.tag}
-                  </span>
-                  <span className="flex-1 truncate" style={{ color: "var(--text-secondary)" }}>{s.note}</span>
-                </div>
-              ))}
+              {data.per_stock.slice(0, 8).map((s) => {
+                const risks = data.stocks_risk?.[s.code] || [];
+                return (
+                  <div key={s.code} className="flex items-center gap-2 text-xs">
+                    <span className="font-medium" style={{ color: "var(--accent-orange)", minWidth: 56 }}>{s.code}</span>
+                    <span
+                      className="px-1.5 rounded"
+                      style={{
+                        background: "var(--bg-tertiary)",
+                        color: TAG_COLOR[s.tag] || "var(--text-secondary)",
+                        fontSize: 10,
+                      }}
+                    >
+                      {s.tag}
+                    </span>
+                    <span className="flex-1 truncate" style={{ color: "var(--text-secondary)" }}>{s.note}</span>
+                    {risks.length > 0 && (
+                      <span
+                        className="flex items-center gap-0.5 flex-shrink-0"
+                        title={risks.map((r) => `${r.tag}: ${r.detail}`).join("\n")}
+                        style={{
+                          color: risks.some((r) => r.level === "high") ? "var(--accent-red)" : "var(--accent-orange)",
+                          fontSize: 9,
+                        }}
+                      >
+                        <AlertTriangle size={10} />
+                        {risks.length}
+                      </span>
+                    )}
+                  </div>
+                );
+              })}
               {data.per_stock.length > 8 && (
                 <p className="text-xs" style={{ color: "var(--text-muted)" }}>
                   ...还有 {data.per_stock.length - 8} 只

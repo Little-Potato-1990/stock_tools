@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useMemo, useRef } from "react";
-import { Newspaper, RefreshCw, Star, TrendingUp, TrendingDown, Minus, Sparkles, Filter, Zap, Search, X as XIcon } from "lucide-react";
+import { Newspaper, RefreshCw, Star, TrendingUp, TrendingDown, Minus, Sparkles, Filter, Zap, Search, X as XIcon, Globe, ArrowRight } from "lucide-react";
 import { api } from "@/lib/api";
 import { useUIStore } from "@/stores/ui-store";
 import { PageHeader } from "@/components/layout/PageHeader";
@@ -366,6 +366,13 @@ export function NewsPage() {
         onThemeClick={openThemeDetail}
       />
 
+      {brief?.global_signals && (brief.global_signals as GlobalSignal[]).length > 0 && (
+        <GlobalSignalsPanel
+          signals={brief.global_signals as GlobalSignal[]}
+          onCodeClick={openStockDetail}
+        />
+      )}
+
       <div className="px-3 pt-2 space-y-1.5">
         {/* RAG 语义检索条 */}
         <div
@@ -717,6 +724,125 @@ export function NewsPage() {
             );
           })
         )}
+      </div>
+    </div>
+  );
+}
+
+interface GlobalSignal {
+  news_id?: number;
+  title: string;
+  pub_time?: string | null;
+  importance: number;
+  sentiment?: string | null;
+  overseas_event: string;
+  transmission: string;
+  beneficiary_codes: string[];
+  confidence: "high" | "medium" | "low";
+}
+
+const CONF_COLOR: Record<string, string> = {
+  high: "var(--accent-red)",
+  medium: "var(--accent-orange)",
+  low: "var(--text-muted)",
+};
+
+function GlobalSignalsPanel({
+  signals,
+  onCodeClick,
+}: {
+  signals: GlobalSignal[];
+  onCodeClick: (code: string, name?: string) => void;
+}) {
+  if (!signals.length) return null;
+  return (
+    <div className="mx-3 mt-2">
+      <div
+        className="rounded-lg overflow-hidden"
+        style={{
+          background: "linear-gradient(135deg, rgba(59,130,246,0.08), rgba(139,92,246,0.05))",
+          border: "1px solid rgba(59,130,246,0.28)",
+        }}
+      >
+        <div
+          className="px-3 py-2 flex items-center gap-2"
+          style={{ borderBottom: "1px solid rgba(59,130,246,0.18)" }}
+        >
+          <Globe size={13} style={{ color: "var(--accent-blue)" }} />
+          <span className="font-bold" style={{ fontSize: "var(--font-md)", color: "var(--text-primary)" }}>
+            海外事件 → A 股映射
+          </span>
+          <span style={{ fontSize: 10, color: "var(--text-muted)" }}>
+            {signals.length} 条全球信号
+          </span>
+        </div>
+        <div className="px-3 py-2 space-y-2">
+          {signals.map((s, i) => (
+            <div
+              key={i}
+              className="px-2.5 py-2 rounded"
+              style={{ background: "var(--bg-card)", border: "1px solid var(--border-color)" }}
+            >
+              <div className="flex items-start gap-2 mb-1.5">
+                <span
+                  className="flex-shrink-0 font-bold px-1 py-0.5 rounded"
+                  style={{
+                    fontSize: 9,
+                    background: `${CONF_COLOR[s.confidence]}22`,
+                    color: CONF_COLOR[s.confidence],
+                    border: `1px solid ${CONF_COLOR[s.confidence]}`,
+                  }}
+                >
+                  {s.confidence === "high" ? "强关联" : s.confidence === "medium" ? "间接" : "情绪"}
+                </span>
+                <span
+                  className="font-bold flex-1"
+                  style={{ fontSize: 12, color: "var(--text-primary)", lineHeight: 1.4 }}
+                >
+                  {s.overseas_event}
+                </span>
+                {s.pub_time && (
+                  <span className="tabular-nums flex-shrink-0" style={{ fontSize: 9, color: "var(--text-muted)" }}>
+                    {s.pub_time.slice(5, 16)}
+                  </span>
+                )}
+              </div>
+              <div
+                className="flex items-center gap-1 mb-1.5 px-1.5 py-1 rounded"
+                style={{
+                  background: "rgba(59,130,246,0.06)",
+                  fontSize: 11,
+                  color: "var(--text-secondary)",
+                  lineHeight: 1.4,
+                }}
+              >
+                <ArrowRight size={10} style={{ color: "var(--accent-blue)", flexShrink: 0 }} />
+                {s.transmission}
+              </div>
+              {s.beneficiary_codes.length > 0 && (
+                <div className="flex items-center gap-1.5">
+                  <span style={{ fontSize: 10, color: "var(--text-muted)" }}>受益标的:</span>
+                  {s.beneficiary_codes.map((c) => (
+                    <button
+                      key={c}
+                      onClick={() => onCodeClick(c)}
+                      className="tabular-nums rounded transition-colors"
+                      style={{
+                        padding: "1px 5px",
+                        fontSize: 10,
+                        background: "rgba(245,158,11,0.14)",
+                        color: "var(--accent-orange)",
+                        border: "1px solid rgba(245,158,11,0.3)",
+                      }}
+                    >
+                      {c}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
       </div>
     </div>
   );

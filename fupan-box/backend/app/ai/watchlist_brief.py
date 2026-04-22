@@ -24,6 +24,7 @@ from app.ai.active_skill import ActiveSkill, render_skill_system_block
 from app.config import get_settings
 from app.models.market import LimitUpRecord
 from app.models.stock import DailyQuote, Stock
+from app.services.risk_alert import check_risk_alerts
 
 logger = logging.getLogger(__name__)
 
@@ -103,6 +104,10 @@ def _load_codes_struct(codes: list[str], trade_date: date) -> dict[str, Any]:
                     rec["lu_reason"] = (lu.limit_reason or "")[:30]
                     rec["lu_open_count"] = lu.open_count
                     rec["lu_one_word"] = bool(lu.is_one_word)
+                try:
+                    rec["risk_alerts"] = check_risk_alerts(s, code, trade_date)
+                except Exception:
+                    rec["risk_alerts"] = []
                 out.append(rec)
     finally:
         engine.dispose()
@@ -336,10 +341,17 @@ async def generate_watchlist_brief(
         llm_out = await _call_llm(system, user, model_id)
         base = _merge_llm(base, llm_out, struct)
 
+    stocks_risk = {
+        r["code"]: r.get("risk_alerts", [])
+        for r in struct.get("stocks", [])
+        if r.get("risk_alerts")
+    }
+
     return {
         "trade_date": str(trade_date),
         "model": model_id,
         "stocks_count": struct.get("summary", {}).get("total", 0),
         "found": struct.get("summary", {}).get("found", 0),
+        "stocks_risk": stocks_risk,
         **base,
     }

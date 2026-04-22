@@ -302,6 +302,218 @@ def verify_pending(horizon: int = _VERIFY_HORIZON) -> dict[str, int]:
     return counter
 
 
+def run_diagnosis(days: int = 60) -> dict[str, Any]:
+    """6 项策略诊断: 找出 AI 预测系统的薄弱环节, 驱动自我进化.
+
+    1. hit_rate_trend    — 按 7 天窗口滑动, 看命中率趋势
+    2. regime_failures   — 大盘势/tilt 预测失败案例聚合
+    3. stock_bias        — 个股类预测 (promotion/first_board/avoid) 的系统性偏差
+    4. high_conf_calibration — 高分预测 (score >= 0.5) vs 低分的命中率差异
+    5. time_decay        — 按 trade_date 远近分段, 看命中率是否随时间衰减
+    6. model_comparison  — 不同模型的命中率对比
+    """
+    cutoff = date.today() - timedelta(days=days)
+    eng = _engine()
+    try:
+        with Session(eng) as session:
+            verified = session.execute(
+                select(AIPrediction).where(
+                    AIPrediction.trade_date >= cutoff,
+                    AIPrediction.verified_at.isnot(None),
+                ).order_by(AIPrediction.trade_date)
+            ).scalars().all()
+
+            if not verified:
+                return {
+                    "window_days": days,
+                    "total_verified": 0,
+                    "items": {},
+                    "summary": "数据不足, 无法进行策略诊断",
+                }
+
+            items: dict[str, Any] = {}
+
+            # 1. hit_rate_trend: 7-day sliding windows
+            items["hit_rate_trend"] = _diag_hit_rate_trend(verified)
+            # 2. regime_failures
+            items["regime_failures"] = _diag_regime_failures(verified)
+            # 3. stock_bias
+            items["stock_bias"] = _diag_stock_bias(verified)
+            # 4. high_conf_calibration
+            items["high_conf_calibration"] = _diag_calibration(verified)
+            # 5. time_decay
+            items["time_decay"] = _diag_time_decay(verified, cutoff)
+            # 6. model_comparison
+            items["model_comparison"] = _diag_model_comparison(verified)
+
+            summary_parts = []
+            trend = items["hit_rate_trend"]
+            if len(trend) >= 2:
+                first_rate = trend[0].get("hit_rate")
+                last_rate = trend[-1].get("hit_rate")
+                if first_rate is not None and last_rate is not None:
+                    delta = last_rate - first_rate
+                    if delta > 0.05:
+                        summary_parts.append(f"命中率近期上升 {delta*100:+.0f}pp")
+                    elif delta < -0.05:
+                        summary_parts.append(f"命中率近期下降 {delta*100:+.0f}pp, 需关注")
+                    else:
+                        summary_parts.append("命中率近期持平")
+
+            bias = items["stock_bias"]
+            for kind, info in bias.items():
+                rate = info.get("hit_rate")
+                if rate is not None and rate < 0.25 and info.get("total", 0) >= 5:
+                    label = {"promotion": "晋级", "first_board": "首板", "avoid": "规避"}.get(kind, kind)
+                    summary_parts.append(f"{label}命中率偏低({rate*100:.0f}%)")
+
+            cal = items["high_conf_calibration"]
+            high_r = cal.get("high_score", {}).get("hit_rate")
+            low_r = cal.get("low_score", {}).get("hit_rate")
+            if high_r is not None and low_r is not None and high_r < low_r:
+                summary_parts.append("高置信度预测反而不如低置信度, score 校准有问题")
+
+            return {
+                "window_days": days,
+                "total_verified": len(verified),
+                "items": items,
+                "summary": "; ".join(summary_parts) if summary_parts else "各项指标正常, 暂无明显薄弱环节",
+            }
+    except Exception as e:
+        logger.exception("run_diagnosis failed: %s", e)
+        return {
+            "window_days": days,
+            "total_verified": 0,
+            "items": {},
+            "summary": f"诊断异常: {e}",
+        }
+    finally:
+        eng.dispose()
+
+
+def _diag_hit_rate_trend(preds: list[AIPrediction]) -> list[dict]:
+    """按 7 天窗口聚合命中率."""
+    if not preds:
+        return []
+    min_date = preds[0].trade_date
+    max_date = preds[-1].trade_date
+    windows: list[dict] = []
+    cur = min_date
+    while cur <= max_date:
+        end = cur + timedelta(days=6)
+        bucket = [p for p in preds if cur <= p.trade_date <= end]
+        if bucket:
+            hits = sum(1 for p in bucket if p.hit)
+            windows.append({
+                "start": cur.isoformat(),
+                "end": min(end, max_date).isoformat(),
+                "total": len(bucket),
+                "hits": hits,
+                "hit_rate": round(hits / len(bucket), 3),
+            })
+        cur = end + timedelta(days=1)
+    return windows
+
+
+def _diag_regime_failures(preds: list[AIPrediction]) -> list[dict]:
+    """大盘势/tilt 预测失败案例."""
+    failures = [
+        p for p in preds
+        if p.kind in ("regime", "tilt") and p.hit is False
+    ]
+    return [
+        {
+            "trade_date": p.trade_date.isoformat(),
+            "kind": p.kind,
+            "predicted": p.payload.get("regime") or p.payload.get("tilt"),
+            "actual": p.verify_payload,
+        }
+        for p in failures[-10:]
+    ]
+
+
+def _diag_stock_bias(preds: list[AIPrediction]) -> dict[str, dict]:
+    """个股类预测的命中率和平均得分."""
+    stock_kinds = ("promotion", "first_board", "avoid")
+    result: dict[str, dict] = {}
+    for kind in stock_kinds:
+        bucket = [p for p in preds if p.kind == kind]
+        if not bucket:
+            result[kind] = {"total": 0, "hits": 0, "hit_rate": None, "avg_score": None}
+            continue
+        hits = sum(1 for p in bucket if p.hit)
+        scores = [p.score for p in bucket if p.score is not None]
+        result[kind] = {
+            "total": len(bucket),
+            "hits": hits,
+            "hit_rate": round(hits / len(bucket), 3),
+            "avg_score": round(sum(scores) / len(scores), 3) if scores else None,
+        }
+    return result
+
+
+def _diag_calibration(preds: list[AIPrediction]) -> dict[str, dict]:
+    """高置信度 (|score| >= 0.5) vs 低置信度的命中率差异."""
+    high = [p for p in preds if p.score is not None and abs(p.score) >= 0.5]
+    low = [p for p in preds if p.score is not None and abs(p.score) < 0.5]
+
+    def _bucket_stats(bucket: list) -> dict:
+        if not bucket:
+            return {"total": 0, "hits": 0, "hit_rate": None}
+        hits = sum(1 for p in bucket if p.hit)
+        return {
+            "total": len(bucket),
+            "hits": hits,
+            "hit_rate": round(hits / len(bucket), 3),
+        }
+
+    return {
+        "high_score": _bucket_stats(high),
+        "low_score": _bucket_stats(low),
+    }
+
+
+def _diag_time_decay(preds: list[AIPrediction], cutoff: date) -> list[dict]:
+    """按 trade_date 远近三等分, 看命中率是否衰减."""
+    if len(preds) < 6:
+        return []
+    third = len(preds) // 3
+    segments = [
+        ("early", preds[:third]),
+        ("middle", preds[third:2*third]),
+        ("recent", preds[2*third:]),
+    ]
+    result = []
+    for label, bucket in segments:
+        if not bucket:
+            continue
+        hits = sum(1 for p in bucket if p.hit)
+        result.append({
+            "segment": label,
+            "date_range": f"{bucket[0].trade_date.isoformat()} ~ {bucket[-1].trade_date.isoformat()}",
+            "total": len(bucket),
+            "hits": hits,
+            "hit_rate": round(hits / len(bucket), 3),
+        })
+    return result
+
+
+def _diag_model_comparison(preds: list[AIPrediction]) -> dict[str, dict]:
+    """不同模型的命中率对比."""
+    by_model: dict[str, list[AIPrediction]] = {}
+    for p in preds:
+        by_model.setdefault(p.model, []).append(p)
+    result: dict[str, dict] = {}
+    for model, bucket in by_model.items():
+        hits = sum(1 for p in bucket if p.hit)
+        result[model] = {
+            "total": len(bucket),
+            "hits": hits,
+            "hit_rate": round(hits / len(bucket), 3),
+        }
+    return result
+
+
 def get_stats(days: int = 30) -> dict[str, Any]:
     """命中率统计 (最近 N 天). 按 kind 聚合."""
     cutoff = date.today() - timedelta(days=days)

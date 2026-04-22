@@ -267,6 +267,9 @@ def _build_context(code: str, trade_date: date) -> dict[str, Any] | None:
             lhb = _load_lhb(session, code, trade_date)
             news_refs = _load_stock_news(code, primary_theme, lu_today.theme_names if lu_today else None)
 
+            from app.services.risk_alert import check_risk_alerts
+            risk_alerts = check_risk_alerts(session, code, trade_date)
+
             return {
                 "code": code,
                 "news_refs": news_refs,
@@ -291,6 +294,7 @@ def _build_context(code: str, trade_date: date) -> dict[str, Any] | None:
                 "primary_theme": primary_theme,
                 "theme_peers": peers,
                 "lhb": lhb,
+                "risk_alerts": risk_alerts,
             }
     finally:
         engine.dispose()
@@ -447,6 +451,7 @@ def _merge_llm(ctx: dict[str, Any], llm_out: dict | None) -> dict[str, Any]:
         base["drivers"] = drivers_clean
 
     base["news_refs"] = ctx.get("news_refs") or []
+    base["risk_alerts"] = ctx.get("risk_alerts") or []
 
     for key in ("position", "height", "tomorrow"):
         v = llm_out.get(key)
@@ -493,6 +498,7 @@ async def generate_why_rose(
             "verdict": "C",
             "verdict_label": "偏弱",
             "news_refs": [],
+            "risk_alerts": [],
         }
 
     system, user = _build_prompt(ctx)

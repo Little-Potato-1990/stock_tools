@@ -30,7 +30,7 @@ from app.ai.ladder_brief import generate_ladder_brief
 from app.ai.lhb_brief import generate_lhb_brief
 from app.ai.news_brief import generate_news_brief
 from app.ai.news_stream import stream_news_headline
-from app.ai.prediction_tracker import get_stats, snapshot_predictions, verify_pending
+from app.ai.prediction_tracker import get_stats, run_diagnosis, snapshot_predictions, verify_pending
 from app.ai.sentiment_brief import generate_sentiment_brief
 from app.ai.multi_perspective import generate_multi_perspective
 from app.ai.swing_brief import generate_swing_brief
@@ -511,6 +511,12 @@ async def get_track_stats(days: int = Query(30, ge=7, le=180)):
 async def trigger_track_verify(horizon: int = Query(3, ge=1, le=10)):
     """手动触发 T+N 校验 (扫描 verified_at IS NULL 的预测)."""
     return verify_pending(horizon=horizon)
+
+
+@router.get("/track/diagnosis")
+async def get_track_diagnosis(days: int = Query(60, ge=14, le=180)):
+    """AI 预测策略诊断 — 6 项自查: 趋势/regime失败/个股偏差/校准/衰减/模型对比."""
+    return run_diagnosis(days=days)
 
 
 @router.post("/prewarm/{job}")

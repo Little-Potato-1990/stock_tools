@@ -52,6 +52,16 @@ _HORIZON_LONG_KW = [
 ]
 
 
+_OVERSEAS_KW = [
+    "美股", "纳斯达克", "标普", "道琼斯", "港股", "恒生", "欧洲", "日经",
+    "NVIDIA", "英伟达", "苹果", "Apple", "特斯拉", "Tesla", "谷歌", "Google",
+    "微软", "Microsoft", "亚马逊", "Amazon", "Meta", "台积电", "TSMC",
+    "三星", "Samsung", "高通", "Qualcomm", "AMD", "Intel", "英特尔",
+    "美联储", "Fed", "鲍威尔", "降息", "加息", "CPI", "非农", "PCE",
+    "关税", "制裁", "出口管制", "贸易战", "地缘", "中美", "G7", "G20",
+    "OPEC", "原油", "黄金", "美元", "日元", "欧元", "比特币", "Bitcoin",
+]
+
 _HOT_THEMES = [
     "AI", "人工智能", "大模型", "算力", "芯片", "半导体", "光刻机",
     "机器人", "人形机器人", "低空经济", "eVTOL", "新能源", "锂电池",
@@ -132,7 +142,14 @@ def _heuristic_one(item: dict, theme_pool: set[str]) -> dict[str, Any]:
     }
 
 
+def _is_overseas_news(item: dict) -> bool:
+    text = (item.get("title", "") or "") + " " + (item.get("content", "") or "")
+    return any(kw in text for kw in _OVERSEAS_KW)
+
+
 def _build_prompt(items: list[dict]) -> tuple[str, str]:
+    has_overseas = any(_is_overseas_news(it) for it in items)
+
     system = (
         "你是 A 股新闻打标专家。我会给你一批财经/财联社新闻, "
         "请逐条判断其题材关联、重要程度、利好/利空倾向, "
@@ -146,6 +163,28 @@ def _build_prompt(items: list[dict]) -> tuple[str, str]:
         }
         for idx, it in enumerate(items)
     ]
+
+    global_mapping_schema = ""
+    global_mapping_instruction = ""
+    if has_overseas:
+        global_mapping_schema = (
+            ',\n'
+            '      "global_mapping": {\n'
+            '        "overseas_event": "<=30字 海外事件概述",\n'
+            '        "transmission": "<=60字 传导链: 海外事件 → 中间环节 → A股受益方向",\n'
+            '        "beneficiary_codes": ["<=4 个受益 A 股代码"],\n'
+            '        "confidence": "high | medium | low"\n'
+            '      }'
+        )
+        global_mapping_instruction = (
+            "\n\nglobal_mapping 字段 (仅对涉及海外市场/公司/政策/宏观的新闻填写):\n"
+            "- overseas_event: 海外事件的核心一句话\n"
+            "- transmission: 从海外到 A 股的传导路径, 必须包含中间逻辑环节, 例: '英伟达业绩超预期 → 算力需求上修 → 光模块/PCB 订单确认'\n"
+            "- beneficiary_codes: 最直接受益的 A 股代码 (不确定就留空数组)\n"
+            "- confidence: high=直接关联确定性强, medium=间接传导, low=情绪面联动\n"
+            "- 纯国内新闻不填此字段"
+        )
+
     user = (
         f"```json\n{json.dumps(items_min, ensure_ascii=False)}\n```\n\n"
         "请输出 JSON, schema 如下 (results 数组顺序必须与输入 i 对齐):\n"
@@ -159,7 +198,7 @@ def _build_prompt(items: list[dict]) -> tuple[str, str]:
         '      "rel_codes": ["<=4 个相关 6 位股票代码"],\n'
         '      "importance": 1,\n'
         '      "sentiment": "bullish | neutral | bearish",\n'
-        '      "impact_horizon": "short | swing | long | mixed"\n'
+        f'      "impact_horizon": "short | swing | long | mixed"{global_mapping_schema}\n'
         "    }\n"
         "  ]\n"
         "}\n```\n"
@@ -169,7 +208,7 @@ def _build_prompt(items: list[dict]) -> tuple[str, str]:
         "- swing: 5-20 日波段催化, 如订单/中标/业绩预告/重组/扩产, 时效 1-3 月\n"
         "- long: 长期逻辑, 如战略/研发突破/政策周期/产业升级/国家战略, 时效 6 月+\n"
         "- mixed: 同时具备多个时间维度的影响 (例: 重大并购/行业政策)\n"
-        "只判断你能从文本看出的, 不要凭空编。"
+        f"只判断你能从文本看出的, 不要凭空编。{global_mapping_instruction}"
     )
     return system, user
 
@@ -220,6 +259,25 @@ def _merge(items: list[dict], llm_out: dict | None, theme_pool: set[str]) -> lis
         horizon = r.get("impact_horizon")
         if isinstance(horizon, str) and horizon in {"short", "swing", "long", "mixed"}:
             fallback["impact_horizon"] = horizon
+
+        gm = r.get("global_mapping")
+        if isinstance(gm, dict) and gm.get("overseas_event"):
+            clean_gm: dict[str, Any] = {
+                "overseas_event": str(gm["overseas_event"])[:60],
+                "transmission": str(gm.get("transmission") or "")[:120],
+                "beneficiary_codes": [],
+                "confidence": "medium",
+            }
+            bcodes = gm.get("beneficiary_codes") or []
+            if isinstance(bcodes, list):
+                clean_gm["beneficiary_codes"] = [
+                    str(c).strip() for c in bcodes
+                    if isinstance(c, str) and re.match(r"^\d{6}$", c.strip())
+                ][:4]
+            conf = gm.get("confidence")
+            if isinstance(conf, str) and conf in {"high", "medium", "low"}:
+                clean_gm["confidence"] = conf
+            fallback["global_mapping"] = clean_gm
 
     return base
 

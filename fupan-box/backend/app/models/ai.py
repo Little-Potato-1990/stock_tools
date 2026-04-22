@@ -78,6 +78,15 @@ class NewsSummary(Base):
     impact_horizon: Mapped[str | None] = mapped_column(String(8), index=True)
     ai_tagged_at: Mapped[datetime | None] = mapped_column(DateTime)
 
+    # Phase 5: 海外事件 → A 股映射链 (global-signals skill 借鉴)
+    # {
+    #   "overseas_event": "NVIDIA Q4 业绩超预期",
+    #   "transmission": "算力需求上修 → 光模块订单确认 → 国产算力链受益",
+    #   "beneficiary_codes": ["002475", "300502"],
+    #   "confidence": "high" | "medium" | "low"
+    # }
+    global_mapping: Mapped[dict | None] = mapped_column(JSONB)
+
     # Phase 4 RAG: pgvector 向量 + 状态机
     embedding_status: Mapped[str | None] = mapped_column(String(20), index=True)  # null|pending|done|failed
     embedding_model: Mapped[str | None] = mapped_column(String(50))

@@ -308,6 +308,8 @@ async def _llm_tag_recent(hours: int = 24, batch_size: int = 30, model: str = "d
                         existing = list(n.related_stocks or [])
                         merged = existing + [c for c in tg["rel_codes"] if c not in existing]
                         upd["related_stocks"] = merged[:10]
+                    if isinstance(tg.get("global_mapping"), dict) and tg["global_mapping"].get("overseas_event"):
+                        upd["global_mapping"] = tg["global_mapping"]
                     s.execute(update(NewsSummary).where(NewsSummary.id == n.id).values(**upd))
                     tagged += 1
                 s.commit()
@@ -446,4 +448,5 @@ def _row_to_dict(r: NewsSummary) -> dict:
         "importance": int(r.importance or 0),
         "sentiment": r.sentiment,
         "impact_horizon": r.impact_horizon,
+        "global_mapping": r.global_mapping,
     }

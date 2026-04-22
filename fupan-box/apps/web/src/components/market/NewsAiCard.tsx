@@ -54,6 +54,17 @@ export interface NewsBriefPayload {
     news_id: number; title: string; codes: string[];
     importance: number; sentiment: string; pub_time: string;
   }>;
+  global_signals?: Array<{
+    news_id?: number;
+    title: string;
+    pub_time?: string | null;
+    importance: number;
+    sentiment?: string | null;
+    overseas_event: string;
+    transmission: string;
+    beneficiary_codes: string[];
+    confidence: "high" | "medium" | "low";
+  }>;
 }
 
 export type NewsDialAnchor = "total" | "important" | "net_sentiment" | "watch";

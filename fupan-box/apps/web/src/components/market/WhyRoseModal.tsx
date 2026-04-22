@@ -196,6 +196,46 @@ export function WhyRoseModal() {
             </div>
           ) : data ? (
             <div className="px-4 py-3 space-y-3">
+              {data.risk_alerts && data.risk_alerts.length > 0 && (
+                <div
+                  className="px-3 py-2 space-y-1.5"
+                  style={{
+                    background: "rgba(239,68,68,0.08)",
+                    border: "1px solid rgba(239,68,68,0.3)",
+                    borderRadius: 4,
+                  }}
+                >
+                  <div
+                    className="flex items-center gap-1 font-bold"
+                    style={{ fontSize: 11, color: "var(--accent-red)" }}
+                  >
+                    <AlertTriangle size={12} />
+                    风险警示
+                  </div>
+                  {data.risk_alerts.map((a, i) => (
+                    <div
+                      key={i}
+                      className="flex items-start gap-2"
+                      style={{ fontSize: 11 }}
+                    >
+                      <span
+                        className="flex-shrink-0 font-bold px-1 py-0.5 rounded"
+                        style={{
+                          background: a.level === "high" ? "rgba(239,68,68,0.18)" : "rgba(245,158,11,0.18)",
+                          color: a.level === "high" ? "var(--accent-red)" : "var(--accent-orange)",
+                          fontSize: 10,
+                        }}
+                      >
+                        {a.tag}
+                      </span>
+                      <span style={{ color: "var(--text-secondary)", lineHeight: 1.4 }}>
+                        {a.detail}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
+
               <div className="flex items-start gap-2">
                 <span
                   className="font-bold inline-flex items-center justify-center flex-shrink-0"

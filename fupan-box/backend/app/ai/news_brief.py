@@ -319,6 +319,28 @@ def _merge_llm(
     return out
 
 
+def _extract_global_signals(items: list[dict]) -> list[dict]:
+    """从有 global_mapping 的新闻中提取海外信号, 按 importance desc 排列."""
+    signals: list[dict] = []
+    for n in items:
+        gm = n.get("global_mapping")
+        if not isinstance(gm, dict) or not gm.get("overseas_event"):
+            continue
+        signals.append({
+            "news_id": n.get("id"),
+            "title": (n.get("title") or "")[:80],
+            "pub_time": n.get("pub_time"),
+            "importance": n.get("importance", 2),
+            "sentiment": n.get("sentiment"),
+            "overseas_event": gm["overseas_event"],
+            "transmission": gm.get("transmission", ""),
+            "beneficiary_codes": gm.get("beneficiary_codes", []),
+            "confidence": gm.get("confidence", "medium"),
+        })
+    signals.sort(key=lambda x: -(x.get("importance") or 0))
+    return signals[:8]
+
+
 # ----------------------------- 主入口 -----------------------------
 
 
@@ -381,10 +403,15 @@ async def generate_news_brief(
         base["headline"] = f"{td.isoformat()} 暂无新闻入库 — 等待下一轮采集"
         return base
 
+    # 海外事件 → A 股映射链
+    global_signals = _extract_global_signals(items)
+    base["global_signals"] = global_signals
+
     # 调 LLM
     system, user = _build_prompt(
         td.isoformat(), stats, threads, buckets, cross_ctx,
     )
     llm_out = await _call_llm(system, user, model_id)
     merged = _merge_llm(base, llm_out, valid_ids)
+    merged["global_signals"] = global_signals
     return merged
