@@ -8,6 +8,8 @@ market_phase: [全周期, 短线交易日]
 estimated_read_min: 11
 tags: [开盘集合竞价, 早盘, 上午尾盘, 午盘, 下午, 尾盘, 时段战术]
 skill_id: null
+kind: tactic
+belongs_to_systems: [system-short-intraday]
 ---
 
 ## 核心命题

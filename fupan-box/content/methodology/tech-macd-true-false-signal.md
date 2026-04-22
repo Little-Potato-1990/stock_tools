@@ -8,6 +8,8 @@ market_phase: [趋势市, 转折点确认]
 estimated_read_min: 11
 tags: [MACD, 金叉死叉, 顶背离, 底背离, DIF, DEA, 红绿柱]
 skill_id: null
+kind: foundation
+foundation_subcategory: technical
 ---
 
 ## 核心命题

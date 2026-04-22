@@ -8,6 +8,8 @@ market_phase: [趋势市, 牛熊判断]
 estimated_read_min: 11
 tags: [均线, MA, 多头排列, 生命线, 60日均线, 250日均线, 年线]
 skill_id: null
+kind: foundation
+foundation_subcategory: technical
 ---
 
 ## 核心命题

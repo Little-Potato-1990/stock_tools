@@ -8,6 +8,8 @@ market_phase: [全周期, 短线交易日]
 estimated_read_min: 11
 tags: [复盘, 涨停板分析, 龙头梳理, 龙虎榜, 明日预演, 交易日志]
 skill_id: null
+kind: tactic
+belongs_to_systems: [system-short-intraday]
 ---
 
 ## 核心命题

@@ -20,6 +20,7 @@ from sqlalchemy.orm import Session
 
 from app.ai.brief_generator import _call_llm, _latest_trade_date_with_data
 from app.ai.cross_context import NO_FLUFF_RULES, build_cross_context_block
+from app.ai.active_skill import ActiveSkill, render_skill_system_block
 from app.config import get_settings
 from app.models.market import LimitUpRecord
 from app.models.stock import DailyQuote, Stock
@@ -133,7 +134,9 @@ def _load_codes_struct(codes: list[str], trade_date: date) -> dict[str, Any]:
     }
 
 
-def _build_prompt(struct: dict[str, Any], cross_ctx: str) -> tuple[str, str]:
+def _build_prompt(
+    struct: dict[str, Any], cross_ctx: str, active_skill: ActiveSkill | None = None
+) -> tuple[str, str]:
     system = (
         "你是用户的私人盯盘助手. 用户给你他自选股的当日行情, 你给一份「今日 watchlist 定调」.\n"
         "格式要求:\n"
@@ -142,6 +145,7 @@ def _build_prompt(struct: dict[str, Any], cross_ctx: str) -> tuple[str, str]:
         "- focus 1 个明天最值得盯的代码 + 理由 ≤ 30 字\n"
         f"\n{NO_FLUFF_RULES}"
     )
+    system += render_skill_system_block(active_skill)
     user = (
         f"自选股结构:\n```json\n{json.dumps(struct, ensure_ascii=False)[:3500]}\n```\n\n"
         f"{cross_ctx}\n"
@@ -308,6 +312,7 @@ async def generate_watchlist_brief(
     codes: list[str],
     trade_date: date | None = None,
     model_id: str = "deepseek-v3",
+    active_skill: ActiveSkill | None = None,
 ) -> dict[str, Any]:
     if trade_date is None:
         trade_date = _latest_trade_date_with_data() or date.today()
@@ -327,7 +332,7 @@ async def generate_watchlist_brief(
         logger.debug("watchlist_brief cross_ctx skipped: %s", e)
 
     if struct.get("summary", {}).get("found", 0) > 0:
-        system, user = _build_prompt(struct, cross_ctx)
+        system, user = _build_prompt(struct, cross_ctx, active_skill=active_skill)
         llm_out = await _call_llm(system, user, model_id)
         base = _merge_llm(base, llm_out, struct)
 

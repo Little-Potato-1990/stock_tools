@@ -167,16 +167,24 @@ async def get_multi_perspective(
     trade_date: date = Query(None),
     model: str = Query("deepseek-v3"),
     refresh: int = Query(0),
+    skill_ref: str | None = Query(None, description="临时覆盖默认体系: 'system:xxx' / 'user:42' / 'none'"),
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
 ):
     """三视角一句话速读 (短/波段/长). 1 次 LLM call 出 3 条 headline."""
+    from app.ai.active_skill import aresolve_active_skill_for_user
     td = _resolve_td(trade_date)
-    key = f"multi_perspective:{code}:{td.isoformat()}:{model}"
+    active_skill = await aresolve_active_skill_for_user(db, user.id, skill_ref)
+    skill_tag = active_skill.ref.replace(":", "-") if active_skill else "neutral"
+
+    key = f"multi_perspective:{code}:{td.isoformat()}:{model}:{skill_tag}"
     if refresh:
         invalidate_pg(key)
     return await cached_brief(
         key, generate_multi_perspective, code, td, model,
         action="multi_perspective", model=model, trade_date=td,
         pg_ttl_h=PG_TTL_H, refresh=bool(refresh),
+        active_skill=active_skill,
     )
 
 
@@ -420,12 +428,13 @@ async def get_watchlist_brief(
     trade_date: date = Query(None),
     model: str = Query("deepseek-v3"),
     refresh: int = Query(0),
+    skill_ref: str | None = Query(None, description="临时覆盖默认体系: 'system:xxx' / 'user:42' / 'none'"),
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
     """根据当前登录用户的 watchlist 生成 1 句定调 + 每只点评 + focus 推荐.
 
-    缓存 key = (user_id, codes_hash, trade_date, model), TTL 30 分钟.
+    缓存 key = (user_id, codes_hash, trade_date, model, skill_tag), TTL 30 分钟.
     """
     return await get_or_generate_watchlist_brief(
         db,
@@ -433,6 +442,7 @@ async def get_watchlist_brief(
         trade_date=trade_date,
         model=model,
         refresh=bool(refresh),
+        skill_ref=skill_ref,
     )
 
 

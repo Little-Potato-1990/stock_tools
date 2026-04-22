@@ -23,6 +23,8 @@ export type NavModule =
   | "plans"
   | "ai_track"
   | "my_review"
+  | "skills"
+  | "skill_scan"
   | "account";
 
 /**

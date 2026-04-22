@@ -25,7 +25,7 @@ logger = logging.getLogger(__name__)
 CACHE_TTL_SEC = 60.0
 
 
-# === 已知 category 元数据 (中文标签 + 颜色 hint) ===
+# === 已知 category 元数据 (中文标签 + 颜色 hint, 旧字段, 仅作面包屑兼容) ===
 CATEGORY_META: dict[str, dict[str, str]] = {
     "value_longterm": {
         "label": "价值与长线",
@@ -50,6 +50,85 @@ CATEGORY_META: dict[str, dict[str, str]] = {
 }
 
 
+# === 基础知识 4 类子分类元数据 (新主轴, 词典视图分组用) ===
+FOUNDATION_SUBCAT_META: dict[str, dict[str, str]] = {
+    "technical": {
+        "label": "技术分析",
+        "desc": "趋势 / 形态 / 量价 / 指标 / 缠论",
+        "color": "var(--accent-blue)",
+    },
+    "valuation": {
+        "label": "估值方法",
+        "desc": "PE / PB / PS / DCF / 估值适用场景",
+        "color": "var(--accent-purple)",
+    },
+    "financial": {
+        "label": "财务分析",
+        "desc": "ROE / 杜邦 / 现金流 / 财报勾稽",
+        "color": "var(--accent-green)",
+    },
+    "macro": {
+        "label": "宏观与周期",
+        "desc": "美林时钟 / 行业生命周期 / 流动性 / 风格轮动",
+        "color": "var(--accent-red)",
+    },
+}
+
+
+# === 投资体系元数据 (与 system-*.md frontmatter 的 system_key 对应) ===
+SYSTEM_META: dict[str, dict[str, str]] = {
+    "system-value-longterm": {
+        "label": "价值长线",
+        "tagline": "护城河 + 长期持有，赚企业成长的钱",
+        "horizon": "3-10 年",
+        "risk": "低-中",
+        "color": "var(--accent-purple)",
+    },
+    "system-midline-trend": {
+        "label": "中长线趋势",
+        "tagline": "基本面 + 行情双确认，吃主升浪",
+        "horizon": "3-12 月",
+        "risk": "中",
+        "color": "var(--accent-blue)",
+    },
+    "system-swing-technical": {
+        "label": "技术波段",
+        "tagline": "纯技术派，趋势 + 形态 + 量价驱动",
+        "horizon": "1-8 周",
+        "risk": "中-高",
+        "color": "var(--accent-cyan)",
+    },
+    "system-short-intraday": {
+        "label": "短线情绪",
+        "tagline": "打板 / 题材接力 / 龙虎榜跟庄",
+        "horizon": "1-5 天",
+        "risk": "高",
+        "color": "var(--accent-orange)",
+    },
+    "system-macro-rotation": {
+        "label": "宏观周期",
+        "tagline": "自上而下，跟着宏观与风格轮动",
+        "horizon": "6-24 月",
+        "risk": "中",
+        "color": "var(--accent-red)",
+    },
+    "system-event-driven": {
+        "label": "事件驱动",
+        "tagline": "围绕政策 / 业绩 / 重组 / 解禁等事件博弈",
+        "horizon": "数日 - 数月",
+        "risk": "中-高",
+        "color": "var(--accent-yellow)",
+    },
+    "system-high-dividend": {
+        "label": "高股息",
+        "tagline": "稳定现金流 + 类债思路，吃股息与估值修复",
+        "horizon": "1-5 年",
+        "risk": "低",
+        "color": "var(--accent-green)",
+    },
+}
+
+
 @dataclass
 class MethodologyArticle:
     """单篇文章. content 仅在详情接口回传, 列表只回传 meta + summary."""
@@ -68,10 +147,45 @@ class MethodologyArticle:
     word_count: int = 0
     file_path: str = ""
     file_mtime: float = 0.0
+    # === 两层架构新增字段 (向后兼容: 缺省值不影响旧文章) ===
+    # kind 三态: system (体系总览) / foundation (基础知识, 中性客观) / tactic (战法, 绑定体系)
+    kind: str = "foundation"
+    # 仅 foundation 用: technical | valuation | financial | macro
+    foundation_subcategory: str = ""
+    # 仅 system 用: 体系自身 key (= slug), 便于反向引用
+    system_key: str = ""
+    # 仅 system 用: 必读基础知识 / 配套战法 slug 列表
+    related_foundations: list[str] = field(default_factory=list)
+    related_tactics: list[str] = field(default_factory=list)
+    # 仅 tactic 用: 反向归属 system_key 列表
+    belongs_to_systems: list[str] = field(default_factory=list)
+
+    def _system_meta(self) -> dict[str, Any]:
+        """若 kind=system, 给出 SYSTEM_META 中的展示字段."""
+        if self.kind != "system":
+            return {}
+        m = SYSTEM_META.get(self.system_key or self.slug, {})
+        return {
+            "system_label": m.get("label", self.title),
+            "system_tagline": m.get("tagline", ""),
+            "system_horizon": m.get("horizon", ""),
+            "system_risk": m.get("risk", ""),
+            "system_color": m.get("color", "var(--accent-purple)"),
+        }
+
+    def _foundation_meta(self) -> dict[str, Any]:
+        """若 kind=foundation, 给出子分类标签."""
+        if self.kind != "foundation":
+            return {}
+        m = FOUNDATION_SUBCAT_META.get(self.foundation_subcategory, {})
+        return {
+            "foundation_subcategory_label": m.get("label", self.foundation_subcategory),
+            "foundation_subcategory_color": m.get("color", "var(--text-secondary)"),
+        }
 
     def to_meta(self) -> dict[str, Any]:
         """列表接口回传 (不含 content)."""
-        return {
+        base = {
             "slug": self.slug,
             "title": self.title,
             "category": self.category,
@@ -84,7 +198,17 @@ class MethodologyArticle:
             "skill_id": self.skill_id,
             "summary": self.summary,
             "word_count": self.word_count,
+            # 新字段
+            "kind": self.kind,
+            "foundation_subcategory": self.foundation_subcategory,
+            "system_key": self.system_key,
+            "related_foundations": self.related_foundations,
+            "related_tactics": self.related_tactics,
+            "belongs_to_systems": self.belongs_to_systems,
         }
+        base.update(self._system_meta())
+        base.update(self._foundation_meta())
+        return base
 
     def to_detail(self) -> dict[str, Any]:
         """详情接口回传 (含 content)."""
@@ -231,6 +355,27 @@ def _parse_file(path: Path) -> MethodologyArticle | None:
         # 中文阅读约 350 字/分钟
         read_min = max(3, round(wc / 350))
 
+    # 两层架构字段 (向后兼容: 老文章无这些字段时默认 kind=foundation, 子分类按
+    # 旧 category 推断, 让"未补 frontmatter 的旧 md"在新视图里也不至于完全消失).
+    kind_raw = str(fm.get("kind") or "").strip().lower()
+    if kind_raw not in ("system", "foundation", "tactic"):
+        kind_raw = "foundation"
+
+    foundation_subcat = str(fm.get("foundation_subcategory") or "").strip().lower()
+    if kind_raw == "foundation" and not foundation_subcat:
+        # 兜底: 按旧 category 粗略映射, 避免老 md 无 subcat 时被分到"未分类"
+        _map = {
+            "technical": "technical",
+            "value_longterm": "valuation",
+            "macro": "macro",
+        }
+        foundation_subcat = _map.get(category, "")
+
+    system_key = str(fm.get("system_key") or "").strip()
+    if kind_raw == "system" and not system_key:
+        # system 默认 system_key = slug, 方便引用
+        system_key = slug
+
     return MethodologyArticle(
         slug=slug,
         title=title,
@@ -246,6 +391,12 @@ def _parse_file(path: Path) -> MethodologyArticle | None:
         word_count=wc,
         file_path=str(path),
         file_mtime=path.stat().st_mtime,
+        kind=kind_raw,
+        foundation_subcategory=foundation_subcat,
+        system_key=system_key,
+        related_foundations=_strlist(fm.get("related_foundations")),
+        related_tactics=_strlist(fm.get("related_tactics")),
+        belongs_to_systems=_strlist(fm.get("belongs_to_systems")),
     )
 
 
@@ -376,3 +527,129 @@ def all_tags() -> list[dict[str, Any]]:
         for t in a.tags:
             freq[t] = freq.get(t, 0) + 1
     return [{"tag": t, "count": c} for t, c in sorted(freq.items(), key=lambda kv: (-kv[1], kv[0]))]
+
+
+# ============== 两层架构: 体系 / 基础知识 / 战法 三态查询 ==============
+
+
+def list_systems() -> list[MethodologyArticle]:
+    """所有 kind=system 的体系总览, 按 SYSTEM_META 顺序排."""
+    idx = get_index()
+    order = list(SYSTEM_META.keys())
+    items = [a for a in idx.values() if a.kind == "system"]
+
+    def _k(a: MethodologyArticle):
+        try:
+            return order.index(a.system_key or a.slug)
+        except ValueError:
+            return len(order)
+
+    items.sort(key=_k)
+    return items
+
+
+def list_foundations(subcat: str = "") -> list[MethodologyArticle]:
+    """基础知识列表. 可按子分类过滤. 同子分类内按 read_min asc + title."""
+    idx = get_index()
+    items = [a for a in idx.values() if a.kind == "foundation"]
+    if subcat:
+        items = [a for a in items if a.foundation_subcategory == subcat]
+    sub_order = list(FOUNDATION_SUBCAT_META.keys())
+
+    def _k(a: MethodologyArticle):
+        try:
+            si = sub_order.index(a.foundation_subcategory)
+        except ValueError:
+            si = len(sub_order)
+        return (si, a.estimated_read_min, a.title)
+
+    items.sort(key=_k)
+    return items
+
+
+def list_tactics(system_key: str = "") -> list[MethodologyArticle]:
+    """战法列表. 可按所属体系 system_key 过滤."""
+    idx = get_index()
+    items = [a for a in idx.values() if a.kind == "tactic"]
+    if system_key:
+        items = [a for a in items if system_key in a.belongs_to_systems]
+    items.sort(key=lambda a: (a.estimated_read_min, a.title))
+    return items
+
+
+def foundations_summary() -> list[dict[str, Any]]:
+    """基础知识 4 子分类的计数 + 高频 tag, 给前端 foundations 视图侧栏用."""
+    idx = get_index()
+    out: list[dict[str, Any]] = []
+    for sub, meta in FOUNDATION_SUBCAT_META.items():
+        items = [a for a in idx.values() if a.kind == "foundation" and a.foundation_subcategory == sub]
+        if not items:
+            # 子分类即使为空也保留, 让前端显示完整骨架
+            out.append({
+                "key": sub,
+                "label": meta["label"],
+                "desc": meta["desc"],
+                "color": meta["color"],
+                "count": 0,
+                "top_tags": [],
+            })
+            continue
+        tag_freq: dict[str, int] = {}
+        for a in items:
+            for t in a.tags:
+                tag_freq[t] = tag_freq.get(t, 0) + 1
+        top_tags = sorted(tag_freq.items(), key=lambda kv: (-kv[1], kv[0]))[:8]
+        out.append({
+            "key": sub,
+            "label": meta["label"],
+            "desc": meta["desc"],
+            "color": meta["color"],
+            "count": len(items),
+            "top_tags": [{"tag": t, "count": c} for t, c in top_tags],
+        })
+    return out
+
+
+def systems_with_links() -> list[dict[str, Any]]:
+    """所有体系 + 各自挂接的 foundation/tactic 简要 meta. 用于 landing 卡片墙."""
+    idx = get_index()
+    out: list[dict[str, Any]] = []
+    for sys_a in list_systems():
+        rf_meta = []
+        for slug in sys_a.related_foundations:
+            a = idx.get(slug)
+            if a is not None:
+                rf_meta.append(a.to_meta())
+        rt_meta = []
+        for slug in sys_a.related_tactics:
+            a = idx.get(slug)
+            if a is not None:
+                rt_meta.append(a.to_meta())
+        out.append({
+            **sys_a.to_meta(),
+            "related_foundations_meta": rf_meta,
+            "related_tactics_meta": rt_meta,
+        })
+    return out
+
+
+def referenced_by_systems(slug: str) -> list[dict[str, Any]]:
+    """反查: 此 foundation/tactic 被哪些 system 引用."""
+    out: list[dict[str, Any]] = []
+    for sys_a in list_systems():
+        if slug in sys_a.related_foundations or slug in sys_a.related_tactics:
+            out.append(sys_a.to_meta())
+    return out
+
+
+def belongs_to_systems_meta(belongs: list[str]) -> list[dict[str, Any]]:
+    """tactic 详情用: 把 belongs_to_systems 的 system_key 解析成完整 meta."""
+    idx = get_index()
+    out: list[dict[str, Any]] = []
+    # 用 slug 反查 (system_key 默认 = slug)
+    by_key: dict[str, MethodologyArticle] = {a.system_key or a.slug: a for a in list_systems()}
+    for k in belongs:
+        a = by_key.get(k) or idx.get(k)
+        if a is not None and a.kind == "system":
+            out.append(a.to_meta())
+    return out

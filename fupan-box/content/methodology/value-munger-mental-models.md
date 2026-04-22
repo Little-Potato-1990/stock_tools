@@ -8,6 +8,8 @@ market_phase: [牛熊通用, 极端行情解读]
 estimated_read_min: 13
 tags: [多元思维, 芒格, lollapalooza, 心理学, 反演思维, 决策框架]
 skill_id: null
+kind: tactic
+belongs_to_systems: [system-value-longterm]
 ---
 
 ## 核心命题

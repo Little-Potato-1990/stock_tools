@@ -8,6 +8,8 @@ market_phase: [情绪冰点反弹后, 主升浪期间, 题材发酵期]
 estimated_read_min: 13
 tags: [涨停板, 首板, 二板, 加速板, 短线战法, 龙虎榜, 接力, 游资]
 skill_id: null
+kind: tactic
+belongs_to_systems: [system-short-intraday]
 ---
 
 ## 核心命题

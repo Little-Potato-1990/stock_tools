@@ -8,6 +8,8 @@ market_phase: [题材发酵期, 主升浪期, 情绪活跃期]
 estimated_read_min: 13
 tags: [接力, 卡位, 连板梯队, 龙头, 高度, 题材, 接力跟风, 末位补涨]
 skill_id: null
+kind: tactic
+belongs_to_systems: [system-short-intraday]
 ---
 
 ## 核心命题

@@ -8,6 +8,8 @@ market_phase: [估值极端期, 抱团股形成与瓦解期]
 estimated_read_min: 11
 tags: [DCF, 估值, 现金流折现, 安全边际, 反推假设]
 skill_id: null
+kind: foundation
+foundation_subcategory: valuation
 ---
 
 ## 核心命题

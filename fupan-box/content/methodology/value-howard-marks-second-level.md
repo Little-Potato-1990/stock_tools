@@ -8,6 +8,8 @@ market_phase: [极端共识形成期, 抱团瓦解期]
 estimated_read_min: 12
 tags: [第二层思维, 霍华德马克斯, 共识定价, 反向投资, alpha来源]
 skill_id: null
+kind: tactic
+belongs_to_systems: [system-value-longterm, system-midline-trend]
 ---
 
 ## 核心命题

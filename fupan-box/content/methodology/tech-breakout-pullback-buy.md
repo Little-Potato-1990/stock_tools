@@ -8,6 +8,8 @@ market_phase: [趋势启动期, 主升浪]
 estimated_read_min: 11
 tags: [突破, 回踩, 颈线, 平台突破, 缩量回踩, 波段买点]
 skill_id: null
+kind: foundation
+foundation_subcategory: technical
 ---
 
 ## 核心命题

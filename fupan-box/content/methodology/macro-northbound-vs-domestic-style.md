@@ -8,6 +8,8 @@ market_phase: [全周期, 风格切换期]
 estimated_read_min: 11
 tags: [北上资金, 内资, 公募基金, 游资, 散户, 风格切换, 沪深港通]
 skill_id: null
+kind: foundation
+foundation_subcategory: macro
 ---
 
 ## 核心命题

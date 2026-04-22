@@ -8,6 +8,8 @@ market_phase: [情绪活跃期, 题材发酵期]
 estimated_read_min: 12
 tags: [龙虎榜, 游资, 席位, 章盟主, 赵老哥, 短线信号, 接力]
 skill_id: null
+kind: tactic
+belongs_to_systems: [system-short-intraday]
 ---
 
 ## 核心命题

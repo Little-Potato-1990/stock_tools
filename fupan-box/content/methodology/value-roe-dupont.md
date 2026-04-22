@@ -8,6 +8,8 @@ market_phase: [牛熊通用]
 estimated_read_min: 11
 tags: [ROE, 杜邦分析, 商业模式, 生意质地, 净利率, 周转率, 杠杆]
 skill_id: null
+kind: foundation
+foundation_subcategory: financial
 ---
 
 ## 核心命题

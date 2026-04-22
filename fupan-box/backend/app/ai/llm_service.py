@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 
 from app.config import get_settings
 from app.ai.cross_context import get_chat_persona
+from app.ai.active_skill import ActiveSkill, render_skill_system_block
 from app.models.snapshot import DailySnapshot
 
 logger = logging.getLogger(__name__)
@@ -103,6 +104,7 @@ def _format_user_context(context: dict | None) -> str:
 def build_system_prompt(
     trade_date: str | None,
     user_context: dict | None = None,
+    active_skill: ActiveSkill | None = None,
 ) -> str:
     """Construct system prompt with market context for the given trade date."""
     base = (
@@ -117,6 +119,7 @@ def build_system_prompt(
         base += "\n\n[当前页面副驾职责] " + persona
 
     base += _format_user_context(user_context)
+    base += render_skill_system_block(active_skill)
 
     if not trade_date:
         return base
@@ -150,11 +153,14 @@ async def stream_chat(
     messages: list[dict],
     trade_date: str | None = None,
     user_context: dict | None = None,
+    active_skill: ActiveSkill | None = None,
 ) -> AsyncGenerator[str, None]:
     """Stream chat completion, yielding SSE-formatted lines."""
     client = _get_client()
 
-    system_prompt = build_system_prompt(trade_date, user_context=user_context)
+    system_prompt = build_system_prompt(
+        trade_date, user_context=user_context, active_skill=active_skill
+    )
     full_messages = [{"role": "system", "content": system_prompt}] + messages
 
     collected = []

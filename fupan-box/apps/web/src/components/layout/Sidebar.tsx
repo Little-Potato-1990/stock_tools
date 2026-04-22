@@ -15,6 +15,8 @@ import {
   Award,
   BookOpen,
   Wallet,
+  Telescope,
+  BrainCircuit,
   type LucideIcon,
 } from "lucide-react";
 import { useUIStore, type NavModule } from "@/stores/ui-store";
@@ -142,6 +144,22 @@ export function Sidebar() {
       hint: status?.ai_track.unlocked
         ? `已验 ${status.ai_track.verified_7d}`
         : "待累计",
+    },
+    {
+      key: "skills",
+      label: "我的体系",
+      icon: BrainCircuit,
+      badge: "AI",
+      unlocked: true,
+      hint: "自定义",
+    },
+    {
+      key: "skill_scan",
+      label: "体系扫描",
+      icon: Telescope,
+      badge: "AI",
+      unlocked: true,
+      hint: "选股",
     },
   ];
 

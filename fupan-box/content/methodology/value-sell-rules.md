@@ -8,6 +8,8 @@ market_phase: [牛熊通用, 极端估值期更关键]
 estimated_read_min: 12
 tags: [卖出规则, 止盈止损, 锚定效应, 损失厌恶, 永远持有, 仓位管理]
 skill_id: null
+kind: tactic
+belongs_to_systems: [system-value-longterm, system-midline-trend, system-high-dividend]
 ---
 
 ## 核心命题

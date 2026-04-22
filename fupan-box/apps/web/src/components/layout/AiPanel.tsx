@@ -3,6 +3,9 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { X, Send, Sparkles, ChevronDown, LogIn, History } from "lucide-react";
 import { useUIStore, type NavModule } from "@/stores/ui-store";
+import { useSkillStore } from "@/stores/skill-store";
+import { SkillChip } from "@/components/skill/SkillChip";
+import { SkillTagText } from "@/components/skill/SkillTagText";
 import { api } from "@/lib/api";
 
 interface ModelInfo {
@@ -26,10 +29,13 @@ const MODULE_LABELS: Record<NavModule, string> = {
   midlong: "个股深度",
   lhb: "龙虎榜",
   news: "资讯",
+  methodology: "方法论文库",
   watchlist: "自选股",
   plans: "我的计划",
   ai_track: "AI 预测追踪",
   my_review: "我的复盘",
+  skills: "我的体系",
+  skill_scan: "体系扫描",
   account: "账户套餐",
 };
 
@@ -50,6 +56,8 @@ export function AiPanel() {
 
   const pendingPrompt = useUIStore((s) => s.pendingChatPrompt);
   const consumePending = useUIStore((s) => s.consumePendingPrompt);
+  const setActiveModule = useUIStore((s) => s.setActiveModule);
+  const activeSkillRef = useSkillStore((s) => s.activeRef);
 
   const [watchlist, setWatchlist] = useState<Array<{ code: string; name?: string }>>([]);
   useEffect(() => {
@@ -261,8 +269,9 @@ export function AiPanel() {
       conversationId ?? undefined,
       undefined,
       aiContext,
+      activeSkillRef ?? undefined,
     );
-  }, [input, isStreaming, selectedModel, conversationId, setConversationId, setIsStreaming, aiContext]);
+  }, [input, isStreaming, selectedModel, conversationId, setConversationId, setIsStreaming, aiContext, activeSkillRef]);
 
   const handleNewChat = () => {
     setConversationId(null);
@@ -468,6 +477,15 @@ export function AiPanel() {
               {aiContext.theme}
             </span>
           )}
+          <div className="ml-auto">
+            <SkillChip
+              compact
+              onManageClick={() => {
+                close();
+                setActiveModule("skills");
+              }}
+            />
+          </div>
         </div>
 
         {/* Model selector */}
@@ -580,7 +598,17 @@ export function AiPanel() {
                   fontSize: "var(--font-md)",
                 }}
               >
-                {msg.content || (isStreaming ? "思考中..." : "")}
+                {msg.role === "assistant" ? (
+                  msg.content ? (
+                    <SkillTagText text={msg.content} />
+                  ) : isStreaming ? (
+                    "思考中..."
+                  ) : (
+                    ""
+                  )
+                ) : (
+                  msg.content
+                )}
               </div>
             </div>
           ))}

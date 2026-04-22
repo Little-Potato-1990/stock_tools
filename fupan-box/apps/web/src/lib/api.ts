@@ -231,6 +231,14 @@ class ApiClient {
     return this.request<T>(path, { method: "POST", body: JSON.stringify(body) });
   }
 
+  put<T>(path: string, body: unknown) {
+    return this.request<T>(path, { method: "PUT", body: JSON.stringify(body) });
+  }
+
+  patch<T>(path: string, body: unknown) {
+    return this.request<T>(path, { method: "PATCH", body: JSON.stringify(body) });
+  }
+
   delete<T>(path: string) {
     return this.request<T>(path, { method: "DELETE" });
   }
@@ -611,10 +619,11 @@ class ApiClient {
     }>(`/api/ai/theme-brief${q}`);
   }
 
-  getWatchlistBrief(tradeDate?: string, refresh = false) {
+  getWatchlistBrief(tradeDate?: string, refresh = false, skillRef?: string | null) {
     const params = new URLSearchParams();
     if (tradeDate) params.set("trade_date", tradeDate);
     if (refresh) params.set("refresh", "1");
+    if (skillRef) params.set("skill_ref", skillRef);
     const q = params.toString() ? `?${params.toString()}` : "";
     return this.get<{
       trade_date: string;
@@ -1222,10 +1231,14 @@ class ApiClient {
   }
 
   /** 三视角一句话速读 (短/波段/长线) */
-  getMultiPerspectiveBrief(code: string, opts?: { tradeDate?: string; refresh?: boolean }) {
+  getMultiPerspectiveBrief(
+    code: string,
+    opts?: { tradeDate?: string; refresh?: boolean; skillRef?: string | null },
+  ) {
     const sp = new URLSearchParams();
     if (opts?.tradeDate) sp.set("trade_date", opts.tradeDate);
     if (opts?.refresh) sp.set("refresh", "1");
+    if (opts?.skillRef) sp.set("skill_ref", opts.skillRef);
     const qs = sp.toString();
     return this.get<{
       stock_code: string;
@@ -1277,6 +1290,7 @@ class ApiClient {
     conversationId?: number,
     tradeDate?: string,
     context?: Record<string, unknown> | null,
+    skillRef?: string | null,
   ) {
     const headers: Record<string, string> = { "Content-Type": "application/json" };
     if (this.token) headers["Authorization"] = `Bearer ${this.token}`;
@@ -1290,6 +1304,7 @@ class ApiClient {
         conversation_id: conversationId || undefined,
         trade_date: tradeDate || undefined,
         context: context || undefined,
+        skill_ref: skillRef || undefined,
       }),
     });
 
@@ -1361,6 +1376,199 @@ class ApiClient {
       `/api/methodology/${encodeURIComponent(slug)}`,
     );
   }
+
+  // === 两层架构: 投资体系 / 基础知识 / 战法 ===
+  getMethodologySystems() {
+    return this.get<{
+      systems: MethodologySystem[];
+      system_meta: Array<{
+        key: string;
+        label: string;
+        tagline: string;
+        horizon: string;
+        risk: string;
+        color: string;
+      }>;
+    }>("/api/methodology/systems");
+  }
+
+  getMethodologyFoundations() {
+    return this.get<{
+      subcategories: MethodologyFoundationSubcatStat[];
+      subcategory_meta: Array<{ key: string; label: string; desc: string; color: string }>;
+    }>("/api/methodology/foundations");
+  }
+
+  getMethodologyFoundationsList(params?: { subcat?: string; q?: string; limit?: number }) {
+    const sp = new URLSearchParams();
+    if (params?.subcat) sp.set("subcat", params.subcat);
+    if (params?.q) sp.set("q", params.q);
+    if (params?.limit) sp.set("limit", String(params.limit));
+    const qs = sp.toString();
+    return this.get<{ total: number; items: MethodologyMeta[] }>(
+      `/api/methodology/foundations/list${qs ? `?${qs}` : ""}`,
+    );
+  }
+
+  getMethodologyTactics(params?: { system_key?: string; limit?: number }) {
+    const sp = new URLSearchParams();
+    if (params?.system_key) sp.set("system_key", params.system_key);
+    if (params?.limit) sp.set("limit", String(params.limit));
+    const qs = sp.toString();
+    return this.get<{ total: number; items: MethodologyMeta[] }>(
+      `/api/methodology/tactics${qs ? `?${qs}` : ""}`,
+    );
+  }
+
+  // =============== Investment Skills (体系) ===============
+
+  getSkillOptions() {
+    return this.get<{
+      system: SkillOption[];
+      user: SkillOption[];
+    }>("/api/skills/options");
+  }
+
+  getActiveSkill() {
+    return this.get<{ ref: string | null; name: string | null }>("/api/skills/active");
+  }
+
+  setActiveSkill(ref: string | null) {
+    return this.put<{ ref: string | null }>("/api/skills/active", { ref });
+  }
+
+  listUserSkills(includeArchived = false) {
+    const qs = includeArchived ? "?include_archived=true" : "";
+    return this.get<{ items: UserSkillMeta[] }>(`/api/skills/user${qs}`);
+  }
+
+  getUserSkill(id: number) {
+    return this.get<UserSkillDetail>(`/api/skills/user/${id}`);
+  }
+
+  createUserSkill(body: { name: string; body_markdown: string; icon?: string; slug?: string }) {
+    return this.post<UserSkillDetail>("/api/skills/user", body);
+  }
+
+  updateUserSkill(
+    id: number,
+    body: { name?: string; body_markdown?: string; icon?: string },
+  ) {
+    return this.put<UserSkillDetail>(`/api/skills/user/${id}`, body);
+  }
+
+  patchUserSkillRules(id: number, derived_rules: Record<string, unknown>) {
+    return this.patch<UserSkillDetail>(`/api/skills/user/${id}/rules`, { derived_rules });
+  }
+
+  forceLintSkill(id: number) {
+    return this.post<{ completeness_warnings: Array<{ key: string; msg: string }> }>(
+      `/api/skills/user/${id}/lint`,
+      {},
+    );
+  }
+
+  forceExtractSkill(id: number) {
+    return this.post<{ derived_rules: Record<string, unknown>; rules_user_edited: boolean }>(
+      `/api/skills/user/${id}/extract`,
+      {},
+    );
+  }
+
+  archiveUserSkill(id: number) {
+    return this.delete<{ ok: boolean }>(`/api/skills/user/${id}`);
+  }
+
+  getSkillCatalog() {
+    return this.get<SkillCatalog>("/api/skills/catalog");
+  }
+
+  // =============== Skill Scan ===============
+
+  /**
+   * 启动一次扫描。SSE 流，回调暴露 meta / filter / score / candidate / summary / done / error。
+   * 返回 abort 函数。
+   */
+  async streamSkillScan(
+    body: { skill_ref: string; universe: string; top_n?: number },
+    handlers: {
+      onMeta?: (m: SkillScanMeta) => void;
+      onFilter?: (f: SkillScanFilter) => void;
+      onScore?: (s: { candidates: SkillScanCandidate[] }) => void;
+      onCandidate?: (c: SkillScanCandidate) => void;
+      onSummary?: (s: { text: string }) => void;
+      onDone?: (d: { scan_run_id: number }) => void;
+      onError?: (msg: string) => void;
+    },
+  ): Promise<() => void> {
+    const ctrl = new AbortController();
+    const headers: Record<string, string> = { "Content-Type": "application/json" };
+    if (this.token) headers["Authorization"] = `Bearer ${this.token}`;
+
+    fetch(`${API_BASE}/api/skill-scan/run`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify(body),
+      signal: ctrl.signal,
+    })
+      .then(async (res) => {
+        if (!res.ok) {
+          const e = await res.json().catch(() => ({}));
+          handlers.onError?.(e.detail || `Error ${res.status}`);
+          return;
+        }
+        const reader = res.body?.getReader();
+        if (!reader) {
+          handlers.onError?.("no stream");
+          return;
+        }
+        const decoder = new TextDecoder();
+        let buf = "";
+        let curEvent = "message";
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buf += decoder.decode(value, { stream: true });
+          const blocks = buf.split("\n\n");
+          buf = blocks.pop() || "";
+          for (const block of blocks) {
+            const lines = block.split("\n");
+            curEvent = "message";
+            let dataLine = "";
+            for (const line of lines) {
+              if (line.startsWith("event: ")) curEvent = line.slice(7).trim();
+              else if (line.startsWith("data: ")) dataLine = line.slice(6);
+            }
+            if (!dataLine) continue;
+            try {
+              const data = JSON.parse(dataLine);
+              if (curEvent === "meta") handlers.onMeta?.(data);
+              else if (curEvent === "filter") handlers.onFilter?.(data);
+              else if (curEvent === "score") handlers.onScore?.(data);
+              else if (curEvent === "candidate") handlers.onCandidate?.(data);
+              else if (curEvent === "summary") handlers.onSummary?.(data);
+              else if (curEvent === "done") handlers.onDone?.(data);
+              else if (curEvent === "error") handlers.onError?.(data.message || "scan error");
+            } catch {
+              /* ignore parse error */
+            }
+          }
+        }
+      })
+      .catch((e) => {
+        if (e?.name !== "AbortError") handlers.onError?.(String(e));
+      });
+
+    return () => ctrl.abort();
+  }
+
+  listSkillScanRuns(limit = 20) {
+    return this.get<{ items: SkillScanRunMeta[] }>(`/api/skill-scan/runs?limit=${limit}`);
+  }
+
+  getSkillScanRun(id: number) {
+    return this.get<SkillScanRunDetail>(`/api/skill-scan/runs/${id}`);
+  }
 }
 
 export interface MethodologyMeta {
@@ -1376,10 +1584,29 @@ export interface MethodologyMeta {
   skill_id: string | null;
   summary: string;
   word_count: number;
+  // 两层架构新增字段 (旧文章可能为空)
+  kind?: "system" | "foundation" | "tactic";
+  foundation_subcategory?: string;
+  foundation_subcategory_label?: string;
+  foundation_subcategory_color?: string;
+  system_key?: string;
+  system_label?: string;
+  system_tagline?: string;
+  system_horizon?: string;
+  system_risk?: string;
+  system_color?: string;
+  related_foundations?: string[];
+  related_tactics?: string[];
+  belongs_to_systems?: string[];
 }
 
 export interface MethodologyDetail extends MethodologyMeta {
   content: string;
+  // 详情接口按 kind 自动 join 出来的关联文章 meta
+  related_foundations_meta?: MethodologyMeta[];
+  related_tactics_meta?: MethodologyMeta[];
+  referenced_by_systems?: MethodologyMeta[];
+  belongs_to_systems_meta?: MethodologyMeta[];
 }
 
 export interface MethodologyCategoryStat {
@@ -1389,6 +1616,110 @@ export interface MethodologyCategoryStat {
   color: string;
   count: number;
   top_tags: Array<{ tag: string; count: number }>;
+}
+
+export interface MethodologySystem extends MethodologyMeta {
+  related_foundations_meta: MethodologyMeta[];
+  related_tactics_meta: MethodologyMeta[];
+}
+
+export interface MethodologyFoundationSubcatStat {
+  key: string;
+  label: string;
+  desc: string;
+  color: string;
+  count: number;
+  top_tags: Array<{ tag: string; count: number }>;
+}
+
+// =============== Skill 类型 ===============
+
+export interface SkillOption {
+  ref: string;            // 'system:xxx' / 'user:42'
+  source: "system" | "user";
+  id?: number;
+  slug?: string;
+  name: string;
+  icon?: string | null;
+  tagline?: string;
+  horizon?: string;
+  risk?: string;
+  color?: string;
+}
+
+export interface UserSkillMeta {
+  id: number;
+  ref: string;
+  slug: string;
+  name: string;
+  icon: string | null;
+  completeness_warnings: Array<{ key: string; msg: string }>;
+  derived_rules: Record<string, unknown> | null;
+  rules_user_edited: boolean;
+  rules_extracted_at: string | null;
+  is_archived: boolean;
+  created_at: string | null;
+  updated_at: string | null;
+}
+
+export interface UserSkillDetail extends UserSkillMeta {
+  body_markdown: string;
+}
+
+export interface SkillCatalog {
+  factor_catalog: {
+    filters: Record<string, { type: string; desc: string; src: string }>;
+    scorers: Record<string, string>;
+  };
+  lint_keys: Array<{ key: string; label: string; desc: string }>;
+}
+
+// =============== Scan 类型 ===============
+
+export interface SkillScanMeta {
+  scan_run_id: number;
+  skill_ref: string;
+  skill_name: string;
+  universe: string;
+  top_n: number;
+}
+
+export interface SkillScanFilter {
+  universe_size: number;
+  pre_filter_count: number;
+  final_count: number;
+}
+
+export interface SkillScanCandidate {
+  idx?: number;
+  code: string;
+  name: string;
+  industry: string;
+  score: number;
+  factor_hits: Array<{ factor: string; weight: number; contrib: number; label?: string }>;
+  base_data: Record<string, unknown>;
+  review?: { reason: string; watchout: string };
+  tier?: string;
+}
+
+export interface SkillScanRunMeta {
+  id: number;
+  skill_ref: string;
+  skill_name: string;
+  universe: string;
+  top_n: number;
+  status: "running" | "done" | "failed";
+  pre_filter_count: number | null;
+  final_count: number | null;
+  duration_ms: number | null;
+  summary: string | null;
+  created_at: string | null;
+}
+
+export interface SkillScanRunDetail extends SkillScanRunMeta {
+  rules_snapshot: Record<string, unknown> | null;
+  candidates: SkillScanCandidate[] | null;
+  error: string | null;
 }
 
 export const api = new ApiClient();

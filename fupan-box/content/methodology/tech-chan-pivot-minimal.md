@@ -8,6 +8,8 @@ market_phase: [非单边主升浪期, 震荡市]
 estimated_read_min: 12
 tags: [缠论, 中枢, 趋势, 走势, 反转, 技术分析]
 skill_id: null
+kind: foundation
+foundation_subcategory: technical
 ---
 
 ## 核心命题

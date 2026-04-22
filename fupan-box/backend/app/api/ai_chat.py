@@ -22,6 +22,7 @@ class ChatRequest(BaseModel):
     conversation_id: int | None = None
     trade_date: str | None = None
     context: dict | None = None
+    skill_ref: str | None = None  # 'system:xxx' / 'user:42' / 'none' / None
 
 
 @router.get("/models")
@@ -82,10 +83,18 @@ async def chat(
     history = history_result.scalars().all()
     messages = [{"role": m.role, "content": m.content} for m in history if m.role in ("user", "assistant")]
 
+    # 解析当前激活体系（请求体 override > UserSettings 默认）
+    from app.ai.active_skill import aresolve_active_skill_for_user
+    active_skill = await aresolve_active_skill_for_user(db, user.id, req.skill_ref)
+
     async def event_stream():
         full_content = ""
         async for sse_line in stream_chat(
-            req.model_id, messages, req.trade_date, user_context=req.context
+            req.model_id,
+            messages,
+            req.trade_date,
+            user_context=req.context,
+            active_skill=active_skill,
         ):
             if '"done": true' in sse_line or '"done":true' in sse_line:
                 import json

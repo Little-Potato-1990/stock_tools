@@ -8,6 +8,8 @@ market_phase: [全周期, 牛熊切换期]
 estimated_read_min: 12
 tags: [牛熊周期, 怀疑期, 接受期, 狂热期, 崩溃期, 鸡蛋理论, 顶部信号]
 skill_id: null
+kind: foundation
+foundation_subcategory: macro
 ---
 
 ## 核心命题

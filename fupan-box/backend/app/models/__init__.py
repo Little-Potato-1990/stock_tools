@@ -3,7 +3,15 @@ from app.models.market import MarketSentiment, LadderSummary, LimitUpRecord, Lim
 from app.models.theme import Theme, ThemeStock, ThemeDaily
 from app.models.industry import Industry, IndustryStock, IndustryDaily
 from app.models.snapshot import DailySnapshot, DataUpdateLog
-from app.models.user import User, UserWatchlist, UserSettings, UserTrade, UserAIQuotaLog
+from app.models.user import (
+    User,
+    UserWatchlist,
+    UserSettings,
+    UserTrade,
+    UserAIQuotaLog,
+    UserSkill,
+    SkillScanRun,
+)
 from app.models.ai import (
     AIConversation,
     AIMessage,
@@ -32,6 +40,7 @@ __all__ = [
     "Industry", "IndustryStock", "IndustryDaily",
     "DailySnapshot", "DataUpdateLog",
     "User", "UserWatchlist", "UserSettings", "UserTrade", "UserAIQuotaLog",
+    "UserSkill", "SkillScanRun",
     "AIConversation", "AIMessage", "NewsSummary", "AIPrediction", "AIBriefFeedback",
     "IntradayAnomaly",
     "AIBriefCache",

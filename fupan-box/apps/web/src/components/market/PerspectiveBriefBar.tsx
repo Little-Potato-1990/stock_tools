@@ -14,6 +14,9 @@ import { useEffect, useState, useCallback } from "react";
 import { Sparkles, ChevronRight, RefreshCw, Telescope, Activity, Waves } from "lucide-react";
 import { api } from "@/lib/api";
 import { useUIStore } from "@/stores/ui-store";
+import { useSkillStore } from "@/stores/skill-store";
+import { SkillChip } from "@/components/skill/SkillChip";
+import { SkillTagText } from "@/components/skill/SkillTagText";
 import { CacheMetaBadge, getCacheMeta } from "./CacheMetaBadge";
 
 type MultiPerspective = Awaited<ReturnType<typeof api.getMultiPerspectiveBrief>>;
@@ -69,12 +72,13 @@ export function PerspectiveBriefBar({ stockCode, stockName, onOpenShortDetail }:
 
   const setActiveModule = useUIStore((s) => s.setActiveModule);
   const setFocused = useUIStore((s) => s.setFocusedStock);
+  const skillRef = useSkillStore((s) => s.activeRef);
 
   const fetchAll = useCallback(async (refresh = false) => {
     setLoading(true);
     setErr(null);
     try {
-      const d = await api.getMultiPerspectiveBrief(stockCode, { refresh });
+      const d = await api.getMultiPerspectiveBrief(stockCode, { refresh, skillRef: skillRef ?? undefined });
       setData(d);
     } catch (e) {
       setErr(e instanceof Error ? e.message : "AI 速读暂不可用");
@@ -82,7 +86,7 @@ export function PerspectiveBriefBar({ stockCode, stockName, onOpenShortDetail }:
     } finally {
       setLoading(false);
     }
-  }, [stockCode]);
+  }, [stockCode, skillRef]);
 
   useEffect(() => {
     setData(null);
@@ -178,15 +182,18 @@ export function PerspectiveBriefBar({ stockCode, stockName, onOpenShortDetail }:
             </button>
           );
         })}
-        <button
-          onClick={() => fetchAll(true)}
-          disabled={loading}
-          className="ml-auto p-0.5 transition-opacity hover:opacity-70"
-          title="刷新三视角速读"
-          style={{ color: "var(--text-muted)" }}
-        >
-          <RefreshCw size={10} className={loading ? "animate-spin" : ""} />
-        </button>
+        <div className="ml-auto flex items-center gap-1">
+          <SkillChip compact onManageClick={() => setActiveModule("skills")} />
+          <button
+            onClick={() => fetchAll(true)}
+            disabled={loading}
+            className="p-0.5 transition-opacity hover:opacity-70"
+            title="刷新三视角速读"
+            style={{ color: "var(--text-muted)" }}
+          >
+            <RefreshCw size={10} className={loading ? "animate-spin" : ""} />
+          </button>
+        </div>
       </div>
 
       {/* 当前 tab 内容 */}
@@ -231,7 +238,7 @@ export function PerspectiveBriefBar({ stockCode, stockName, onOpenShortDetail }:
               className="flex-1 font-bold leading-snug"
               style={{ fontSize: "var(--font-md)", lineHeight: 1.45 }}
             >
-              {current.headline}
+              <SkillTagText text={current.headline} />
             </span>
             <ChevronRight
               size={12}

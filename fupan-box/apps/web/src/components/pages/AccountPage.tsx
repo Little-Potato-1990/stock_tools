@@ -12,6 +12,8 @@ import {
   Wallet,
 } from "lucide-react";
 import { api, type QuotaUsage, type TierInfo } from "@/lib/api";
+import { SkillChip } from "@/components/skill/SkillChip";
+import { useUIStore } from "@/stores/ui-store";
 
 const TIER_META: Record<string, { color: string; icon: typeof Crown; tagline: string }> = {
   free: { color: "var(--text-muted)", icon: Sparkles, tagline: "试水版, 看看 AI 啥水平" },
@@ -68,7 +70,53 @@ export function AccountPage() {
       <div className="p-3 space-y-3">
         {usage && <CurrentTier usage={usage} />}
         {usage && <UsageBreakdown usage={usage} />}
+        <DefaultSkillSetting />
         <Tiers list={tiers} currentTier={usage?.tier} />
+      </div>
+    </div>
+  );
+}
+
+function DefaultSkillSetting() {
+  const setActiveModule = useUIStore((s) => s.setActiveModule);
+  return (
+    <div
+      className="rounded p-3"
+      style={{ background: "var(--bg-card)", border: "1px solid var(--border-color)" }}
+    >
+      <div className="flex items-center gap-2 mb-2">
+        <Sparkles size={12} style={{ color: "var(--accent-purple)" }} />
+        <span className="font-semibold" style={{ color: "var(--text-primary)", fontSize: "var(--font-sm)" }}>
+          默认 AI 体系
+        </span>
+      </div>
+      <p className="text-xs mb-2" style={{ color: "var(--text-muted)", lineHeight: 1.6 }}>
+        所有 AI 输出（自选股复盘 / 个股三视角速读 / 副驾对话）都会按当前激活体系给意见，AI 输出会带【XX视角】标签。中立 = 不绑定任何体系。
+      </p>
+      <div className="flex items-center gap-2">
+        <SkillChip onManageClick={() => setActiveModule("skills")} />
+        <button
+          onClick={() => setActiveModule("skills")}
+          className="text-xs px-2 py-1 rounded transition-opacity hover:opacity-90"
+          style={{
+            border: "1px solid var(--border-color)",
+            color: "var(--text-secondary)",
+            background: "var(--bg-tertiary)",
+          }}
+        >
+          管理我的体系
+        </button>
+        <button
+          onClick={() => setActiveModule("skill_scan")}
+          className="text-xs px-2 py-1 rounded transition-opacity hover:opacity-90"
+          style={{
+            border: "1px solid var(--border-color)",
+            color: "var(--text-secondary)",
+            background: "var(--bg-tertiary)",
+          }}
+        >
+          体系扫描
+        </button>
       </div>
     </div>
   );

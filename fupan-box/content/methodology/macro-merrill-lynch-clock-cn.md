@@ -8,6 +8,8 @@ market_phase: [全周期, 宏观切换期]
 estimated_read_min: 11
 tags: [美林时钟, 经济周期, 通胀周期, 板块轮动, 货币政策, 财政政策]
 skill_id: null
+kind: foundation
+foundation_subcategory: macro
 ---
 
 ## 核心命题

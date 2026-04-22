@@ -8,6 +8,8 @@ market_phase: [全周期]
 estimated_read_min: 11
 tags: [行业生命周期, 萌芽期, 成长期, 成熟期, 衰退期, 渗透率, 行业拐点]
 skill_id: null
+kind: foundation
+foundation_subcategory: macro
 ---
 
 ## 核心命题

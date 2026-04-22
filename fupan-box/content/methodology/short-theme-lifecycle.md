@@ -8,6 +8,8 @@ market_phase: [题材活跃期, 主升浪]
 estimated_read_min: 12
 tags: [题材生命周期, 发酵期, 主升期, 分歧期, 退潮期, 短线节奏]
 skill_id: null
+kind: tactic
+belongs_to_systems: [system-short-intraday, system-event-driven]
 ---
 
 ## 核心命题

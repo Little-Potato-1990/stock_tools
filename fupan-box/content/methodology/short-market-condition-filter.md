@@ -8,6 +8,8 @@ market_phase: [全周期, 行情判断]
 estimated_read_min: 11
 tags: [行情匹配, 主升浪, 震荡市, 退潮市, 下跌市, 仓位匹配, 策略选择]
 skill_id: null
+kind: tactic
+belongs_to_systems: [system-short-intraday]
 ---
 
 ## 核心命题

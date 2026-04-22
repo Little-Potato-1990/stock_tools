@@ -8,6 +8,8 @@ market_phase: [全周期]
 estimated_read_min: 11
 tags: [量价关系, 量在价先, 价涨量缩, 缩量上涨, 放量见顶, 缩量止跌]
 skill_id: null
+kind: foundation
+foundation_subcategory: technical
 ---
 
 ## 核心命题

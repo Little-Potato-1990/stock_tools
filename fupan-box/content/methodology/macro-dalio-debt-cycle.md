@@ -8,6 +8,8 @@ market_phase: [全周期, 宏观大变局]
 estimated_read_min: 12
 tags: [债务周期, 短期债务, 长期债务, 去杠杆, 美丽去杠杆, 宏观经济]
 skill_id: null
+kind: foundation
+foundation_subcategory: macro
 ---
 
 ## 核心命题

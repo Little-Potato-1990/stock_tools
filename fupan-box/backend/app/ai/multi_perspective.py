@@ -24,6 +24,7 @@ from typing import Any
 
 from app.ai.brief_generator import _call_llm, _latest_trade_date_with_data
 from app.ai.cross_context import NO_FLUFF_RULES
+from app.ai.active_skill import ActiveSkill, render_skill_system_block
 from app.ai.long_term_brief import _load_long_term_context, _heuristic_brief as _long_hint
 from app.ai.swing_brief import _load_swing_context, _heuristic as _swing_hint
 from app.services.stock_context import get_stock_capital_sync
@@ -80,6 +81,7 @@ def _build_combined_prompt(
     code: str, name: str, trade_date: str,
     short_ctx: dict, swing_ctx: dict, long_ctx: dict,
     short_hint: str, swing_hint: str, long_hint: str,
+    active_skill: ActiveSkill | None = None,
 ) -> tuple[str, str]:
     system = (
         f"你是 A 股多视角分析师, 给 {name}({code}) 同时给出短线/波段/长线三段一句话定调。"
@@ -87,6 +89,7 @@ def _build_combined_prompt(
         "**禁止**: 三段重复同一个角度 / 编造数字 / 套话。"
         + NO_FLUFF_RULES
     )
+    system += render_skill_system_block(active_skill)
     payload = {
         "short_ctx": short_ctx,
         "swing_ctx": swing_ctx,
@@ -167,6 +170,7 @@ async def generate_multi_perspective(
     code: str,
     trade_date: date | None = None,
     model_id: str = "deepseek-v3",
+    active_skill: ActiveSkill | None = None,
 ) -> dict[str, Any]:
     """三视角一句话 brief 主入口."""
     if trade_date is None:
@@ -215,6 +219,7 @@ async def generate_multi_perspective(
         f"{short_fb['stance']} | {short_fb['headline']}",
         f"{swing_fb['stance']} | {swing_fb['headline']}",
         f"{long_fb['stance']} | {long_fb['headline']}",
+        active_skill=active_skill,
     )
     llm_out = await _call_llm(system, user, model_id)
     if not isinstance(llm_out, dict):

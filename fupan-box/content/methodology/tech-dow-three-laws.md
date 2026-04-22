@@ -8,6 +8,8 @@ market_phase: [所有趋势性行情]
 estimated_read_min: 12
 tags: [道氏理论, 趋势, 三阶段, 量价配合, 技术分析基础]
 skill_id: null
+kind: foundation
+foundation_subcategory: technical
 ---
 
 ## 核心命题

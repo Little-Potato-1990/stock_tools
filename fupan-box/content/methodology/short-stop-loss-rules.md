@@ -8,6 +8,8 @@ market_phase: [全周期]
 estimated_read_min: 12
 tags: [止损, 止盈, 风控, 仓位管理, 心态]
 skill_id: null
+kind: tactic
+belongs_to_systems: [system-short-intraday]
 ---
 
 ## 核心命题

@@ -8,6 +8,8 @@ market_phase: [全周期, 政策切换期]
 estimated_read_min: 11
 tags: [M2, M1, 货币供应, 流动性, 央行政策, 降息, 降准, 社融]
 skill_id: null
+kind: foundation
+foundation_subcategory: macro
 ---
 
 ## 核心命题

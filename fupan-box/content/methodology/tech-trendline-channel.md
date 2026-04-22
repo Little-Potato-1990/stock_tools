@@ -8,6 +8,8 @@ market_phase: [趋势市, 通道运行期]
 estimated_read_min: 11
 tags: [趋势线, 上升通道, 下降通道, 跌破趋势线, 通道下沿买入, 通道上沿卖出]
 skill_id: null
+kind: foundation
+foundation_subcategory: technical
 ---
 
 ## 核心命题

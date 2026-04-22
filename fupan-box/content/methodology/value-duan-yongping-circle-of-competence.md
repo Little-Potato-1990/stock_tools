@@ -8,6 +8,8 @@ market_phase: [牛熊通用]
 estimated_read_min: 11
 tags: [能力圈, 段永平, 价值投资, 长期持有, 集中投资]
 skill_id: null
+kind: tactic
+belongs_to_systems: [system-value-longterm]
 ---
 
 ## 核心命题

@@ -6,6 +6,10 @@ import { api } from "@/lib/api";
 import { AiCardFooter } from "./AiCardChrome";
 import { EvidenceBadge } from "./EvidenceBadge";
 import { getCacheMeta } from "./CacheMetaBadge";
+import { useSkillStore } from "@/stores/skill-store";
+import { useUIStore } from "@/stores/ui-store";
+import { SkillChip } from "@/components/skill/SkillChip";
+import { SkillTagText } from "@/components/skill/SkillTagText";
 
 type WatchlistBrief = Awaited<ReturnType<typeof api.getWatchlistBrief>>;
 
@@ -26,6 +30,8 @@ export function WatchlistAiCard({ itemCount }: Props) {
   const [data, setData] = useState<WatchlistBrief | null>(null);
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const skillRef = useSkillStore((s) => s.activeRef);
+  const setActiveModule = useUIStore((s) => s.setActiveModule);
 
   const load = useCallback(async (refresh = false, dateOverride?: string) => {
     if (itemCount === 0) {
@@ -35,14 +41,14 @@ export function WatchlistAiCard({ itemCount }: Props) {
     setLoading(true);
     setErr(null);
     try {
-      const d = await api.getWatchlistBrief(dateOverride, refresh);
+      const d = await api.getWatchlistBrief(dateOverride, refresh, skillRef ?? undefined);
       setData(d);
     } catch (e: unknown) {
       setErr(e instanceof Error ? e.message : "AI 生成失败");
     } finally {
       setLoading(false);
     }
-  }, [itemCount]);
+  }, [itemCount, skillRef]);
 
   useEffect(() => {
     load(false);
@@ -77,6 +83,7 @@ export function WatchlistAiCard({ itemCount }: Props) {
         {data?.model && (
           <span style={{ fontSize: 10, color: "var(--text-muted)" }}>{data.model}</span>
         )}
+        <SkillChip compact onManageClick={() => setActiveModule("skills")} />
       </div>
 
       {err && <p className="text-xs" style={{ color: "var(--accent-red)" }}>{err}</p>}
@@ -88,7 +95,7 @@ export function WatchlistAiCard({ itemCount }: Props) {
       {data && (
         <>
           <p className="font-medium mb-1" style={{ fontSize: "var(--font-md)", color: "var(--text-primary)" }}>
-            {data.headline}
+            <SkillTagText text={data.headline} />
           </p>
 
           {data.evidence?.length > 0 && (

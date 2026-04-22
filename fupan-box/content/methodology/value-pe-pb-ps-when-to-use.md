@@ -8,6 +8,8 @@ market_phase: [牛熊通用]
 estimated_read_min: 12
 tags: [估值, PE, PB, PS, 行业适配, 估值陷阱]
 skill_id: null
+kind: foundation
+foundation_subcategory: valuation
 ---
 
 ## 核心命题

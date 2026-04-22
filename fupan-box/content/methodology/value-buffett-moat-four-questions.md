@@ -8,6 +8,8 @@ market_phase: [牛熊通用]
 estimated_read_min: 12
 tags: [护城河, 价值投资, 定价权, 商业模式, 长期持有]
 skill_id: null
+kind: tactic
+belongs_to_systems: [system-value-longterm]
 ---
 
 ## 核心命题

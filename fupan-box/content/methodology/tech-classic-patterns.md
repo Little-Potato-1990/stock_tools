@@ -8,6 +8,8 @@ market_phase: [转折点, 趋势确认期]
 estimated_read_min: 12
 tags: [头肩顶, 头肩底, 双顶, 双底, 三角形, 楔形, 旗形, 圆弧底]
 skill_id: null
+kind: foundation
+foundation_subcategory: technical
 ---
 
 ## 核心命题
