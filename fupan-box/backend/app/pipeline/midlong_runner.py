@@ -133,6 +133,14 @@ def run_fundamentals_pipeline(
                     if rd in cf_map:
                         r["cash_flow_op"] = cf_map[rd].get("cash_flow_op")
 
+                # 去重 (stock_code, report_date) — Tushare fina_indicator 同一报告期会
+                # 返回多条修订版；保留最后一条（一般是最新的修订）。
+                # 否则 PG ON CONFLICT DO UPDATE 会报 CardinalityViolation。
+                _dedup: dict[tuple, dict] = {}
+                for r in rows:
+                    _dedup[(r["stock_code"], r["report_date"])] = r
+                rows = list(_dedup.values())
+
                 stmt = pg_insert(StockFundamentalsQuarterly).values(rows)
                 stmt = stmt.on_conflict_do_update(
                     constraint="uq_fund_quarterly",
