@@ -21,6 +21,7 @@ celery.conf.imports = (
     "app.tasks.midlong",
     "app.tasks.external_pull",
     "app.tasks.peruser_prewarm",
+    "app.tasks.market",
 )
 celery.conf.beat_schedule = {
     "daily-pipeline": {
@@ -204,6 +205,11 @@ celery.conf.beat_schedule = {
     "peruser-nightly-prewarm": {
         "task": "app.tasks.peruser_prewarm.prewarm_active_users",
         "schedule": crontab(hour=21, minute=0, day_of_week="1-5"),
+    },
+    # 物化视图：盘中每 5 分钟刷新 warm rankings（与存储过程 refresh_warm_views 对齐）
+    "refresh_warm_views": {
+        "task": "app.tasks.market.refresh_warm_views",
+        "schedule": crontab(minute="*/5", hour="9-15", day_of_week="1-5"),
     },
 }
 celery.conf.timezone = "Asia/Shanghai"

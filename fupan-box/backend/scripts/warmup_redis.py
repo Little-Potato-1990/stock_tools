@@ -137,6 +137,11 @@ def main() -> int:
     p.add_argument(
         "--skip-rankings", action="store_true", help="只刷 universe, 不动 ranking"
     )
+    p.add_argument(
+        "--also-clear-cache",
+        action="store_true",
+        help="灌完 Redis 后清理进程内 rankings 内存缓存，避免与 Redis 不一致",
+    )
     args = p.parse_args()
 
     r = _redis_client()
@@ -144,6 +149,14 @@ def main() -> int:
         warmup_universe(r)
     if not args.skip_rankings:
         warmup_rankings(r)
+    if args.also_clear_cache:
+        try:
+            from app.api._cache import invalidate
+
+            n = invalidate(prefix="rankings")
+            logger.info("in-memory cache invalidated prefix=rankings (%d entries)", n)
+        except Exception as e:
+            logger.warning("also-clear-cache skipped: %s", e)
     logger.info("DONE.")
     return 0
 

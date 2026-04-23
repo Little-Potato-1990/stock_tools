@@ -81,49 +81,86 @@ async def get_limit_up(
 @router.get("/search")
 async def search_stocks(
     q: str = Query("", min_length=1, max_length=20),
+    universe: str = Query("default"),
+    board: str | None = Query(None, description="主板/创业板/科创板/北交所"),
     db: AsyncSession = Depends(get_db),
 ):
-    """搜索股票 - 按代码或名称"""
-    from app.models.stock import DailyQuote
-    from sqlalchemy import func as sa_func
+    """搜索股票 - 按代码或名称（关联 stocks，支持 universe / board）。"""
+    return await cached_call(
+        ("market", "search", q, universe, board),
+        _search_stocks_impl,
+        db,
+        q,
+        universe,
+        board,
+        ttl=30.0,
+    )
+
+
+async def _search_stocks_impl(
+    db: AsyncSession,
+    q: str,
+    universe: str,
+    board: str | None,
+):
+    from app.api._universe import universe_clause
+    from app.models.stock import DailyQuote, Stock
+    from sqlalchemy import func, or_
 
     latest_date = (await db.execute(
-        select(sa_func.max(DailyQuote.trade_date))
+        select(func.max(DailyQuote.trade_date))
     )).scalar()
     if not latest_date:
         return []
 
-    query = (
-        select(DailyQuote)
+    code_suffix = func.right(DailyQuote.stock_code, 6)
+    stmt = (
+        select(DailyQuote, Stock)
+        .join(Stock, Stock.code == code_suffix)
         .where(
             DailyQuote.trade_date == latest_date,
-            DailyQuote.stock_code.contains(q),
+            or_(
+                Stock.code.ilike(f"%{q}%"),
+                Stock.name.ilike(f"%{q}%"),
+            ),
         )
-        .order_by(DailyQuote.amount.desc())
-        .limit(30)
     )
-    result = await db.execute(query)
-    quotes = result.scalars().all()
+    clause = universe_clause(universe)
+    if clause is not None:
+        stmt = stmt.where(clause)
+    if board:
+        stmt = stmt.where(Stock.board == board)
+    stmt = stmt.order_by(DailyQuote.amount.desc()).limit(30)
+    result = await db.execute(stmt)
+    row_pairs = result.all()
+    if not row_pairs:
+        return []
 
     lu_query = select(LimitUpRecord).where(
         LimitUpRecord.trade_date == latest_date,
-        LimitUpRecord.stock_code.in_([q.stock_code for q in quotes]),
+        LimitUpRecord.stock_code.in_([dq.stock_code for dq, _ in row_pairs]),
     )
     lu_result = await db.execute(lu_query)
     lu_map = {r.stock_code: r for r in lu_result.scalars().all()}
 
     return [
         {
-            "stock_code": q.stock_code,
-            "stock_name": lu_map[q.stock_code].stock_name if q.stock_code in lu_map else q.stock_code,
-            "change_pct": float(q.change_pct) if q.change_pct else 0,
-            "close": float(q.close) if q.close else 0,
-            "amount": float(q.amount) if q.amount else 0,
-            "turnover_rate": float(q.turnover_rate) if q.turnover_rate else 0,
-            "is_limit_up": q.is_limit_up,
-            "is_limit_down": q.is_limit_down,
+            "stock_code": dq.stock_code,
+            "stock_name": (
+                lu_map[dq.stock_code].stock_name
+                if dq.stock_code in lu_map
+                else (st.name or dq.stock_code)
+            ),
+            "change_pct": float(dq.change_pct) if dq.change_pct else 0,
+            "close": float(dq.close) if dq.close else 0,
+            "amount": float(dq.amount) if dq.amount else 0,
+            "turnover_rate": float(dq.turnover_rate) if dq.turnover_rate else 0,
+            "is_limit_up": dq.is_limit_up,
+            "is_limit_down": dq.is_limit_down,
+            "status": st.status,
+            "board": st.board,
         }
-        for q in quotes
+        for dq, st in row_pairs
     ]
 
 
