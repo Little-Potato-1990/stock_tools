@@ -22,6 +22,7 @@ import {
 import { useUIStore, type NavModule } from "@/stores/ui-store";
 import { usePrivateStatus } from "@/stores/private-status-store";
 import { DataHealthChip } from "./DataHealthChip";
+import { UniverseSwitcher } from "@/components/common/UniverseSwitcher";
 
 interface NavItem {
   key: NavModule;
@@ -265,6 +266,13 @@ export function Sidebar() {
         >
           复盘盒子
         </span>
+      </div>
+
+      <div
+        className="px-2 py-1.5 flex-shrink-0"
+        style={{ borderBottom: "1px solid var(--border-color)" }}
+      >
+        <UniverseSwitcher />
       </div>
 
       {/* 主导航: 三分区 */}

@@ -23,6 +23,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useVirtualizer } from "@tanstack/react-virtual";
 import {
   Search,
   X,
@@ -46,6 +47,8 @@ import {
 } from "lucide-react";
 import { api } from "@/lib/api";
 import { useUIStore, type NavModule } from "@/stores/ui-store";
+import { UNIVERSE_OPTIONS, useUniverseStore } from "@/stores/universe-store";
+import StockStatusBadge from "@/components/common/StockStatusBadge";
 
 type CommandKind = "stock" | "recent" | "action" | "watchlist";
 
@@ -59,6 +62,8 @@ interface Command {
   subtitle?: string;
   /** 右侧标签 (热键、状态) */
   tag?: string;
+  /** 搜索命中的状态 / 板块 (仅 kind=stock) */
+  searchMeta?: { status?: SearchHit["status"]; board?: string | null };
   /** keywords 用于本地过滤 */
   keywords: string[];
   run: () => void;
@@ -68,6 +73,10 @@ interface SearchHit {
   stock_code: string;
   stock_name: string;
   change_pct?: number;
+  status?: "listed_active" | "st" | "star_st" | "suspended" | "delisted";
+  board?: string;
+  close?: number;
+  amount?: number;
 }
 
 /** 模块跳转快捷动作 - 与 Sidebar 同步 */
@@ -91,6 +100,7 @@ export function CommandPalette() {
   const [watchlist, setWatchlist] = useState<Array<{ stock_code: string; note?: string | null }>>([]);
   const [active, setActive] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
+  const listScrollRef = useRef<HTMLDivElement>(null);
 
   const setActiveModule = useUIStore((s) => s.setActiveModule);
   const openStockDetail = useUIStore((s) => s.openStockDetail);
@@ -99,6 +109,7 @@ export function CommandPalette() {
   const openAnomalyDrawer = useUIStore((s) => s.openAnomalyDrawer);
   const toggleAiPanel = useUIStore((s) => s.toggleAiPanel);
   const recent = useUIStore((s) => s.recentInteractions);
+  const universe = useUniverseStore((s) => s.universe);
 
   // ---- 全局热键 ----
   useEffect(() => {
@@ -145,7 +156,7 @@ export function CommandPalette() {
     const t = setTimeout(async () => {
       setSearching(true);
       try {
-        const r = (await api.searchStocks(q)) as unknown as SearchHit[];
+        const r = await api.searchStocks(q, universe);
         setHits(r.slice(0, 12));
       } catch {
         setHits([]);
@@ -154,7 +165,7 @@ export function CommandPalette() {
       }
     }, 200);
     return () => clearTimeout(t);
-  }, [query, open]);
+  }, [query, open, universe]);
 
   const close = useCallback(() => setOpen(false), []);
 
@@ -181,6 +192,7 @@ export function CommandPalette() {
         iconColor: "var(--accent-orange)",
         title: h.stock_name || h.stock_code,
         subtitle: `${h.stock_code}${h.change_pct != null ? `  ${upDown ? "+" : ""}${h.change_pct.toFixed(2)}%` : ""}`,
+        searchMeta: { status: h.status, board: h.board ?? null },
         keywords: [h.stock_code, h.stock_name ?? ""],
         run: () => runStock(h.stock_code, h.stock_name),
       });
@@ -327,6 +339,28 @@ export function CommandPalette() {
     openWhyRose,
   ]);
 
+  const universeLabel = useMemo(
+    () => UNIVERSE_OPTIONS.find((o) => o.value === universe)?.label ?? universe,
+    [universe],
+  );
+
+  const useVirtualList = commands.length > 30;
+  // TanStack Virtual is intentionally not React Compiler–memoization-friendly; list is correct at runtime.
+  // eslint-disable-next-line react-hooks/incompatible-library
+  const rowVirtualizer = useVirtualizer({
+    count: commands.length,
+    getScrollElement: () => listScrollRef.current,
+    estimateSize: () => 36,
+    overscan: 8,
+  });
+
+  const rowVRef = useRef(rowVirtualizer);
+  rowVRef.current = rowVirtualizer;
+  useEffect(() => {
+    if (!useVirtualList || commands.length === 0) return;
+    rowVRef.current.scrollToIndex(active, { align: "auto" });
+  }, [active, useVirtualList, commands.length]);
+
   // 切组时把 active 拉回 0
   useEffect(() => {
     setActive(0);
@@ -344,6 +378,70 @@ export function CommandPalette() {
       const cmd = commands[active];
       if (cmd) cmd.run();
     }
+  };
+
+  const renderCommandRow = (i: number) => {
+    const cmd = commands[i];
+    if (!cmd) return null;
+    const Icon = cmd.icon;
+    const isActive = i === active;
+    return (
+      <button
+        key={cmd.id}
+        type="button"
+        onClick={cmd.run}
+        onMouseEnter={() => setActive(i)}
+        className="w-full flex items-center gap-2 px-3 rounded transition-colors"
+        style={{
+          height: 36,
+          background: isActive ? "rgba(168,85,247,0.12)" : "transparent",
+          borderLeft: isActive ? "2px solid var(--accent-purple)" : "2px solid transparent",
+          textAlign: "left",
+        }}
+      >
+        <Icon size={14} style={{ color: cmd.iconColor || "var(--text-muted)", flexShrink: 0 }} />
+        <div className="flex items-center gap-1 min-w-0 max-w-[46%] flex-shrink-0">
+          <span
+            className="font-medium truncate"
+            style={{ color: "var(--text-primary)", fontSize: "var(--font-md)" }}
+          >
+            {cmd.title}
+          </span>
+          {cmd.searchMeta && (
+            <StockStatusBadge status={cmd.searchMeta.status} board={cmd.searchMeta.board} size="sm" />
+          )}
+        </div>
+        {cmd.subtitle && (
+          <span
+            className="truncate flex-1 min-w-0"
+            style={{ color: "var(--text-muted)", fontSize: 11, marginLeft: 6 }}
+          >
+            {cmd.subtitle}
+          </span>
+        )}
+        {cmd.tag && (
+          <span
+            className="ml-auto px-1.5 rounded flex-shrink-0"
+            style={{
+              background: "var(--bg-tertiary)",
+              color: "var(--text-muted)",
+              fontSize: 9,
+              fontWeight: 700,
+            }}
+          >
+            {cmd.tag}
+          </span>
+        )}
+        {!cmd.tag && isActive && (
+          <ChevronRight
+            size={12}
+            className="ml-auto flex-shrink-0"
+            style={{ color: "var(--accent-purple)" }}
+          />
+        )}
+        {!cmd.tag && !isActive && <span className="ml-auto flex-shrink-0" style={{ width: 12 }} />}
+      </button>
+    );
   };
 
   if (!open) return null;
@@ -417,12 +515,18 @@ export function CommandPalette() {
         </div>
 
         <div
+          ref={listScrollRef}
           style={{
             maxHeight: "60vh",
             overflowY: "auto",
             padding: 4,
           }}
         >
+          {query.trim() && hits.length > 0 && (
+            <div className="px-3 py-1" style={{ fontSize: 10, color: "var(--text-muted)" }}>
+              搜索结果 · {universeLabel}
+            </div>
+          )}
           {commands.length === 0 && (
             <div
               className="px-4 py-8 text-center"
@@ -431,63 +535,32 @@ export function CommandPalette() {
               {query.trim() ? "没有匹配项" : "试试: 输入股票代码 / 跳模块 / 'ai'"}
             </div>
           )}
-          {commands.map((cmd, i) => {
-            const Icon = cmd.icon;
-            const isActive = i === active;
-            return (
-              <button
-                key={cmd.id}
-                onClick={cmd.run}
-                onMouseEnter={() => setActive(i)}
-                className="w-full flex items-center gap-2 px-3 rounded transition-colors"
-                style={{
-                  height: 36,
-                  background: isActive ? "rgba(168,85,247,0.12)" : "transparent",
-                  borderLeft: isActive ? "2px solid var(--accent-purple)" : "2px solid transparent",
-                  textAlign: "left",
-                }}
-              >
-                <Icon size={14} style={{ color: cmd.iconColor || "var(--text-muted)", flexShrink: 0 }} />
-                <span
-                  className="font-medium truncate"
-                  style={{ color: "var(--text-primary)", fontSize: "var(--font-md)" }}
+          {commands.length > 0 && !useVirtualList && commands.map((_, i) => renderCommandRow(i))}
+          {commands.length > 0 && useVirtualList && (
+            <div
+              style={{
+                height: rowVirtualizer.getTotalSize(),
+                width: "100%",
+                position: "relative",
+              }}
+            >
+              {rowVirtualizer.getVirtualItems().map((virtualRow) => (
+                <div
+                  key={virtualRow.key}
+                  style={{
+                    position: "absolute",
+                    top: 0,
+                    left: 0,
+                    width: "100%",
+                    height: virtualRow.size,
+                    transform: `translateY(${virtualRow.start}px)`,
+                  }}
                 >
-                  {cmd.title}
-                </span>
-                {cmd.subtitle && (
-                  <span
-                    className="truncate"
-                    style={{ color: "var(--text-muted)", fontSize: 11, marginLeft: 6 }}
-                  >
-                    {cmd.subtitle}
-                  </span>
-                )}
-                {cmd.tag && (
-                  <span
-                    className="ml-auto px-1.5 rounded"
-                    style={{
-                      background: "var(--bg-tertiary)",
-                      color: "var(--text-muted)",
-                      fontSize: 9,
-                      fontWeight: 700,
-                    }}
-                  >
-                    {cmd.tag}
-                  </span>
-                )}
-                {!cmd.tag && isActive && (
-                  <ChevronRight
-                    size={12}
-                    className="ml-auto"
-                    style={{ color: "var(--accent-purple)" }}
-                  />
-                )}
-                {!cmd.tag && !isActive && (
-                  <span style={{ marginLeft: "auto", width: 12 }} />
-                )}
-              </button>
-            );
-          })}
+                  {renderCommandRow(virtualRow.index)}
+                </div>
+              ))}
+            </div>
+          )}
         </div>
 
         <div

@@ -15,12 +15,15 @@ import {
 import { api } from "@/lib/api";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { useUIStore } from "@/stores/ui-store";
+import { useUniverseStore } from "@/stores/universe-store";
 import { TierUpgradeBanner } from "@/components/market/TierUpgradeBanner";
 import { PerspectiveBriefBar } from "@/components/market/PerspectiveBriefBar";
 import { StockQuoteSection } from "@/components/market/StockQuoteSection";
 import { NewsTimelineList, type NewsItemLite } from "@/components/market/NewsTimelineList";
 import { CacheMetaBadge, getCacheMeta } from "@/components/market/CacheMetaBadge";
 import { ShareCardButton } from "@/components/common/ShareCardButton";
+import StockStatusBadge from "@/components/common/StockStatusBadge";
+import type { StockStatus } from "@/components/common/StockStatusBadge";
 
 type TabId =
   | "quote"
@@ -84,8 +87,11 @@ function EntityPicker({
   onPick: (code: string, name?: string) => void;
 }) {
   const [q, setQ] = useState("");
-  const [results, setResults] = useState<Array<{ code: string; name: string }>>([]);
+  const [results, setResults] = useState<
+    Array<{ code: string; name: string; status?: StockStatus | null; board?: string | null }>
+  >([]);
   const [open, setOpen] = useState(false);
+  const universe = useUniverseStore((s) => s.universe);
   const recent = useUIStore((s) => s.recentInteractions).filter((x) => x.kind === "stock").slice(0, 6);
 
   useEffect(() => {
@@ -96,13 +102,18 @@ function EntityPicker({
     let alive = true;
     const t = setTimeout(async () => {
       try {
-        const arr = await api.searchStocks(q.trim());
+        const arr = await api.searchStocks(q.trim(), universe);
         if (!alive) return;
         setResults(
-          arr.slice(0, 10).map((r) => ({
-            code: String(r.code || r.stock_code || ""),
-            name: String(r.name || r.stock_name || ""),
-          })).filter((x) => x.code),
+          arr
+            .slice(0, 10)
+            .map((r) => ({
+              code: String(r.stock_code || ""),
+              name: String(r.stock_name || ""),
+              status: r.status,
+              board: r.board ?? null,
+            }))
+            .filter((x) => x.code),
         );
       } catch {
         setResults([]);
@@ -112,7 +123,7 @@ function EntityPicker({
       alive = false;
       clearTimeout(t);
     };
-  }, [q]);
+  }, [q, universe]);
 
   return (
     <div style={{ position: "relative", width: 320 }}>
@@ -161,15 +172,29 @@ function EntityPicker({
               最近浏览
             </div>
           )}
-          {(results.length ? results : recent.map((r) => ({ code: r.key, name: r.label || r.key }))).map((s) => (
+          {(results.length
+            ? results
+            : recent.map((r) => ({
+                code: r.key,
+                name: r.label || r.key,
+                status: null as StockStatus | null,
+                board: null as string | null,
+              }))
+          ).map((s) => (
             <button
               key={s.code}
+              type="button"
               onMouseDown={() => onPick(s.code, s.name)}
               className="w-full text-left px-2 py-1 hover:bg-white/5 flex items-center gap-2"
               style={{ fontSize: 12, color: "var(--text-primary)" }}
             >
-              <span>{s.name}</span>
-              <span style={{ color: "var(--text-muted)", fontSize: 10 }}>{s.code}</span>
+              <span className="flex min-w-0 items-center gap-1">
+                <span className="truncate">{s.name}</span>
+                <StockStatusBadge status={s.status} board={s.board} size="sm" />
+              </span>
+              <span className="tabular-nums flex-shrink-0" style={{ color: "var(--text-muted)", fontSize: 10 }}>
+                {s.code}
+              </span>
             </button>
           ))}
         </div>

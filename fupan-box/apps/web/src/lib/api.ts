@@ -304,8 +304,24 @@ class ApiClient {
     return this.delete(`/api/watchlist/${stock_code}`);
   }
 
-  searchStocks(q: string) {
-    return this.get<Array<Record<string, unknown>>>(`/api/market/search?q=${encodeURIComponent(q)}`);
+  searchStocks(q: string, universe?: string) {
+    const sp = new URLSearchParams();
+    sp.set("q", q);
+    if (universe) sp.set("universe", universe);
+    return this.get<
+      Array<{
+        stock_code: string;
+        stock_name: string;
+        change_pct?: number;
+        close?: number;
+        amount?: number;
+        turnover_rate?: number;
+        is_limit_up?: boolean;
+        is_limit_down?: boolean;
+        status?: "listed_active" | "st" | "star_st" | "suspended" | "delisted";
+        board?: string;
+      }>
+    >(`/api/market/search?${sp.toString()}`);
   }
 
   getNews(count = 50, enrich = true, params?: {
@@ -823,6 +839,36 @@ class ApiClient {
     return this.get<Record<string, unknown>>(
       `/api/stock/context/${encodeURIComponent(code)}`,
     );
+  }
+
+  getKline(
+    code: string,
+    opts: {
+      lod?: "day" | "week" | "month";
+      start?: string;
+      end?: string;
+      fields?: string;
+    } = {},
+  ) {
+    const sp = new URLSearchParams();
+    if (opts.lod) sp.set("lod", opts.lod);
+    if (opts.start) sp.set("start", opts.start);
+    if (opts.end) sp.set("end", opts.end);
+    if (opts.fields) sp.set("fields", opts.fields);
+    return this.get<{
+      code: string;
+      lod: string;
+      rows: Array<{
+        d: string;
+        o: number;
+        h: number;
+        l: number;
+        c: number;
+        vol?: number;
+        turnover?: number;
+        amplitude?: number;
+      }>;
+    }>(`/api/stock/kline/${encodeURIComponent(code)}?${sp.toString()}`);
   }
 
   getStockContextBatch(codes: string[]) {
@@ -1627,6 +1673,38 @@ class ApiClient {
 
   getSkillScanRun(id: number) {
     return this.get<SkillScanRunDetail>(`/api/skill-scan/runs/${id}`);
+  }
+
+  getTodayGainers(opts: { limit?: number; universe?: string; board?: string } = {}) {
+    const sp = new URLSearchParams();
+    if (opts.limit) sp.set("limit", String(opts.limit));
+    if (opts.universe) sp.set("universe", opts.universe);
+    if (opts.board) sp.set("board", opts.board);
+    return this.get<Record<string, unknown>>(`/api/rankings/today/gainers?${sp.toString()}`);
+  }
+
+  getTodayLosers(opts: { limit?: number; universe?: string; board?: string } = {}) {
+    const sp = new URLSearchParams();
+    if (opts.limit) sp.set("limit", String(opts.limit));
+    if (opts.universe) sp.set("universe", opts.universe);
+    if (opts.board) sp.set("board", opts.board);
+    return this.get<Record<string, unknown>>(`/api/rankings/today/losers?${sp.toString()}`);
+  }
+
+  getTodayThemes(opts: { limit?: number; universe?: string; board?: string } = {}) {
+    const sp = new URLSearchParams();
+    if (opts.limit) sp.set("limit", String(opts.limit));
+    if (opts.universe) sp.set("universe", opts.universe);
+    if (opts.board) sp.set("board", opts.board);
+    return this.get<Record<string, unknown>>(`/api/rankings/today/themes?${sp.toString()}`);
+  }
+
+  getTodayLhb(opts: { limit?: number; universe?: string; board?: string } = {}) {
+    const sp = new URLSearchParams();
+    if (opts.limit) sp.set("limit", String(opts.limit));
+    if (opts.universe) sp.set("universe", opts.universe);
+    if (opts.board) sp.set("board", opts.board);
+    return this.get<Record<string, unknown>>(`/api/rankings/today/lhb?${sp.toString()}`);
   }
 }
 
