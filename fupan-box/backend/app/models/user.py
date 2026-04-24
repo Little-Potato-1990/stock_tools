@@ -76,6 +76,94 @@ class UserTrade(Base):
     created_at: Mapped[datetime] = mapped_column(default=datetime.now)
 
 
+class UserHolding(Base):
+    """用户当前持仓快照. 由「持仓截图 OCR」或「PDF 对账单」上传后写入.
+
+    一条 = 一只股票在一个账户下的当前持仓; 同代码同账户唯一. 每次重新上传
+    会 upsert (覆盖最新数量/成本/市价). first_buy_date 和 holding_days 由
+    FIFO 配对算法在交易流水入库后回填.
+    """
+    __tablename__ = "user_holdings"
+    __table_args__ = (
+        UniqueConstraint("user_id", "stock_code", "account_label", name="uq_user_holdings"),
+        Index("ix_user_holdings_user", "user_id"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    stock_code: Mapped[str] = mapped_column(String(10))
+    stock_name: Mapped[str | None] = mapped_column(String(50))
+    qty: Mapped[int] = mapped_column(Integer)
+    available_qty: Mapped[int | None] = mapped_column(Integer)
+    avg_cost: Mapped[float | None] = mapped_column(Float)
+    market_price: Mapped[float | None] = mapped_column(Float)
+    market_value: Mapped[float | None] = mapped_column(Float)
+    pnl: Mapped[float | None] = mapped_column(Float)
+    pnl_pct: Mapped[float | None] = mapped_column(Float)
+    first_buy_date: Mapped[date | None] = mapped_column(Date)
+    holding_days: Mapped[int | None] = mapped_column(Integer)
+    account_label: Mapped[str] = mapped_column(String(50), default="default")
+    user_tag: Mapped[str | None] = mapped_column(String(50))
+    source: Mapped[str] = mapped_column(String(20), default="screenshot")
+    last_sync_at: Mapped[datetime] = mapped_column(default=datetime.now)
+    created_at: Mapped[datetime] = mapped_column(default=datetime.now)
+
+
+class UserTradeRaw(Base):
+    """用户交易流水原始记录 (单边, 来自 OCR 截图 / PDF 对账单 / 邮件解析).
+
+    保留原始字段最大化, 后续由 FIFO 配对算法生成 round-trip 写入 UserTrade.
+    去重策略:
+      1) 优先用 contract_no (券商成交合同编号) 唯一; OCR 截图常无此字段.
+      2) 退化: (user_id, trade_date, trade_time, code, side, price, qty) 自然唯一.
+    """
+    __tablename__ = "user_trades_raw"
+    __table_args__ = (
+        Index("ix_user_trades_raw_user_date", "user_id", "trade_date"),
+        Index("ix_user_trades_raw_user_code", "user_id", "stock_code"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    trade_date: Mapped[date] = mapped_column(Date)
+    trade_time: Mapped[str | None] = mapped_column(String(10))
+    stock_code: Mapped[str] = mapped_column(String(10))
+    stock_name: Mapped[str | None] = mapped_column(String(50))
+    side: Mapped[str] = mapped_column(String(8))
+    price: Mapped[float] = mapped_column(Float)
+    qty: Mapped[int] = mapped_column(Integer)
+    amount: Mapped[float | None] = mapped_column(Float)
+    fee: Mapped[float] = mapped_column(Float, default=0.0)
+    stamp_tax: Mapped[float] = mapped_column(Float, default=0.0)
+    transfer_fee: Mapped[float] = mapped_column(Float, default=0.0)
+    contract_no: Mapped[str | None] = mapped_column(String(50))
+    account_label: Mapped[str] = mapped_column(String(50), default="default")
+    source: Mapped[str] = mapped_column(String(20), default="screenshot")
+    matched_trade_id: Mapped[int | None] = mapped_column(ForeignKey("user_trades.id"))
+    created_at: Mapped[datetime] = mapped_column(default=datetime.now)
+
+
+class UserImportJob(Base):
+    """一次截图/PDF 上传的导入作业, 用于异步 OCR + 配对的进度展示."""
+    __tablename__ = "user_import_jobs"
+    __table_args__ = (
+        Index("ix_user_import_jobs_user_created", "user_id", "created_at"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    kind: Mapped[str] = mapped_column(String(20))
+    source: Mapped[str] = mapped_column(String(20), default="screenshot")
+    status: Mapped[str] = mapped_column(String(20), default="pending")
+    file_count: Mapped[int] = mapped_column(Integer, default=0)
+    raw_payload: Mapped[list | None] = mapped_column(JSONB)
+    parsed_payload: Mapped[list | None] = mapped_column(JSONB)
+    summary: Mapped[dict | None] = mapped_column(JSONB)
+    error: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(default=datetime.now, index=True)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+
 class UserSkill(Base):
     """用户自定义投资体系（Skill）。
 

@@ -7,6 +7,7 @@ import { PageHeader } from "@/components/layout/PageHeader";
 import { WatchlistAiCard } from "@/components/market/WatchlistAiCard";
 import { StockCapitalChip } from "@/components/market/StockCapitalChip";
 import { useUIStore } from "@/stores/ui-store";
+import { useImportCenterStore } from "@/stores/import-center-store";
 
 interface WatchlistItem {
   id: number;
@@ -25,6 +26,7 @@ export function WatchlistPage() {
   const openStockDetail = useUIStore((s) => s.openStockDetail);
   const requestPlanFor = useUIStore((s) => s.requestPlanFor);
   const setAnomalyFilterCode = useUIStore((s) => s.setAnomalyFilterCode);
+  const openImportCenter = useImportCenterStore((s) => s.open);
 
   const [authMode, setAuthMode] = useState<"login" | "register">("login");
   const [username, setUsername] = useState("");
@@ -168,19 +170,34 @@ export function WatchlistPage() {
         title="我的自选"
         subtitle={`${items.length} 只`}
         actions={
-          <button
-            onClick={() => { api.logout(); setLoggedIn(false); setItems([]); }}
-            className="rounded transition-colors"
-            style={{
-              padding: "4px 10px",
-              background: "var(--bg-tertiary)",
-              color: "var(--text-muted)",
-              fontSize: "var(--font-sm)",
-              border: "1px solid var(--border-color)",
-            }}
-          >
-            退出登录
-          </button>
+          <>
+            <button
+              onClick={() => openImportCenter("holdings")}
+              className="rounded transition-colors"
+              style={{
+                padding: "4px 10px",
+                background: "rgba(245,158,11,0.14)",
+                color: "var(--accent-orange)",
+                fontSize: "var(--font-sm)",
+                border: "1px solid var(--accent-orange)",
+              }}
+            >
+              📷 截图导入
+            </button>
+            <button
+              onClick={() => { api.logout(); setLoggedIn(false); setItems([]); }}
+              className="rounded transition-colors"
+              style={{
+                padding: "4px 10px",
+                background: "var(--bg-tertiary)",
+                color: "var(--text-muted)",
+                fontSize: "var(--font-sm)",
+                border: "1px solid var(--border-color)",
+              }}
+            >
+              退出登录
+            </button>
+          </>
         }
       />
 

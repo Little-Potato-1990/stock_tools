@@ -247,11 +247,18 @@ table { border-collapse: collapse; }
   letter-spacing: 0.02em;
 }
 
-/* 浮动股票徽章 (右下角) */
+/* 浮动股票徽章 (右下角)
+ * 右下角浮层堆栈 (从下往上, 间距 48px):
+ *   floating-ai-btn      bottom:16   (always)
+ *   AnomalyBell          bottom:64   (always)
+ *   floating-whyrose-btn bottom:112  (focused only)
+ *   floating-debate-btn  bottom:160  (focused only)
+ *   floating-stock-chip  bottom:208  (focused only)
+ */
 .floating-stock-chip {
   position: fixed;
   right: 16px;
-  bottom: 164px;
+  bottom: 208px;
   z-index: 35;
   display: inline-flex;
   flex-direction: column;
@@ -271,7 +278,7 @@ table { border-collapse: collapse; }
 .floating-debate-btn {
   position: fixed;
   right: 16px;
-  bottom: 122px;
+  bottom: 160px;
   z-index: 35;
   background: var(--accent-purple);
   color: #fff;
@@ -288,7 +295,7 @@ table { border-collapse: collapse; }
 .floating-whyrose-btn {
   position: fixed;
   right: 16px;
-  bottom: 80px;
+  bottom: 112px;
   z-index: 35;
   background: var(--accent-orange);
   color: #fff;

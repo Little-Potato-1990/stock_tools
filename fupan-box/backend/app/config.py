@@ -14,6 +14,11 @@ class Settings(BaseSettings):
     openai_api_key: str = ""
     openai_base_url: str = ""
     openai_model: str = "gpt-4o-mini"
+    # 截图 OCR 专用视觉模型. 同花顺持仓/成交识别走这个.
+    # 默认 claude-sonnet-4-5: 长截图列表行抽取完整 (haiku-4-5 实测会漏行);
+    # 单张成本约 ¥0.18, 个人用户充 ¥40 够 200+ 张.
+    # 如代理换通道, 改环境变量 VISION_OCR_MODEL 即可, 无需改代码.
+    vision_ocr_model: str = "claude-sonnet-4-5-20250929"
 
     data_source: str = "akshare"
     tushare_token: str = ""

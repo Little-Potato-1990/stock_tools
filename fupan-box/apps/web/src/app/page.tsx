@@ -13,6 +13,7 @@ import { NewsPage } from "@/components/pages/NewsPage";
 import { MethodologyPage } from "@/components/pages/MethodologyPage";
 import { AiTrackPage } from "@/components/pages/AiTrackPage";
 import { MyReviewPage } from "@/components/pages/MyReviewPage";
+import { MyHoldingsPage } from "@/components/pages/MyHoldingsPage";
 import { SkillsPage } from "@/components/pages/SkillsPage";
 import { SkillScanPage } from "@/components/pages/SkillScanPage";
 import { AccountPage } from "@/components/pages/AccountPage";
@@ -29,6 +30,8 @@ export default function Home() {
       return <ThemesPage />;
     case "watchlist":
       return <WatchlistPage />;
+    case "my_holdings":
+      return <MyHoldingsPage />;
     case "plans":
       return <PlansPage />;
     case "capital":

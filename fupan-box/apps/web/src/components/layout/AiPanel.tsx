@@ -31,6 +31,7 @@ const MODULE_LABELS: Record<NavModule, string> = {
   news: "资讯",
   methodology: "方法论文库",
   watchlist: "自选股",
+  my_holdings: "我的持仓",
   plans: "我的计划",
   ai_track: "AI 预测追踪",
   my_review: "我的复盘",

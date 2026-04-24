@@ -42,6 +42,136 @@ export interface TradePattern {
   mode_desc: string;
 }
 
+export type ReconciliationStatus =
+  | "ok"
+  | "gap_before_cutoff"
+  | "no_raw_history"
+  | "excess_in_raw"
+  | "implied_no_holding";
+
+export interface ReconciliationMidGap {
+  from: string;
+  to: string;
+  gap_days: number;
+}
+
+export interface ReconciliationStock {
+  code: string;
+  name: string | null;
+  account_label: string;
+  ground_truth_qty: number;
+  implied_qty: number;
+  implied_avg_cost: number | null;
+  screen_avg_cost: number | null;
+  earliest_real_date: string | null;
+  latest_real_date?: string | null;
+  coverage_days?: number;
+  mid_gaps?: ReconciliationMidGap[];
+  status: ReconciliationStatus;
+  gap_qty: number;
+  note: string;
+}
+
+export interface ReconciliationSummary {
+  ok: number;
+  gap_before_cutoff: number;
+  no_raw_history: number;
+  excess_in_raw: number;
+  implied_no_holding: number;
+  with_mid_gaps?: number;
+}
+
+export interface ReconciliationCoverage {
+  earliest_real_date: string | null;
+  latest_real_date: string | null;
+  span_days: number;
+  real_trade_count: number;
+  virtual_count: number;
+}
+
+export interface ReconciliationResult {
+  user_id: number;
+  per_stock: ReconciliationStock[];
+  summary: ReconciliationSummary;
+  repair_plans?: unknown[];
+  coverage?: ReconciliationCoverage;
+}
+
+export interface ReconciliationRepairResult {
+  user_id: number;
+  before: { summary: ReconciliationSummary; per_stock: ReconciliationStock[] };
+  after: { summary: ReconciliationSummary; per_stock: ReconciliationStock[]; coverage?: ReconciliationCoverage };
+  injected: { injected: number; skipped_existing: number };
+  round_trips_total: number;
+}
+
+export interface UserHoldingItem {
+  id: number;
+  stock_code: string;
+  stock_name: string | null;
+  qty: number;
+  available_qty: number | null;
+  avg_cost: number | null;
+  market_price: number | null;
+  market_value: number | null;
+  pnl: number | null;
+  pnl_pct: number | null;
+  first_buy_date: string | null;
+  holding_days: number | null;
+  account_label: string;
+  user_tag: string | null;
+  source: string;
+  last_sync_at: string | null;
+}
+
+export interface RawTradeItem {
+  id: number;
+  trade_date: string | null;
+  trade_time: string | null;
+  stock_code: string;
+  stock_name: string | null;
+  side: string;
+  price: number;
+  qty: number;
+  amount: number | null;
+  fee: number;
+  stamp_tax: number;
+  transfer_fee: number;
+  contract_no: string | null;
+  account_label: string;
+  source: string;
+  matched_trade_id: number | null;
+}
+
+export interface RawTradeListResp {
+  total: number;
+  limit: number;
+  offset: number;
+  items: RawTradeItem[];
+}
+
+export interface ImportJobMeta {
+  job_id: number;
+  kind?: "holdings" | "trades" | string;
+  status?: string;
+  created_at?: string;
+  warnings?: string[];
+  summary?: Record<string, unknown> | null;
+  parsed_count?: number;
+  upserted?: number;
+  raw_inserted?: number;
+  raw_skipped_duplicate?: number;
+  paired_trades?: number;
+  reconciliation?: ReconciliationRepairResult | null;
+}
+
+export interface ImportJobDetail extends ImportJobMeta {
+  raw_payload?: Record<string, unknown> | Record<string, unknown>[] | null;
+  parsed_payload?: Record<string, unknown> | Record<string, unknown>[] | null;
+  error?: string | null;
+  finished_at?: string | null;
+}
+
 export interface TierMeta {
   tier: "anonymous" | "free" | "monthly" | "yearly" | string;
   valuation_days_cap: number;
@@ -221,6 +351,27 @@ class ApiClient {
       throw new Error(body.detail || `API error: ${res.status}`);
     }
     return res.json();
+  }
+
+  private async throwForNonOkResponse(res: Response): Promise<never> {
+    if (res.status === 401) {
+      if (this.token) {
+        this.token = null;
+        if (typeof window !== "undefined") localStorage.removeItem("token");
+      }
+      const err = new Error("requires_login") as Error & { code?: string; status?: number };
+      err.code = "REQUIRES_LOGIN";
+      err.status = 401;
+      throw err;
+    }
+    if (res.status === 429) {
+      const err = new Error("rate_limited") as Error & { code?: string; status?: number };
+      err.code = "RATE_LIMITED";
+      err.status = 429;
+      throw err;
+    }
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body.detail || `API error: ${res.status}`);
   }
 
   get<T>(path: string) {
@@ -487,39 +638,6 @@ class ApiClient {
       };
       related: Array<{ id: number; title: string; pub_time: string; _distance: number; importance?: number; sentiment?: string }>;
     }>(`/api/news/${newsId}?related=${related}`);
-  }
-
-  /** 个人化新闻速报 (MyDigestFloating 浮窗用). 围绕用户自选股, 三段加权排序. */
-  getMyNewsDigest(opts?: { hours?: number; topK?: number }) {
-    const sp = new URLSearchParams();
-    if (opts?.hours) sp.set("hours", String(opts.hours));
-    if (opts?.topK) sp.set("top_k", String(opts.topK));
-    const q = sp.toString();
-    return this.get<{
-      generated_at: string;
-      hours: number;
-      watch_count: number;
-      stats: {
-        total: number;
-        important: number;
-        bullish: number;
-        bearish: number;
-        neutral: number;
-        watch_hits: number;
-      };
-      items: Array<{
-        id: number;
-        title: string;
-        source?: string;
-        sentiment?: "bullish" | "neutral" | "bearish";
-        importance: number;
-        pub_time: string;
-        rel_codes: string[];
-        themes: string[];
-        watch_codes_hit: string[];
-        score?: number;
-      }>;
-    }>(`/api/me/news-digest${q ? `?${q}` : ""}`);
   }
 
   getThemeDetail(name: string) {
@@ -1046,6 +1164,74 @@ class ApiClient {
 
   getTradePattern(days = 30) {
     return this.get<TradePattern>(`/api/trades/pattern?days=${days}`);
+  }
+
+  async importHoldingsScreenshots(files: File[]): Promise<{
+    job_id: number;
+    parsed_count: number;
+    upserted: number;
+    warnings: string[];
+    reconciliation?: ReconciliationRepairResult | null;
+  }> {
+    const formData = new FormData();
+    files.forEach((file) => formData.append("files", file));
+    const res = await fetch(this.buildUrl("/api/import/holdings/screenshot"), {
+      method: "POST",
+      headers: this.authHeaders(),
+      body: formData,
+    });
+    if (!res.ok) await this.throwForNonOkResponse(res);
+    return res.json();
+  }
+
+  async importTradesScreenshots(files: File[]): Promise<{
+    job_id: number;
+    raw_inserted: number;
+    raw_skipped_duplicate: number;
+    paired_trades: number;
+    warnings: string[];
+    reconciliation?: ReconciliationRepairResult | null;
+  }> {
+    const formData = new FormData();
+    files.forEach((file) => formData.append("files", file));
+    const res = await fetch(this.buildUrl("/api/import/trades/screenshot"), {
+      method: "POST",
+      headers: this.authHeaders(),
+      body: formData,
+    });
+    if (!res.ok) await this.throwForNonOkResponse(res);
+    return res.json();
+  }
+
+  listImportJobs() {
+    return this.get<Array<ImportJobMeta>>("/api/import/jobs");
+  }
+
+  getImportJob(id: number) {
+    return this.get<ImportJobDetail>(`/api/import/jobs/${id}`);
+  }
+
+  getReconciliation() {
+    return this.get<ReconciliationResult>("/api/import/reconciliation");
+  }
+
+  repairReconciliation() {
+    return this.post<ReconciliationRepairResult>("/api/import/reconciliation/repair", {});
+  }
+
+  /** 当前用户持仓表 (按市值降序). 数据源: 截图导入后 upsert 的 UserHolding. */
+  listUserHoldings() {
+    return this.get<{ items: UserHoldingItem[] }>("/api/import/holdings");
+  }
+
+  /** 当前用户原始流水 (按时间倒序). 用于「我的持仓」页底部明细. */
+  listRawTrades(opts?: { limit?: number; offset?: number; code?: string }) {
+    const sp = new URLSearchParams();
+    if (opts?.limit !== undefined) sp.set("limit", String(opts.limit));
+    if (opts?.offset !== undefined) sp.set("offset", String(opts.offset));
+    if (opts?.code) sp.set("code", opts.code);
+    const qs = sp.toString();
+    return this.get<RawTradeListResp>(`/api/import/trades/raw${qs ? `?${qs}` : ""}`);
   }
 
   getTradeAiReview(days = 30, model = "deepseek-v3") {

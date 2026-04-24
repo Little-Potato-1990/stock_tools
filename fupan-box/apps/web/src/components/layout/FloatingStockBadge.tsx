@@ -4,11 +4,12 @@ import { useUIStore } from "@/stores/ui-store";
 import { Bot, Zap, Scale } from "lucide-react";
 
 /**
- * 右下角浮层堆栈 (从下往上):
- *   - Ai 副驾    (16px)
- *   - ⚡ 为什么涨 (80px)
- *   - ⚖️ 辩论    (122px)
- *   - 股票徽章   (164px)
+ * 右下角浮层堆栈 (从下往上, 间距 48px):
+ *   - 🤖 Ai 副驾  (16px)   永远显示, 由本组件管理
+ *   - 🔔 异动     (64px)   永远显示, 由 AnomalyBell 组件管理
+ *   - ⚡ 为什么涨 (112px)  仅 focused 时显示
+ *   - ⚖️ 辩论    (160px)  仅 focused 时显示
+ *   - 股票徽章    (208px)  仅 focused 时显示
  *
  * 任意右侧抽屉/弹层展开时隐藏浮层避免遮挡。
  */

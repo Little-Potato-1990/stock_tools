@@ -116,7 +116,7 @@ function SkillList({ onOpen }: { onOpen: (id: number | null) => void }) {
   const load = useCallback(async () => {
     try {
       const res = await api.listUserSkills(false);
-      setRows(res);
+      setRows(res?.items ?? []);
     } catch (e) {
       setErr(e instanceof Error ? e.message : "加载失败");
     }

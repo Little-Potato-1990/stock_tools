@@ -3,7 +3,6 @@
 import { Sidebar } from "./Sidebar";
 import { AiPanel } from "./AiPanel";
 import { FloatingStockBadge } from "./FloatingStockBadge";
-import { MyDigestFloating } from "./MyDigestFloating";
 import { DataStatusBar } from "./DataStatusBar";
 import { StockDetailDrawer } from "@/components/market/StockDetailDrawer";
 import { ThemeDetailDrawer } from "@/components/market/ThemeDetailDrawer";
@@ -13,6 +12,7 @@ import { AnomalyBell } from "@/components/market/AnomalyBell";
 import { AnomalyDrawer } from "@/components/market/AnomalyDrawer";
 import { LadderMatrixDrawer } from "@/components/market/LadderMatrixDrawer";
 import { CommandPalette } from "@/components/common/CommandPalette";
+import { ImportCenter } from "@/components/common/ImportCenter";
 import { useUIStore } from "@/stores/ui-store";
 
 export function MainLayout({ children }: { children: React.ReactNode }) {
@@ -34,7 +34,6 @@ export function MainLayout({ children }: { children: React.ReactNode }) {
 
       <FloatingStockBadge />
       <AnomalyBell />
-      <MyDigestFloating />
       <AnomalyDrawer />
       <LadderMatrixDrawer />
       <AiPanel />
@@ -43,6 +42,7 @@ export function MainLayout({ children }: { children: React.ReactNode }) {
       <WhyRoseModal />
       <DebateModal />
       <CommandPalette />
+      <ImportCenter />
     </div>
   );
 }

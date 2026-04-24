@@ -10,13 +10,13 @@ import {
   Newspaper,
   Star,
   Target,
-  Bot,
   Sparkles,
   Award,
   BookOpen,
   Wallet,
   Telescope,
   BrainCircuit,
+  Coins,
   type LucideIcon,
 } from "lucide-react";
 import { useUIStore, type NavModule } from "@/stores/ui-store";
@@ -100,8 +100,6 @@ function SectionTitle({
 export function Sidebar() {
   const activeModule = useUIStore((s) => s.activeModule);
   const setActiveModule = useUIStore((s) => s.setActiveModule);
-  const aiPanelOpen = useUIStore((s) => s.aiPanelOpen);
-  const toggleAi = useUIStore((s) => s.toggleAiPanel);
   const status = usePrivateStatus();
 
   const privateNav: PrivateNavItem[] = [
@@ -113,6 +111,17 @@ export function Sidebar() {
       hint: status?.watchlist.unlocked
         ? `${status.watchlist.count}`
         : "+ 加自选",
+    },
+    {
+      key: "my_holdings",
+      label: "我的持仓",
+      icon: Coins,
+      // 数据装入入口本身永远可见 (空状态会引导用户上传截图);
+      // 如果跟 trades unlocked 挂钩, 用户没有 trades 时点不进来就无法导入 = 死锁.
+      unlocked: true,
+      hint: status?.trades.unlocked
+        ? `${status.trades.count_total}`
+        : "+ 截图导入",
     },
     {
       key: "plans",
@@ -293,29 +302,11 @@ export function Sidebar() {
         {SETTINGS_NAV.map((item) => renderItem(item))}
       </nav>
 
-      {/* 用户中心 / AI 入口 (急速复盘的底部卡片样式) */}
+      {/* 底部: 数据健康度提示 (AI 副驾入口已移至右下角浮窗) */}
       <div
         className="px-3 py-2 space-y-2"
         style={{ borderTop: "1px solid var(--border-color)" }}
       >
-        <button
-          onClick={toggleAi}
-          className="w-full flex items-center justify-center gap-1.5 font-bold transition-colors"
-          style={{
-            padding: "7px 10px",
-            background: aiPanelOpen
-              ? "var(--accent-purple)"
-              : "rgba(139,92,246,0.14)",
-            color: aiPanelOpen ? "#fff" : "var(--accent-purple)",
-            border: "1px solid rgba(139,92,246,0.32)",
-            borderRadius: 4,
-            fontSize: "var(--font-sm)",
-          }}
-        >
-          <Bot size={14} />
-          AI 副驾
-        </button>
-
         <DataHealthChip />
       </div>
     </aside>

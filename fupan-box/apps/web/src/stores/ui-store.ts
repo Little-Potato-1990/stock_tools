@@ -20,6 +20,7 @@ export type NavModule =
   | "news"
   | "methodology"
   | "watchlist"
+  | "my_holdings"
   | "plans"
   | "ai_track"
   | "my_review"
