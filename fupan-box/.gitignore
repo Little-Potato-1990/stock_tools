@@ -41,6 +41,11 @@ logs/
 *.sqlite3
 *.dump
 
+# 本地 PostgreSQL 数据目录（11 GB，绝对不上 git）
+data/pgdata/
+data/**/postgresql.conf
+data/**/pg_hba.conf
+
 # Celery beat 运行时状态文件
 celerybeat-schedule
 celerybeat-schedule-*
