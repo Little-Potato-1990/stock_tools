@@ -275,6 +275,8 @@ export function OverviewBar({ aiHighlightFields = [] }: OverviewBarProps = {}) {
   const [days, setDays] = useState(PAGE_SIZE);
   const [hasMore, setHasMore] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
+  const [loaded, setLoaded] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const scrollerRef = useRef<HTMLDivElement | null>(null);
 
   const highlightSet = useMemo(
@@ -285,7 +287,6 @@ export function OverviewBar({ aiHighlightFields = [] }: OverviewBarProps = {}) {
   // 拉取数据 (随 days 增加而增加)
   useEffect(() => {
     let cancel = false;
-    if (days > PAGE_SIZE) setLoadingMore(true);
     Promise.all([
       api.getSnapshotRange("overview", days) as unknown as Promise<DaySnapshot[]>,
       api.getSnapshotRange("ladder", days) as unknown as Promise<LadderDay[]>,
@@ -302,12 +303,20 @@ export function OverviewBar({ aiHighlightFields = [] }: OverviewBarProps = {}) {
           };
         });
         setExtDays(merged);
+        setError(null);
         // 后端返回不足请求量, 说明数据库已耗尽
         if (overview.length < days) setHasMore(false);
       })
-      .catch(console.error)
+      .catch((e) => {
+        console.error(e);
+        if (cancel) return;
+        setError(e instanceof Error ? e.message : "加载失败");
+      })
       .finally(() => {
-        if (!cancel) setLoadingMore(false);
+        if (!cancel) {
+          setLoadingMore(false);
+          setLoaded(true);
+        }
       });
     return () => {
       cancel = true;
@@ -316,6 +325,7 @@ export function OverviewBar({ aiHighlightFields = [] }: OverviewBarProps = {}) {
 
   const triggerLoadMore = useCallback(() => {
     if (!hasMore || loadingMore) return;
+    setLoadingMore(true);
     setDays((d) => (d >= MAX_DAYS ? d : Math.min(d + PAGE_SIZE, MAX_DAYS)));
   }, [hasMore, loadingMore]);
 
@@ -361,13 +371,27 @@ export function OverviewBar({ aiHighlightFields = [] }: OverviewBarProps = {}) {
     return () => el.removeEventListener("wheel", onWheel);
   }, [triggerLoadMore]);
 
-  if (extDays.length === 0) {
+  if (!loaded) {
     return (
       <div className="px-3 py-2">
         <div
           className="h-72 animate-pulse"
           style={{ background: "var(--bg-card)" }}
         />
+      </div>
+    );
+  }
+  if (error) {
+    return (
+      <div className="px-3 py-8 text-center" style={{ color: "var(--text-muted)", fontSize: 12 }}>
+        交易明细加载失败：{error}
+      </div>
+    );
+  }
+  if (extDays.length === 0) {
+    return (
+      <div className="px-3 py-8 text-center" style={{ color: "var(--text-muted)", fontSize: 12 }}>
+        暂无交易明细数据
       </div>
     );
   }

@@ -29,18 +29,39 @@ interface Props {
 export function BoardGrid({ kind, heightExpr = "calc(100vh - 132px)" }: Props) {
   const [groups, setGroups] = useState<BoardGroup[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const openThemeDetail = useUIStore((s) => s.openThemeDetail);
+
+  const load = () => {
+    setLoading(true);
+    setError(null);
+    api
+      .getAllBoards(kind)
+      .then((res) => {
+        setGroups((res as { groups: BoardGroup[] }).groups || []);
+      })
+      .catch((e) => {
+        console.error(e);
+        setError(e instanceof Error ? e.message : "加载失败");
+        setGroups([]);
+      })
+      .finally(() => setLoading(false));
+  };
 
   useEffect(() => {
     let alive = true;
-    setLoading(true);
     api
       .getAllBoards(kind)
       .then((res) => {
         if (!alive) return;
-        setGroups((res as { groups: BoardGroup[] }).groups);
+        setGroups((res as { groups: BoardGroup[] }).groups || []);
       })
-      .catch(console.error)
+      .catch((e) => {
+        if (!alive) return;
+        console.error(e);
+        setError(e instanceof Error ? e.message : "加载失败");
+        setGroups([]);
+      })
       .finally(() => alive && setLoading(false));
     return () => {
       alive = false;
@@ -57,6 +78,51 @@ export function BoardGrid({ kind, heightExpr = "calc(100vh - 132px)" }: Props) {
             style={{ background: "var(--bg-card)" }}
           />
         ))}
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="px-4 py-8 text-center" style={{ color: "var(--text-muted)", fontSize: 12 }}>
+        <div>加载失败：{error}</div>
+        <button
+          onClick={load}
+          className="mt-3 rounded"
+          style={{
+            padding: "5px 10px",
+            fontSize: 11,
+            border: "1px solid var(--border-color)",
+            background: "var(--bg-card)",
+            color: "var(--text-secondary)",
+          }}
+        >
+          重试
+        </button>
+      </div>
+    );
+  }
+
+  if (groups.length === 0) {
+    return (
+      <div className="px-4 py-8 text-center" style={{ color: "var(--text-muted)", fontSize: 12 }}>
+        <div>暂无可用板块索引数据</div>
+        <div className="mt-1" style={{ fontSize: 11, opacity: 0.85 }}>
+          可能是外部数据源暂时不可用，稍后重试
+        </div>
+        <button
+          onClick={load}
+          className="mt-3 rounded"
+          style={{
+            padding: "5px 10px",
+            fontSize: 11,
+            border: "1px solid var(--border-color)",
+            background: "var(--bg-card)",
+            color: "var(--text-secondary)",
+          }}
+        >
+          重新加载
+        </button>
       </div>
     );
   }

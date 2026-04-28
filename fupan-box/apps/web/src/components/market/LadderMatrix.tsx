@@ -343,6 +343,8 @@ export function LadderMatrix({
   aiHighlightRowLabels = [],
 }: LadderMatrixProps = {}) {
   const [data, setData] = useState<DayLadder[]>([]);
+  const [loaded, setLoaded] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const highlightSet = useMemo(
     () => new Set(aiHighlightRowLabels),
     [aiHighlightRowLabels],
@@ -385,7 +387,6 @@ export function LadderMatrix({
 
   useEffect(() => {
     let cancel = false;
-    if (data.length > 0) setLoadingMore(true);
     Promise.all([
       api.getSnapshotRange("ladder", reqDays),
       api.getSnapshotRange("themes", reqDays),
@@ -413,15 +414,23 @@ export function LadderMatrix({
         setThemeConsByDate(cMap);
 
         if (ladderArr.length < reqDays) setHasMore(false);
+        setError(null);
       })
-      .catch(console.error)
+      .catch((e) => {
+        console.error(e);
+        if (cancel) return;
+        setError(e instanceof Error ? e.message : "加载失败");
+      })
       .finally(() => {
-        if (!cancel) setLoadingMore(false);
+        if (!cancel) {
+          setLoadingMore(false);
+          setLoaded(true);
+        }
       });
     return () => {
       cancel = true;
     };
-  }, [reqDays]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [reqDays]);
 
   // P1: 单独拉一次 ladder-brief, 把 key_stocks 索引到 stockCodeKey -> KeyStockAi
   // 后端 PG 缓存命中, 几乎瞬时. 失败时静默跳过, 不影响主网格.
@@ -448,6 +457,7 @@ export function LadderMatrix({
 
   const triggerLoadMore = useCallback(() => {
     if (!hasMore || loadingMore) return;
+    setLoadingMore(true);
     setReqDays((d) => (d >= MAX_DAYS ? d : Math.min(d + PAGE_SIZE, MAX_DAYS)));
   }, [hasMore, loadingMore]);
 
@@ -490,13 +500,27 @@ export function LadderMatrix({
     return () => el.removeEventListener("wheel", onWheel);
   }, [triggerLoadMore]);
 
-  if (data.length === 0) {
+  if (!loaded) {
     return (
       <div className="p-3">
         <div
           className="h-96 animate-pulse"
           style={{ background: "var(--bg-card)" }}
         />
+      </div>
+    );
+  }
+  if (error) {
+    return (
+      <div className="p-3 text-center" style={{ color: "var(--text-muted)", fontSize: 12 }}>
+        连板矩阵加载失败：{error}
+      </div>
+    );
+  }
+  if (data.length === 0) {
+    return (
+      <div className="p-3 text-center" style={{ color: "var(--text-muted)", fontSize: 12 }}>
+        暂无连板矩阵数据
       </div>
     );
   }

@@ -321,6 +321,30 @@ class ApiClient {
     return err;
   }
 
+  private extractErrorMessage(body: unknown, status: number): string {
+    const detail = (body as { detail?: unknown } | null | undefined)?.detail;
+    if (typeof detail === "string" && detail.trim()) return detail;
+    if (Array.isArray(detail)) {
+      const msgs = detail
+        .map((item) => {
+          if (typeof item === "string") return item;
+          if (item && typeof item === "object") {
+            const obj = item as { msg?: unknown; loc?: unknown };
+            const msg = typeof obj.msg === "string" ? obj.msg : "";
+            const loc = Array.isArray(obj.loc)
+              ? obj.loc.filter((v) => typeof v === "string" || typeof v === "number").join(".")
+              : "";
+            if (msg && loc) return `${loc}: ${msg}`;
+            if (msg) return msg;
+          }
+          return "";
+        })
+        .filter(Boolean);
+      if (msgs.length) return msgs.join("; ");
+    }
+    return `API error: ${status}`;
+  }
+
   /** 给原生 fetch / SSE 用 — 拼完整 URL */
   buildUrl(path: string): string {
     return `${API_BASE}${path}`;
@@ -387,7 +411,7 @@ class ApiClient {
           throw this.makeRateLimitError();
         }
         const body = await res.json().catch(() => ({}));
-        throw new Error(body.detail || `API error: ${res.status}`);
+        throw new Error(this.extractErrorMessage(body, res.status));
       }
       return res.json();
     };
@@ -426,7 +450,7 @@ class ApiClient {
       throw err;
     }
     const body = await res.json().catch(() => ({}));
-    throw new Error(body.detail || `API error: ${res.status}`);
+    throw new Error(this.extractErrorMessage(body, res.status));
   }
 
   get<T>(path: string, options?: RequestInit) {
@@ -468,7 +492,7 @@ class ApiClient {
     });
     if (!res.ok) {
       const body = await res.json().catch(() => ({}));
-      throw new Error(body.detail || "登录失败");
+      throw new Error(this.extractErrorMessage(body, res.status) || "登录失败");
     }
     const data = await res.json();
     this.token = data.access_token;
@@ -1590,15 +1614,46 @@ class ApiClient {
     if (opts?.refresh) sp.set("refresh", "1");
     if (opts?.skillRef) sp.set("skill_ref", opts.skillRef);
     const qs = sp.toString();
-    return this.get<{
-      stock_code: string;
-      trade_date: string;
-      perspectives: {
-        short: { headline: string; stance: string; evidence: string[] };
-        swing: { headline: string; stance: string; evidence: string[] };
-        long: { headline: string; stance: string; evidence: string[] };
+    return this.get<Record<string, unknown>>(`/api/ai/multi-perspective/${code}${qs ? `?${qs}` : ""}`).then((raw) => {
+      const obj = raw as Record<string, unknown>;
+      const existing = obj.perspectives as
+        | {
+            short?: { headline?: string; stance?: string; evidence?: string[] | string };
+            swing?: { headline?: string; stance?: string; evidence?: string[] | string };
+            long?: { headline?: string; stance?: string; evidence?: string[] | string };
+          }
+        | undefined;
+      const shortTerm = (obj.short_term ?? existing?.short ?? {}) as Record<string, unknown>;
+      const swing = (obj.swing ?? existing?.swing ?? {}) as Record<string, unknown>;
+      const longTerm = (obj.long_term ?? existing?.long ?? {}) as Record<string, unknown>;
+      const normalizeEvidence = (v: unknown): string[] => {
+        if (Array.isArray(v)) return v.filter((x): x is string => typeof x === "string");
+        if (typeof v === "string" && v.trim()) return [v.trim()];
+        return [];
       };
-    }>(`/api/ai/multi-perspective/${code}${qs ? `?${qs}` : ""}`);
+      return {
+        ...obj,
+        stock_code: (obj.stock_code as string) || (obj.code as string) || code,
+        trade_date: (obj.trade_date as string) || "",
+        perspectives: {
+          short: {
+            headline: (shortTerm.headline as string) || "短线暂无结论",
+            stance: (shortTerm.stance as string) || "观望",
+            evidence: normalizeEvidence(shortTerm.evidence),
+          },
+          swing: {
+            headline: (swing.headline as string) || "波段暂无结论",
+            stance: (swing.stance as string) || "震荡",
+            evidence: normalizeEvidence(swing.evidence),
+          },
+          long: {
+            headline: (longTerm.headline as string) || "长线暂无结论",
+            stance: (longTerm.stance as string) || "中性",
+            evidence: normalizeEvidence(longTerm.evidence),
+          },
+        },
+      };
+    });
   }
 
   /** 波段 brief */

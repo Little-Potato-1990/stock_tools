@@ -33,6 +33,7 @@ export function WatchlistPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [authError, setAuthError] = useState("");
+  const [authSubmitting, setAuthSubmitting] = useState(false);
 
   const [addCode, setAddCode] = useState("");
   const [addNote, setAddNote] = useState("");
@@ -68,12 +69,25 @@ export function WatchlistPage() {
   }, [loggedIn, fetchList]);
 
   const handleAuth = async () => {
+    if (authSubmitting) return;
     setAuthError("");
+    const u = username.trim();
+    const e = email.trim();
+    const p = password.trim();
+    if (!u || !p) {
+      setAuthError("请先填写用户名和密码");
+      return;
+    }
+    if (authMode === "register" && !e) {
+      setAuthError("注册需要填写邮箱");
+      return;
+    }
     try {
+      setAuthSubmitting(true);
       if (authMode === "register") {
-        await api.register(username, email, password);
+        await api.register(u, e, p);
       } else {
-        await api.login(username, password);
+        await api.login(u, p);
       }
       setLoggedIn(true);
       setUsername("");
@@ -81,6 +95,8 @@ export function WatchlistPage() {
       setEmail("");
     } catch (e: unknown) {
       setAuthError(e instanceof Error ? e.message : "操作失败");
+    } finally {
+      setAuthSubmitting(false);
     }
   };
 
@@ -147,9 +163,19 @@ export function WatchlistPage() {
           <button
             onClick={handleAuth}
             className="w-full mt-4 py-2 rounded-lg text-sm font-medium flex items-center justify-center gap-2"
-            style={{ background: "var(--accent-purple)", color: "white" }}
+            disabled={authSubmitting}
+            style={{
+              background: "var(--accent-purple)",
+              color: "white",
+              opacity: authSubmitting ? 0.7 : 1,
+              cursor: authSubmitting ? "not-allowed" : "pointer",
+            }}
           >
-            {authMode === "login" ? <><LogIn size={14} />登录</> : <><UserPlus size={14} />注册并登录</>}
+            {authSubmitting
+              ? "提交中..."
+              : authMode === "login"
+              ? <><LogIn size={14} />登录</>
+              : <><UserPlus size={14} />注册并登录</>}
           </button>
 
           <button

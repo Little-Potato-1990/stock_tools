@@ -109,6 +109,8 @@ function ChartCard({
 
 export function SentimentChart() {
   const [data, setData] = useState<SentimentRow[]>([]);
+  const [error, setError] = useState<string | null>(null);
+  const [loaded, setLoaded] = useState(false);
   // P1: 5 张高级图表默认折叠, 减少视觉噪音
   const [advancedOpen, setAdvancedOpen] = useState(false);
 
@@ -118,11 +120,16 @@ export function SentimentChart() {
       .then((res) => {
         // 后端返回按 trade_date desc (最新在前), 与上方表格保持一致 -> 不反转
         setData(res as unknown as SentimentRow[]);
+        setError(null);
       })
-      .catch(console.error);
+      .catch((e) => {
+        console.error(e);
+        setError(e instanceof Error ? e.message : "加载失败");
+      })
+      .finally(() => setLoaded(true));
   }, []);
 
-  if (data.length === 0) {
+  if (!loaded) {
     return (
       <div className="px-3 py-3 space-y-2">
         {[1, 2, 3].map((i) => (
@@ -132,6 +139,20 @@ export function SentimentChart() {
             style={{ background: "var(--bg-card)" }}
           />
         ))}
+      </div>
+    );
+  }
+  if (error) {
+    return (
+      <div className="px-3 py-8 text-center" style={{ color: "var(--text-muted)", fontSize: 12 }}>
+        情绪图加载失败：{error}
+      </div>
+    );
+  }
+  if (data.length === 0) {
+    return (
+      <div className="px-3 py-8 text-center" style={{ color: "var(--text-muted)", fontSize: 12 }}>
+        暂无情绪数据
       </div>
     );
   }

@@ -247,6 +247,7 @@ export function ThemesPage() {
   const [reqDays, setReqDays] = useState(PAGE_SIZE);
   const [hasMore, setHasMore] = useState(true);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [loadingMore, setLoadingMore] = useState(false);
   const scrollerRef = useRef<HTMLDivElement | null>(null);
   const openThemeDetail = useUIStore((s) => s.openThemeDetail);
@@ -287,8 +288,6 @@ export function ThemesPage() {
   const highlightKind = highlight ? ANCHOR_TO_KIND[highlight] : null;
 
   useEffect(() => {
-    if (days.length > 0) setLoadingMore(true);
-    else setLoading(true);
     let cancel = false;
     api
       .getSnapshotRange("industries", reqDays)
@@ -302,8 +301,13 @@ export function ThemesPage() {
         setIndustriesByDate(iMap);
         setDays(arr.map((r) => ({ trade_date: r.trade_date })));
         if (arr.length < reqDays) setHasMore(false);
+        setLoadError(null);
       })
-      .catch(console.error)
+      .catch((e) => {
+        console.error(e);
+        if (cancel) return;
+        setLoadError(e instanceof Error ? e.message : "加载失败");
+      })
       .finally(() => {
         if (cancel) return;
         setLoading(false);
@@ -312,15 +316,17 @@ export function ThemesPage() {
     return () => {
       cancel = true;
     };
-  }, [reqDays]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [reqDays]);
 
   const loadMore7 = useCallback(() => {
     if (!hasMore || loadingMore) return;
+    setLoadingMore(true);
     setReqDays((d) => Math.min(d + PAGE_SIZE, MAX_DAYS));
   }, [hasMore, loadingMore]);
 
   const loadAll60 = useCallback(() => {
     if (!hasMore || loadingMore) return;
+    setLoadingMore(true);
     setReqDays(MAX_DAYS);
   }, [hasMore, loadingMore]);
 
@@ -426,6 +432,13 @@ export function ThemesPage() {
               style={{ background: "var(--bg-card)" }}
             />
           ))}
+        </div>
+      ) : loadError ? (
+        <div
+          className="px-3 py-8 text-center"
+          style={{ color: "var(--text-muted)", fontSize: 12 }}
+        >
+          题材热度加载失败：{loadError}
         </div>
       ) : days.length === 0 ? (
         <div

@@ -359,6 +359,7 @@ function SystemCard({
 
 function FoundationsView({ onOpen }: { onOpen: (slug: string) => void }) {
   const [subcats, setSubcats] = useState<MethodologyFoundationSubcatStat[]>([]);
+  const [subcatError, setSubcatError] = useState<string | null>(null);
   const [items, setItems] = useState<MethodologyMeta[]>([]);
   const [activeSubcat, setActiveSubcat] = useState<string>("");
   const [q, setQ] = useState("");
@@ -369,9 +370,15 @@ function FoundationsView({ onOpen }: { onOpen: (slug: string) => void }) {
     api
       .getMethodologyFoundations()
       .then((res) => {
-        if (alive) setSubcats(res.subcategories);
+        if (!alive) return;
+        setSubcats(res.subcategories);
+        setSubcatError(null);
       })
-      .catch(() => {});
+      .catch((e) => {
+        if (!alive) return;
+        setSubcats([]);
+        setSubcatError(e instanceof Error ? e.message : "分类加载失败");
+      });
     return () => {
       alive = false;
     };
@@ -413,6 +420,14 @@ function FoundationsView({ onOpen }: { onOpen: (slug: string) => void }) {
         }}
       >
         <SectionLabel>子分类</SectionLabel>
+        {subcatError && (
+          <div
+            className="px-1.5 pb-2"
+            style={{ fontSize: 10, color: "var(--accent-orange)" }}
+          >
+            子分类加载失败：{subcatError}
+          </div>
+        )}
         <SubcatBtn
           label="全部"
           count={totalCount}

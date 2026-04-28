@@ -36,6 +36,7 @@ const PUBLIC_NAV: NavItem[] = [
   { key: "sentiment", label: "大盘情绪", icon: Activity },
   { key: "themes", label: "题材追踪", icon: Layers },
   { key: "capital", label: "资金风向标", icon: DollarSign },
+  { key: "ai_track", label: "AI 战绩", icon: Award, badge: "AI" },
   { key: "midlong", label: "个股深度", icon: SearchIcon, badge: "AI" },
   { key: "lhb", label: "龙虎榜分析", icon: Trophy },
   { key: "news", label: "财经要闻", icon: Newspaper },
@@ -144,16 +145,6 @@ export function Sidebar() {
       hint: status?.trades.unlocked
         ? `7日 ${status.trades.count_7d}`
         : "+ 记交易",
-    },
-    {
-      key: "ai_track",
-      label: "AI 战绩",
-      icon: Award,
-      badge: "AI",
-      unlocked: status?.ai_track.unlocked ?? false,
-      hint: status?.ai_track.unlocked
-        ? `已验 ${status.ai_track.verified_7d}`
-        : "待累计",
     },
     {
       key: "skills",
@@ -295,7 +286,16 @@ export function Sidebar() {
       {/* 主导航: 三分区 */}
       <nav className="flex-1 overflow-y-auto py-2">
         <SectionTitle>公共复盘</SectionTitle>
-        {PUBLIC_NAV.map((item) => renderItem(item))}
+        {PUBLIC_NAV.map((item) =>
+          item.key === "ai_track"
+            ? renderItem(item, {
+                unlocked: true,
+                hint: status?.ai_track.unlocked
+                  ? `已验 ${status.ai_track.verified_7d}`
+                  : "待累计",
+              })
+            : renderItem(item)
+        )}
 
         <SectionTitle hint="登录可解锁个性化">可选增强</SectionTitle>
         {privateNav.map((item) =>

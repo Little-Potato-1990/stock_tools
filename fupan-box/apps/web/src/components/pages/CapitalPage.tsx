@@ -122,6 +122,17 @@ function EmptyHint({ text }: { text: string }) {
   );
 }
 
+function ErrorHint({ text }: { text: string }) {
+  return (
+    <div
+      className="px-3 py-6 text-center"
+      style={{ fontSize: "var(--font-sm)", color: "var(--accent-orange)" }}
+    >
+      {text}
+    </div>
+  );
+}
+
 // === Tab: Overview (CapitalAiCard + summary) ===
 type CapitalSummary = {
   trade_date: string | null;
@@ -261,16 +272,21 @@ function TabNorth() {
   const [series, setSeries] = useState<Array<Record<string, unknown>>>([]);
   const [holds, setHolds] = useState<Array<Record<string, unknown>>>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   useEffect(() => {
     Promise.all([api.getCapitalNorth(30), api.getCapitalNorthHolds(undefined, 50)])
       .then(([n, h]) => {
         setSeries(n.items ?? []);
         setHolds(h.items ?? []);
+        setError(null);
       })
-      .catch(() => {})
+      .catch((e) => {
+        setError(e instanceof Error ? e.message : "加载失败");
+      })
       .finally(() => setLoading(false));
   }, []);
   if (loading) return <Loading />;
+  if (error) return <ErrorHint text={`北向数据加载失败：${error}`} />;
   return (
     <div>
       <Section title="北向资金近 30 日净流入" desc="HSGT / 沪股通 + 深股通合计">
@@ -351,13 +367,20 @@ function FlowRankList({
 }) {
   const [items, setItems] = useState<Array<Record<string, unknown>>>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   useEffect(() => {
     loader()
-      .then((d) => setItems(d.items ?? []))
-      .catch(() => {})
+      .then((d) => {
+        setItems(d.items ?? []);
+        setError(null);
+      })
+      .catch((e) => {
+        setError(e instanceof Error ? e.message : "加载失败");
+      })
       .finally(() => setLoading(false));
   }, [loader]);
   if (loading) return <Loading />;
+  if (error) return <ErrorHint text={`${emptyText}（接口异常：${error}）`} />;
   if (items.length === 0) return <EmptyHint text={emptyText} />;
   return (
     <div className="px-3 overflow-x-auto">
@@ -415,11 +438,17 @@ function TabStock() {
   const [direction, setDirection] = useState<"inflow" | "outflow">("inflow");
   const [items, setItems] = useState<Array<Record<string, unknown>>>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   useEffect(() => {
-    setLoading(true);
     api.getCapitalStockRank(undefined, 50, direction)
-      .then((d) => setItems(d.items ?? []))
-      .catch(() => setItems([]))
+      .then((d) => {
+        setItems(d.items ?? []);
+        setError(null);
+      })
+      .catch((e) => {
+        setItems([]);
+        setError(e instanceof Error ? e.message : "加载失败");
+      })
       .finally(() => setLoading(false));
   }, [direction]);
   return (
@@ -428,7 +457,11 @@ function TabStock() {
         {(["inflow", "outflow"] as const).map((d) => (
           <button
             key={d}
-            onClick={() => setDirection(d)}
+            onClick={() => {
+              if (d === direction) return;
+              setLoading(true);
+              setDirection(d);
+            }}
             className="px-2 py-1"
             style={{
               fontSize: "var(--font-xs)",
@@ -442,7 +475,7 @@ function TabStock() {
           </button>
         ))}
       </div>
-      {loading ? <Loading /> : items.length === 0 ? <EmptyHint text="暂无个股资金数据" /> : (
+      {loading ? <Loading /> : error ? <ErrorHint text={`个股资金加载失败：${error}`} /> : items.length === 0 ? <EmptyHint text="暂无个股资金数据" /> : (
         <div className="px-3 overflow-x-auto">
           <table className="w-full" style={{ fontSize: "var(--font-xs)" }}>
             <thead>
@@ -479,16 +512,22 @@ function TabStock() {
 function TabLimit() {
   const [items, setItems] = useState<Array<Record<string, unknown>>>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   useEffect(() => {
-    setLoading(true);
     api.getCapitalLimitOrder()
-      .then((d) => setItems(d.items ?? []))
-      .catch(() => setItems([]))
+      .then((d) => {
+        setItems(d.items ?? []);
+        setError(null);
+      })
+      .catch((e) => {
+        setItems([]);
+        setError(e instanceof Error ? e.message : "加载失败");
+      })
       .finally(() => setLoading(false));
   }, []);
   return (
     <Section title="涨停封单金额聚合" desc="按题材 + 行业混合归集, 反映场外资金空军">
-      {loading ? <Loading /> : items.length === 0 ? <EmptyHint text="暂无封单数据 (需 daily pipeline 完成)" /> : (
+      {loading ? <Loading /> : error ? <ErrorHint text={`封单数据加载失败：${error}`} /> : items.length === 0 ? <EmptyHint text="暂无封单数据 (需 daily pipeline 完成)" /> : (
         <div className="px-3 overflow-x-auto">
           <table className="w-full" style={{ fontSize: "var(--font-xs)" }}>
             <thead>
@@ -527,11 +566,17 @@ function TabEtf() {
   const [category, setCategory] = useState<string | undefined>(undefined);
   const [items, setItems] = useState<Array<Record<string, unknown>>>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   useEffect(() => {
-    setLoading(true);
     api.getCapitalEtf(undefined, category)
-      .then((d) => setItems(d.items ?? []))
-      .catch(() => setItems([]))
+      .then((d) => {
+        setItems(d.items ?? []);
+        setError(null);
+      })
+      .catch((e) => {
+        setItems([]);
+        setError(e instanceof Error ? e.message : "加载失败");
+      })
       .finally(() => setLoading(false));
   }, [category]);
   const cats: Array<{ k: string | undefined; label: string }> = [
@@ -546,7 +591,11 @@ function TabEtf() {
         {cats.map((c) => (
           <button
             key={String(c.k)}
-            onClick={() => setCategory(c.k)}
+            onClick={() => {
+              if (category === c.k) return;
+              setLoading(true);
+              setCategory(c.k);
+            }}
             className="px-2 py-1"
             style={{
               fontSize: "var(--font-xs)",
@@ -560,7 +609,7 @@ function TabEtf() {
           </button>
         ))}
       </div>
-      {loading ? <Loading /> : items.length === 0 ? <EmptyHint text="暂无 ETF 数据" /> : (
+      {loading ? <Loading /> : error ? <ErrorHint text={`ETF 数据加载失败：${error}`} /> : items.length === 0 ? <EmptyHint text="暂无 ETF 数据" /> : (
         <div className="px-3 overflow-x-auto">
           <table className="w-full" style={{ fontSize: "var(--font-xs)" }}>
             <thead>
@@ -599,11 +648,17 @@ function TabAnnounce() {
   const [eventType, setEventType] = useState<string | undefined>(undefined);
   const [items, setItems] = useState<Array<Record<string, unknown>>>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   useEffect(() => {
-    setLoading(true);
     api.getCapitalAnnounce(eventType, 14, 100)
-      .then((d) => setItems(d.items ?? []))
-      .catch(() => setItems([]))
+      .then((d) => {
+        setItems(d.items ?? []);
+        setError(null);
+      })
+      .catch((e) => {
+        setItems([]);
+        setError(e instanceof Error ? e.message : "加载失败");
+      })
       .finally(() => setLoading(false));
   }, [eventType]);
   const types: Array<{ k: string | undefined; label: string }> = [
@@ -619,7 +674,11 @@ function TabAnnounce() {
         {types.map((c) => (
           <button
             key={String(c.k)}
-            onClick={() => setEventType(c.k)}
+            onClick={() => {
+              if (eventType === c.k) return;
+              setLoading(true);
+              setEventType(c.k);
+            }}
             className="px-2 py-1"
             style={{
               fontSize: "var(--font-xs)",
@@ -633,7 +692,7 @@ function TabAnnounce() {
           </button>
         ))}
       </div>
-      {loading ? <Loading /> : items.length === 0 ? <EmptyHint text="暂无公告事件" /> : (
+      {loading ? <Loading /> : error ? <ErrorHint text={`公告事件加载失败：${error}`} /> : items.length === 0 ? <EmptyHint text="暂无公告事件" /> : (
         <div className="px-3 overflow-x-auto">
           <table className="w-full" style={{ fontSize: "var(--font-xs)" }}>
             <thead>

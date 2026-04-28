@@ -120,6 +120,7 @@ export function AiPanel() {
     },
   ]);
   const [models, setModels] = useState<ModelInfo[]>([]);
+  const [modelLoadError, setModelLoadError] = useState<string | null>(null);
   const [showModelPicker, setShowModelPicker] = useState(false);
   const [loggedIn, setLoggedIn] = useState(false);
 
@@ -154,7 +155,14 @@ export function AiPanel() {
   useEffect(() => {
     if (!open) return;
     if (models.length > 0) return;
-    api.getAiModels().then(setModels).catch(() => {});
+    api.getAiModels()
+      .then((res) => {
+        setModels(res);
+        setModelLoadError(null);
+      })
+      .catch((e) => {
+        setModelLoadError(e instanceof Error ? e.message : "模型列表加载失败");
+      });
   }, [open, models.length]);
 
   useEffect(() => {
@@ -538,6 +546,14 @@ export function AiPanel() {
                 boxShadow: "0 8px 24px rgba(0,0,0,0.5)",
               }}
             >
+              {models.length === 0 && modelLoadError && (
+                <div
+                  className="px-3 py-2"
+                  style={{ color: "var(--accent-orange)", fontSize: "var(--font-xs)" }}
+                >
+                  {modelLoadError}
+                </div>
+              )}
               {Object.entries(groupedModels).map(([provider, items]) => (
                 <div key={provider}>
                   <div

@@ -603,6 +603,7 @@ async def get_stock_detail(
 @router.get("/all-boards")
 async def get_all_boards(
     kind: str = Query("concept", regex="^(concept|industry)$"),
+    db: AsyncSession = Depends(get_db),
 ):
     """返回所有概念/行业板块，按首字符分组用于"概念分类/行业分类"页面。
 
@@ -634,6 +635,36 @@ async def get_all_boards(
             return []
 
     boards = _fetch(primary) or _fetch(fallback)
+
+    # 外部源不可用时, 回退到本地快照(仅含 top/bottom, 但至少页面有可浏览内容)
+    if not boards:
+        snap_type = "themes" if kind == "concept" else "industries"
+        snap_row = (
+            await db.execute(
+                select(DailySnapshot)
+                .where(DailySnapshot.snapshot_type == snap_type)
+                .order_by(DailySnapshot.trade_date.desc())
+                .limit(1)
+            )
+        ).scalar_one_or_none()
+        if snap_row and isinstance(snap_row.data, dict):
+            merged: dict[str, dict] = {}
+            for bucket in ("top", "bottom"):
+                arr = snap_row.data.get(bucket) or []
+                if not isinstance(arr, list):
+                    continue
+                for it in arr:
+                    if not isinstance(it, dict):
+                        continue
+                    name = str(it.get("name") or "").strip()
+                    if not name:
+                        continue
+                    merged[name] = {
+                        "name": name,
+                        "code": str(it.get("code") or ""),
+                        "change_pct": float(it.get("change_pct") or 0),
+                    }
+            boards = list(merged.values())
 
     def _bucket(name: str) -> str:
         if not name:
