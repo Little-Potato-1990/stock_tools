@@ -43,6 +43,7 @@ const KIND_META: Record<
 const KIND_ORDER = ["regime", "tilt", "promotion", "first_board", "avoid"];
 
 export function AiTrackPage() {
+  const [loggedIn, setLoggedIn] = useState(false);
   const [mode, setMode] = useState<Mode>("hit_rate");
   const [stats, setStats] = useState<Stats | null>(null);
   const [loading, setLoading] = useState(false);
@@ -54,7 +55,13 @@ export function AiTrackPage() {
   const openStockDetail = useUIStore((s) => s.openStockDetail);
   const openWhyRose = useUIStore((s) => s.openWhyRose);
 
+  useEffect(() => {
+    api.restoreToken();
+    setLoggedIn(api.isLoggedIn());
+  }, []);
+
   const loadDiagnosis = useCallback(async () => {
+    if (!api.isLoggedIn()) return;
     setDiagLoading(true);
     try {
       const d = await api.getAiTrackDiagnosis(days);
@@ -71,6 +78,7 @@ export function AiTrackPage() {
   }, [mode, diag, loadDiagnosis]);
 
   const load = useCallback(async () => {
+    if (!api.isLoggedIn()) return;
     setLoading(true);
     try {
       const d = await api.getAiTrackStats(days);
@@ -83,8 +91,10 @@ export function AiTrackPage() {
   }, [days]);
 
   useEffect(() => {
-    load();
-  }, [load]);
+    if (loggedIn) {
+      void load();
+    }
+  }, [load, loggedIn]);
 
   const handleVerify = async () => {
     setVerifying(true);
@@ -112,6 +122,41 @@ export function AiTrackPage() {
       : overallRate >= 0.35
       ? "var(--accent-orange)"
       : "var(--accent-green)";
+
+  if (!loggedIn) {
+    return (
+      <div>
+        <div
+          className="px-3 py-2"
+          style={{
+            borderBottom: "1px solid var(--border-color)",
+            background: "var(--bg-secondary)",
+          }}
+        >
+          <span className="font-bold" style={{ fontSize: "var(--font-md)", color: "var(--text-primary)" }}>
+            AI 战绩看板
+          </span>
+        </div>
+        <div className="flex items-center justify-center" style={{ minHeight: "60vh", pointerEvents: "none" }}>
+          <div
+            className="w-full max-w-sm p-6 rounded-xl text-center"
+            style={{
+              background: "var(--bg-card)",
+              border: "1px solid var(--border-color)",
+              color: "var(--text-secondary)",
+              fontSize: "var(--font-md)",
+            }}
+          >
+            <Sparkles size={28} style={{ color: "var(--accent-purple)" }} className="mx-auto mb-3" />
+            <p className="mb-2">登录后查看 AI 预测命中率与策略诊断</p>
+            <p style={{ color: "var(--text-muted)", fontSize: "var(--font-xs)" }}>
+              请先到「我的自选」登录
+            </p>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div>

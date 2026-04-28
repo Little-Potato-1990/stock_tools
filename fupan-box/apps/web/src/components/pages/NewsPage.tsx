@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, useEffect, useMemo, useRef } from "react";
-import { Newspaper, RefreshCw, Star, TrendingUp, TrendingDown, Minus, Sparkles, Filter, Zap, Search, X as XIcon, Globe, ArrowRight } from "lucide-react";
+import { memo, useCallback, useState, useEffect, useMemo, useRef } from "react";
+import { Newspaper, RefreshCw, Sparkles, Filter, Search, X as XIcon, Globe, ArrowRight } from "lucide-react";
 import { api } from "@/lib/api";
 import { useUIStore } from "@/stores/ui-store";
 import { PageHeader } from "@/components/layout/PageHeader";
@@ -12,6 +12,10 @@ import {
   type NewsBriefThread,
   type NewsBriefBucket,
 } from "@/components/market/NewsAiCard";
+import {
+  NewsItemCard,
+  newsItemKey,
+} from "@/components/pages/NewsItemCard";
 
 type NewsItem = Awaited<ReturnType<typeof api.getNews>>[number];
 
@@ -37,35 +41,20 @@ interface BucketFocus {
 }
 type Focus = ThreadFocus | BucketFocus | null;
 
+type NewsCounts = {
+  all: number;
+  important: number;
+  watch: number;
+  bullish: number;
+  bearish: number;
+};
+
 function filtToAnchor(f: Filt): NewsDialAnchor | null {
   if (f === "all") return "total";
   if (f === "important") return "important";
   if (f === "watch") return "watch";
   if (f === "bullish" || f === "bearish") return "net_sentiment";
   return null;
-}
-
-const SENTIMENT_META: Record<NonNullable<NewsItem["sentiment"]>, { label: string; color: string; icon: typeof TrendingUp }> = {
-  bullish: { label: "利好", color: "var(--accent-red)", icon: TrendingUp },
-  bearish: { label: "利空", color: "var(--accent-green)", icon: TrendingDown },
-  neutral: { label: "中性", color: "var(--text-muted)", icon: Minus },
-};
-
-function ImportanceStars({ value }: { value: number }) {
-  const v = Math.max(0, Math.min(5, value));
-  return (
-    <span className="inline-flex items-center" title={`重要级 ${v}/5`}>
-      {Array.from({ length: 5 }).map((_, i) => (
-        <Star
-          key={i}
-          size={9}
-          fill={i < v ? "var(--accent-orange)" : "transparent"}
-          stroke={i < v ? "var(--accent-orange)" : "var(--border-color)"}
-          strokeWidth={1.5}
-        />
-      ))}
-    </span>
-  );
 }
 
 export function NewsPage() {
@@ -81,37 +70,54 @@ export function NewsPage() {
   const [briefStreaming, setBriefStreaming] = useState<string>("");
   const [focus, setFocus] = useState<Focus>(null);
   const sseRef = useRef<EventSource | null>(null);
+  const firstNewsLoadDoneRef = useRef(false);
+  const [renderCount, setRenderCount] = useState(20);
+  const loadMoreRef = useRef<HTMLDivElement | null>(null);
+  const DEV_NEWS_PERF = process.env.NODE_ENV !== "production";
+  const perfRunIdRef = useRef(0);
 
   const openThemeDetail = useUIStore((s) => s.openThemeDetail);
   const openStockDetail = useUIStore((s) => s.openStockDetail);
   const askAI = useUIStore((s) => s.askAI);
 
-  const fetchNews = async (refresh = false) => {
-    setLoading(true);
+  const fetchNews = async (refresh = false, watchOverride?: Set<string>, signal?: AbortSignal) => {
+    if (!firstNewsLoadDoneRef.current || refresh) {
+      setLoading(true);
+    }
     try {
-      const watchCsv = watch.size > 0 ? Array.from(watch).join(",") : undefined;
+      const watchSet = watchOverride ?? watch;
+      const watchCsv = watchSet.size > 0 ? Array.from(watchSet).join(",") : undefined;
       const res = await api.getNews(80, true, {
         hours: 24,
         sort: "smart",
         watch: watchCsv,
         impact_horizon: horizon || undefined,
-      });
+      }, { signal });
       setNews(res);
-    } catch (e) {
+    } catch (e: unknown) {
+      if (e instanceof DOMException && e.name === "AbortError") return;
       console.error(e);
     } finally {
+      firstNewsLoadDoneRef.current = true;
       setLoading(false);
     }
     void refresh;
   };
 
   const fetchBrief = async (refresh = false) => {
+    if (!api.isLoggedIn()) {
+      setBrief(null);
+      setBriefStreaming("");
+      return;
+    }
     setBriefLoading(true);
     try {
       const b = await api.getNewsBrief({ hours: 24, refresh });
       setBrief(b);
     } catch (e) {
-      console.error("[news-brief]", e);
+      // 匿名态/弱网都允许降级为仅新闻流，不冒泡到错误层。
+      console.warn("[news-brief] fallback to news-only mode", e);
+      setBrief(null);
     } finally {
       setBriefLoading(false);
     }
@@ -212,36 +218,76 @@ export function NewsPage() {
     }
   }, [focusId, news]);
 
-  // 1) 首屏加载: brief + 自选 (新闻在 watch 就位后再拉, 走 sort=smart)
+  // 1) 首屏加载:
+  // - 登录态: 先拿 watchlist, 再按命中排序拉新闻, 避免首屏后二次重排.
+  // - 匿名态: 直接拉新闻.
   useEffect(() => {
-    fetchBrief();
-    if (api.isLoggedIn()) {
-      api.getWatchlist()
-        .then((rows) => setWatch(new Set(rows.map((r) => r.stock_code))))
-        .catch(() => setWatch(new Set()));
-    } else {
-      setWatch(new Set());  // 触发 fetchNews
+    const loggedIn = api.isLoggedIn();
+    const controller = new AbortController();
+    let newsTimer: ReturnType<typeof setTimeout> | null = null;
+    if (!loggedIn) {
+      newsTimer = setTimeout(() => {
+        void fetchNews(false, new Set(), controller.signal);
+      }, 0);
+    }
+
+    let briefTimer: ReturnType<typeof setTimeout> | null = null;
+    const runBriefIfVisible = () => {
+      if (typeof document !== "undefined" && document.visibilityState !== "visible") return;
+      void fetchBrief();
+    };
+    briefTimer = setTimeout(runBriefIfVisible, 300);
+    const onVisible = () => {
+      runBriefIfVisible();
+      if (typeof document !== "undefined") {
+        document.removeEventListener("visibilitychange", onVisible);
+      }
+      if (briefTimer) {
+        clearTimeout(briefTimer);
+        briefTimer = null;
+      }
+    };
+    if (typeof document !== "undefined") {
+      document.addEventListener("visibilitychange", onVisible);
+    }
+
+    if (loggedIn) {
+      api.getWatchlist({ signal: controller.signal })
+        .then((rows) => {
+          const next = new Set(rows.map((r) => r.stock_code));
+          setWatch(next);
+          void fetchNews(false, next, controller.signal);
+        })
+        .catch((e: unknown) => {
+          if (e instanceof DOMException && e.name === "AbortError") return;
+          const empty = new Set<string>();
+          setWatch(empty);
+          void fetchNews(false, empty, controller.signal);
+        });
     }
     return () => {
+      controller.abort();
+      if (newsTimer) clearTimeout(newsTimer);
+      if (briefTimer) clearTimeout(briefTimer);
+      if (typeof document !== "undefined") {
+        document.removeEventListener("visibilitychange", onVisible);
+      }
       if (sseRef.current) {
         try { sseRef.current.close(); } catch { /* noop */ }
         sseRef.current = null;
       }
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // 2) 自选就位 → 拉新闻 (含 smart ranking)
-  // watch 是 Set, 用 size+JSON 串触发依赖
-  const watchKey = useMemo(() => Array.from(watch).sort().join(","), [watch]);
-  const watchInitedRef = useRef(false);
+  // 2) 视角过滤变化时，基于当前自选集合刷新新闻。
   useEffect(() => {
-    if (!watchInitedRef.current) {
-      // 第一次 watch 设置 (即使是空 set 也算就位) 后, 才 fetchNews
-      watchInitedRef.current = true;
-    }
-    fetchNews();
+    if (!firstNewsLoadDoneRef.current) return;
+    const controller = new AbortController();
+    void fetchNews(false, undefined, controller.signal);
+    return () => controller.abort();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [watchKey, horizon]);
+  }, [horizon]);
 
   const handleRefresh = async () => {
     startStream();             // 先启 SSE 拉打字机 headline
@@ -251,15 +297,22 @@ export function NewsPage() {
   const decorated = useMemo(() => {
     const base = searchResults != null ? searchResults : news;
     return base.map((it) => {
-      const watchHit = (it.rel_codes || []).some((c) => watch.has(c));
-      return { ...it, _watchHit: watchHit };
+      const watchCodes = new Set((it.rel_codes || []).filter((c) => watch.has(c)));
+      return { ...it, _watchHit: watchCodes.size > 0, _watchCodes: watchCodes };
     });
   }, [news, searchResults, watch]);
+
+  const sortedDecorated = useMemo(() => {
+    return decorated.slice().sort((a, b) => {
+      if (a._watchHit !== b._watchHit) return a._watchHit ? -1 : 1;
+      return (b.importance || 0) - (a.importance || 0);
+    });
+  }, [decorated]);
 
   const filtered = useMemo(() => {
     // 检索模式: 按相关度 (后端返回顺序), 跳过本地 filt/focus
     if (searchResults != null) return decorated;
-    let arr = decorated;
+    let arr = sortedDecorated;
     if (focus) {
       arr = arr.filter((it) => it.id != null && focus.ids.has(it.id as number));
     } else {
@@ -268,25 +321,52 @@ export function NewsPage() {
       else if (filt === "bullish") arr = arr.filter((it) => it.sentiment === "bullish");
       else if (filt === "bearish") arr = arr.filter((it) => it.sentiment === "bearish");
     }
-    return arr.slice().sort((a, b) => {
-      if (a._watchHit !== b._watchHit) return a._watchHit ? -1 : 1;
-      return (b.importance || 0) - (a.importance || 0);
-    });
-  }, [decorated, filt, focus, searchResults]);
+    return arr;
+  }, [decorated, filt, focus, searchResults, sortedDecorated]);
 
   const counts = useMemo(() => {
+    let important = 0;
+    let watchHit = 0;
+    let bullish = 0;
+    let bearish = 0;
+    for (const it of decorated) {
+      if ((it.importance || 0) >= 3) important += 1;
+      if (it._watchHit) watchHit += 1;
+      if (it.sentiment === "bullish") bullish += 1;
+      if (it.sentiment === "bearish") bearish += 1;
+    }
     return {
       all: decorated.length,
-      important: decorated.filter((i) => (i.importance || 0) >= 3).length,
-      watch: decorated.filter((i) => i._watchHit).length,
-      bullish: decorated.filter((i) => i.sentiment === "bullish").length,
-      bearish: decorated.filter((i) => i.sentiment === "bearish").length,
+      important,
+      watch: watchHit,
+      bullish,
+      bearish,
     };
   }, [decorated]);
 
   const subtitle = decorated.length > 0
     ? `${decorated.length} 条 · ${brief?.model || "AI"} 已总结 · 命中自选 ${counts.watch}`
     : undefined;
+
+  const markNewsInteraction = useCallback((name: string) => {
+    if (!DEV_NEWS_PERF || typeof window === "undefined" || typeof performance === "undefined") return;
+    const runId = ++perfRunIdRef.current;
+    const start = performance.now();
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        const ms = performance.now() - start;
+        // 仅开发态统计交互到绘制耗时。
+        console.debug(`[news-perf] ${name} -> ${ms.toFixed(1)}ms`, {
+          runId,
+          filtered: filtered.length,
+          visible: Math.min(renderCount, filtered.length),
+          horizon,
+          filt,
+          hasFocus: !!focus,
+        });
+      });
+    });
+  }, [DEV_NEWS_PERF, filtered.length, renderCount, horizon, filt, focus]);
 
   const handleDialClick = (anchor: NewsDialAnchor) => {
     setFocus(null);  // 清掉 main_thread 聚焦
@@ -297,24 +377,29 @@ export function NewsPage() {
       const tilt = counts.bullish >= counts.bearish ? "bullish" : "bearish";
       setFilt((p) => (p === tilt ? "all" : tilt));
     }
+    markNewsInteraction(`dial:${anchor}`);
   };
 
   const handleThreadClick = (t: NewsBriefThread) => {
     if (focus?.kind === "thread" && focus.name === t.name) {
       setFocus(null);
+      markNewsInteraction("thread:clear");
       return;
     }
     setFilt("all");
     setFocus({ kind: "thread", name: t.name, ids: new Set(t.news_ids) });
+    markNewsInteraction(`thread:${t.name}`);
   };
 
   const handleBucketClick = (kind: "policy" | "shock" | "earnings", b: NewsBriefBucket) => {
     if (focus?.kind === kind && areSetsEqual(focus.ids, new Set(b.news_ids))) {
       setFocus(null);
+      markNewsInteraction(`${kind}:clear`);
       return;
     }
     setFilt("all");
     setFocus({ kind, ids: new Set(b.news_ids) });
+    markNewsInteraction(`${kind}:set`);
   };
 
   const activeAnchor = filtToAnchor(filt);
@@ -324,6 +409,51 @@ export function NewsPage() {
     : focus?.kind === "shock" ? "突发风险聚焦"
     : focus?.kind === "earnings" ? "业绩/公告聚焦"
     : null;
+  const setFilterWithClearFocus = useCallback((next: Filt) => {
+    setFocus(null);
+    setFilt(next);
+    markNewsInteraction(`filter:${next}`);
+  }, [markNewsInteraction]);
+  const clearFocusOnly = useCallback(() => {
+    setFocus(null);
+    markNewsInteraction("focus:clear");
+  }, [markNewsInteraction]);
+  const resetHorizon = useCallback(() => {
+    setHorizon("");
+    markNewsInteraction("horizon:all");
+  }, [markNewsInteraction]);
+  const toggleHorizon = useCallback((next: Exclude<Horizon, "">) => {
+    setHorizon((prev) => (prev === next ? "" : next));
+    markNewsInteraction(`horizon:${next}`);
+  }, [markNewsInteraction]);
+  const visibleNews = useMemo(() => filtered.slice(0, renderCount), [filtered, renderCount]);
+  const hasMoreNews = filtered.length > visibleNews.length;
+
+  useEffect(() => {
+    const t = setTimeout(() => {
+      setRenderCount(20);
+    }, 0);
+    return () => clearTimeout(t);
+  }, [filtered]);
+
+  useEffect(() => {
+    if (!hasMoreNews) return;
+    const target = loadMoreRef.current;
+    if (!target) return;
+    const ob = new IntersectionObserver(
+      (entries) => {
+        const hit = entries.some((e) => e.isIntersecting);
+        if (!hit) return;
+        setRenderCount((prev) => {
+          if (prev >= filtered.length) return prev;
+          return Math.min(filtered.length, prev + 20);
+        });
+      },
+      { root: null, rootMargin: "240px 0px", threshold: 0.01 },
+    );
+    ob.observe(target);
+    return () => ob.disconnect();
+  }, [filtered.length, hasMoreNews]);
 
   return (
     <div>
@@ -450,90 +580,61 @@ export function NewsPage() {
           </div>
         )}
 
-        <div
-          className="flex items-center gap-1 px-2 py-1.5"
-          style={{
-            background: "var(--bg-card)",
-            border: "1px solid var(--border-color)",
-            borderRadius: 4,
-            opacity: searchResults != null ? 0.45 : 1,
-            pointerEvents: searchResults != null ? "none" : "auto",
-          }}
-          title={searchResults != null ? "检索模式下,本地筛选已停用" : undefined}
-        >
-          <Filter size={11} style={{ color: "var(--text-muted)" }} />
-          <FilterChip active={!focus && filt === "all"} onClick={() => { setFocus(null); setFilt("all"); }} label={`全部 ${counts.all}`} />
-          <FilterChip active={!focus && filt === "important"} onClick={() => { setFocus(null); setFilt("important"); }} label={`重磅 ${counts.important}`} icon="⭐" />
-          <FilterChip active={!focus && filt === "watch"} onClick={() => { setFocus(null); setFilt("watch"); }} label={`命中自选 ${counts.watch}`} accent="orange" />
-          <FilterChip active={!focus && filt === "bullish"} onClick={() => { setFocus(null); setFilt("bullish"); }} label={`利好 ${counts.bullish}`} accent="red" />
-          <FilterChip active={!focus && filt === "bearish"} onClick={() => { setFocus(null); setFilt("bearish"); }} label={`利空 ${counts.bearish}`} accent="green" />
-          {focus && focusLabel && (
-            <FilterChip
-              active={true}
-              onClick={() => setFocus(null)}
-              label={`${focusLabel} (${filtered.length}) ✕`}
-              accent="orange"
-            />
-          )}
-          <span className="ml-auto flex items-center gap-1" style={{ fontSize: 10, color: "var(--text-muted)" }}>
-            <Sparkles size={9} style={{ color: "var(--accent-purple)" }} />
-            点 AI 主线下钻
-          </span>
-        </div>
+        <NewsFilterStrip
+          disabled={searchResults != null}
+          filt={filt}
+          counts={counts}
+          hasFocus={!!focus}
+          focusLabel={focusLabel}
+          filteredLen={filtered.length}
+          onSetFilt={setFilterWithClearFocus}
+          onClearFocus={clearFocusOnly}
+        />
 
         {/* Phase 2: 影响时间维度过滤 (impact_horizon) - 给短/中/长视角投资者用 */}
-        <div
-          className="flex items-center gap-1 px-2 py-1.5 mt-1.5"
-          style={{
-            background: "var(--bg-card)",
-            border: "1px solid var(--border-color)",
-            borderRadius: 4,
-            opacity: searchResults != null ? 0.45 : 1,
-            pointerEvents: searchResults != null ? "none" : "auto",
-          }}
-          title="按 AI 判定的「影响时间维度」过滤新闻"
-        >
-          <span style={{ fontSize: 10, color: "var(--text-muted)", marginRight: 4 }}>视角</span>
-          <FilterChip
-            active={horizon === ""}
-            onClick={() => setHorizon("")}
-            label="全部"
-          />
-          {(["short", "swing", "long", "mixed"] as const).map((h) => {
-            const meta = HORIZON_META[h];
-            return (
-              <button
-                key={h}
-                onClick={() => setHorizon(horizon === h ? "" : h)}
-                className="flex items-center gap-1 px-2 py-0.5 transition-all"
-                style={{
-                  background: horizon === h ? meta.color : "transparent",
-                  color: horizon === h ? "#fff" : meta.color,
-                  border: `1px solid ${meta.color}`,
-                  borderRadius: 3,
-                  fontSize: 10,
-                  fontWeight: horizon === h ? 700 : 500,
-                }}
-                title={meta.desc}
-              >
-                {meta.label}
-              </button>
-            );
-          })}
-          <span className="ml-auto" style={{ fontSize: 10, color: "var(--text-muted)" }}>
-            {horizon === "" ? "适合所有投资者" : HORIZON_META[horizon].desc}
-          </span>
-        </div>
+        <NewsHorizonStrip
+          disabled={searchResults != null}
+          horizon={horizon}
+          onReset={resetHorizon}
+          onToggle={toggleHorizon}
+        />
       </div>
 
       <div className="px-3 pb-3 space-y-1">
         {loading ? (
-          Array.from({ length: 6 }).map((_, i) => (
+          Array.from({ length: 4 }).map((_, i) => (
             <div
               key={i}
-              className="h-16 animate-pulse"
-              style={{ background: "var(--bg-card)" }}
-            />
+              className="px-3 py-2 space-y-2 rounded animate-pulse"
+              style={{ background: "var(--bg-card)", border: "1px solid var(--border-color)" }}
+            >
+              <div className="flex items-center gap-1.5">
+                <div
+                  className="h-4 rounded"
+                  style={{ width: 56, background: "var(--bg-tertiary)" }}
+                />
+                <div
+                  className="h-4 rounded"
+                  style={{ width: 42, background: "var(--bg-tertiary)" }}
+                />
+                <div
+                  className="h-4 rounded"
+                  style={{ width: 38, background: "var(--bg-tertiary)" }}
+                />
+              </div>
+              <div
+                className="h-4 rounded"
+                style={{ width: "82%", background: "var(--bg-tertiary)" }}
+              />
+              <div
+                className="h-3 rounded"
+                style={{ width: "96%", background: "var(--bg-tertiary)" }}
+              />
+              <div
+                className="h-3 rounded"
+                style={{ width: "70%", background: "var(--bg-tertiary)" }}
+              />
+            </div>
           ))
         ) : filtered.length === 0 ? (
           <div className="py-12 flex flex-col items-center gap-3">
@@ -548,181 +649,32 @@ export function NewsPage() {
             </div>
           </div>
         ) : (
-          filtered.map((item, i) => {
-            const sent = item.sentiment ? SENTIMENT_META[item.sentiment] : null;
-            const SentIcon = sent?.icon;
-            const themesArr = item.themes || item.related_concepts || [];
-            return (
-              <div
-                key={`${item.id ?? item.pub_time}-${i}`}
-                id={item.id != null ? `news-item-${item.id}` : undefined}
-                className="px-3 py-2"
-                style={{
-                  background: item._watchHit ? "rgba(245,158,11,0.06)" : "var(--bg-card)",
-                  border: item._watchHit ? "1px solid rgba(245,158,11,0.4)" : "1px solid var(--border-color)",
-                  borderRadius: 4,
-                }}
-              >
-                <div className="flex items-start gap-3">
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-1.5 flex-wrap mb-1">
-                      {item.source && (
-                        <span
-                          style={{
-                            padding: "1px 5px",
-                            background: "var(--bg-tertiary)",
-                            color: "var(--text-muted)",
-                            fontSize: 10,
-                            borderRadius: 2,
-                            border: "1px solid var(--border-color)",
-                          }}
-                          title="新闻源"
-                        >
-                          {item.source}
-                        </span>
-                      )}
-                      {item._watchHit && (
-                        <span
-                          className="flex items-center gap-0.5 font-bold"
-                          style={{
-                            padding: "1px 5px",
-                            background: "var(--accent-orange)",
-                            color: "#1a1d28",
-                            fontSize: 10,
-                            borderRadius: 2,
-                          }}
-                          title="命中你的自选股"
-                        >
-                          <Star size={9} fill="#1a1d28" />
-                          自选
-                        </span>
-                      )}
-                      {sent && SentIcon && (
-                        <span
-                          className="flex items-center gap-0.5 font-bold"
-                          style={{
-                            padding: "1px 5px",
-                            background: sent.color === "var(--text-muted)" ? "var(--bg-tertiary)" : "transparent",
-                            border: `1px solid ${sent.color}`,
-                            color: sent.color,
-                            fontSize: 10,
-                            borderRadius: 2,
-                          }}
-                        >
-                          <SentIcon size={9} />
-                          {sent.label}
-                        </span>
-                      )}
-                      {item.impact_horizon && HORIZON_META[item.impact_horizon] && (
-                        <span
-                          className="font-bold"
-                          style={{
-                            padding: "1px 5px",
-                            background: `${HORIZON_META[item.impact_horizon].color}22`,
-                            border: `1px solid ${HORIZON_META[item.impact_horizon].color}`,
-                            color: HORIZON_META[item.impact_horizon].color,
-                            fontSize: 10,
-                            borderRadius: 2,
-                          }}
-                          title={HORIZON_META[item.impact_horizon].desc}
-                        >
-                          {HORIZON_META[item.impact_horizon].label}
-                        </span>
-                      )}
-                      {item.tags && item.tags.length > 0 && item.tags.map((tag) => (
-                        <span
-                          key={tag}
-                          className="font-semibold"
-                          style={{
-                            padding: "1px 5px",
-                            background: "rgba(168,85,247,0.14)",
-                            color: "var(--accent-purple)",
-                            fontSize: 10,
-                            borderRadius: 2,
-                            border: "1px solid rgba(168,85,247,0.3)",
-                          }}
-                        >
-                          {tag}
-                        </span>
-                      ))}
-                      {(item.importance || 0) > 0 && <ImportanceStars value={item.importance || 0} />}
-                    </div>
-                    <h3
-                      className="font-semibold leading-snug"
-                      style={{ color: "var(--text-primary)", fontSize: "var(--font-md)" }}
-                    >
-                      {item.title}
-                    </h3>
-                    {item.content && (
-                      <p
-                        className="mt-1 leading-relaxed line-clamp-2"
-                        style={{ color: "var(--text-muted)", fontSize: "var(--font-sm)" }}
-                      >
-                        {item.content}
-                      </p>
-                    )}
-                    <div className="flex flex-wrap gap-1 mt-1.5 items-center">
-                      {themesArr.slice(0, 6).map((concept) => (
-                        <button
-                          key={concept}
-                          onClick={() => openThemeDetail(concept)}
-                          className="rounded transition-colors"
-                          style={{
-                            padding: "1px 6px",
-                            fontSize: 10,
-                            background: "rgba(245,158,11,0.14)",
-                            color: "var(--accent-orange)",
-                            border: "1px solid rgba(245,158,11,0.3)",
-                          }}
-                        >
-                          {concept}
-                        </button>
-                      ))}
-                      {(item.rel_codes || []).slice(0, 4).map((c) => (
-                        <button
-                          key={c}
-                          onClick={() => openStockDetail(c)}
-                          className="rounded transition-colors tabular-nums"
-                          style={{
-                            padding: "1px 5px",
-                            fontSize: 10,
-                            background: watch.has(c) ? "rgba(245,158,11,0.18)" : "var(--bg-tertiary)",
-                            color: watch.has(c) ? "var(--accent-orange)" : "var(--text-secondary)",
-                            border: `1px solid ${watch.has(c) ? "rgba(245,158,11,0.4)" : "var(--border-color)"}`,
-                          }}
-                          title={watch.has(c) ? "你的自选" : "查看个股"}
-                        >
-                          {c}
-                        </button>
-                      ))}
-                      <button
-                        onClick={() => askAI(`这条新闻: 「${item.title}」\n${item.content || ""}\n\n请帮我判断: (1) 真实利好/利空程度 (2) 涉及哪些 A 股标的最受益/受损 (3) 短线是否值得参与, 给出明日盘前关注点。`)}
-                        className="ml-auto flex items-center gap-0.5 px-1.5 py-0.5 rounded transition-colors"
-                        style={{
-                          fontSize: 10,
-                          background: "rgba(168,85,247,0.12)",
-                          color: "var(--accent-purple)",
-                          border: "1px solid rgba(168,85,247,0.3)",
-                        }}
-                        title="让 AI 拆这条新闻"
-                      >
-                        <Zap size={9} />
-                        问AI
-                      </button>
-                    </div>
-                  </div>
-                  {item.pub_time && (
-                    <span
-                      className="whitespace-nowrap flex-shrink-0 tabular-nums"
-                      style={{ color: "var(--text-muted)", fontSize: 10 }}
-                    >
-                      {item.pub_time.slice(5, 16)}
-                    </span>
-                  )}
-                </div>
-              </div>
-            );
-          })
+          visibleNews.map((item) => (
+            <NewsItemCard
+              key={newsItemKey(item)}
+              item={item}
+              openThemeDetail={openThemeDetail}
+              openStockDetail={openStockDetail}
+              askAI={askAI}
+            />
+          ))
+        )}
+        {!loading && hasMoreNews && (
+          <div ref={loadMoreRef} className="pt-1 flex justify-center">
+            <button
+              onClick={() => setRenderCount((prev) => Math.min(filtered.length, prev + 30))}
+              className="rounded transition-colors"
+              style={{
+                padding: "4px 12px",
+                fontSize: 12,
+                background: "var(--bg-tertiary)",
+                color: "var(--text-secondary)",
+                border: "1px solid var(--border-color)",
+              }}
+            >
+              加载更多 ({visibleNews.length}/{filtered.length})
+            </button>
+          </div>
         )}
       </div>
     </div>
@@ -884,6 +836,116 @@ function FilterChip({
     </button>
   );
 }
+
+const NewsFilterStrip = memo(function NewsFilterStrip({
+  disabled,
+  filt,
+  counts,
+  hasFocus,
+  focusLabel,
+  filteredLen,
+  onSetFilt,
+  onClearFocus,
+}: {
+  disabled: boolean;
+  filt: Filt;
+  counts: NewsCounts;
+  hasFocus: boolean;
+  focusLabel: string | null;
+  filteredLen: number;
+  onSetFilt: (next: Filt) => void;
+  onClearFocus: () => void;
+}) {
+  return (
+    <div
+      className="flex items-center gap-1 px-2 py-1.5"
+      style={{
+        background: "var(--bg-card)",
+        border: "1px solid var(--border-color)",
+        borderRadius: 4,
+        opacity: disabled ? 0.45 : 1,
+        pointerEvents: disabled ? "none" : "auto",
+      }}
+      title={disabled ? "检索模式下,本地筛选已停用" : undefined}
+    >
+      <Filter size={11} style={{ color: "var(--text-muted)" }} />
+      <FilterChip active={!hasFocus && filt === "all"} onClick={() => onSetFilt("all")} label={`全部 ${counts.all}`} />
+      <FilterChip active={!hasFocus && filt === "important"} onClick={() => onSetFilt("important")} label={`重磅 ${counts.important}`} icon="⭐" />
+      <FilterChip active={!hasFocus && filt === "watch"} onClick={() => onSetFilt("watch")} label={`命中自选 ${counts.watch}`} accent="orange" />
+      <FilterChip active={!hasFocus && filt === "bullish"} onClick={() => onSetFilt("bullish")} label={`利好 ${counts.bullish}`} accent="red" />
+      <FilterChip active={!hasFocus && filt === "bearish"} onClick={() => onSetFilt("bearish")} label={`利空 ${counts.bearish}`} accent="green" />
+      {hasFocus && focusLabel && (
+        <FilterChip
+          active={true}
+          onClick={onClearFocus}
+          label={`${focusLabel} (${filteredLen}) ✕`}
+          accent="orange"
+        />
+      )}
+      <span className="ml-auto flex items-center gap-1" style={{ fontSize: 10, color: "var(--text-muted)" }}>
+        <Sparkles size={9} style={{ color: "var(--accent-purple)" }} />
+        点 AI 主线下钻
+      </span>
+    </div>
+  );
+});
+
+const NewsHorizonStrip = memo(function NewsHorizonStrip({
+  disabled,
+  horizon,
+  onReset,
+  onToggle,
+}: {
+  disabled: boolean;
+  horizon: Horizon;
+  onReset: () => void;
+  onToggle: (next: Exclude<Horizon, "">) => void;
+}) {
+  return (
+    <div
+      className="flex items-center gap-1 px-2 py-1.5 mt-1.5"
+      style={{
+        background: "var(--bg-card)",
+        border: "1px solid var(--border-color)",
+        borderRadius: 4,
+        opacity: disabled ? 0.45 : 1,
+        pointerEvents: disabled ? "none" : "auto",
+      }}
+      title="按 AI 判定的「影响时间维度」过滤新闻"
+    >
+      <span style={{ fontSize: 10, color: "var(--text-muted)", marginRight: 4 }}>视角</span>
+      <FilterChip
+        active={horizon === ""}
+        onClick={onReset}
+        label="全部"
+      />
+      {(["short", "swing", "long", "mixed"] as const).map((h) => {
+        const meta = HORIZON_META[h];
+        return (
+          <button
+            key={h}
+            onClick={() => onToggle(h)}
+            className="flex items-center gap-1 px-2 py-0.5 transition-all"
+            style={{
+              background: horizon === h ? meta.color : "transparent",
+              color: horizon === h ? "#fff" : meta.color,
+              border: `1px solid ${meta.color}`,
+              borderRadius: 3,
+              fontSize: 10,
+              fontWeight: horizon === h ? 700 : 500,
+            }}
+            title={meta.desc}
+          >
+            {meta.label}
+          </button>
+        );
+      })}
+      <span className="ml-auto" style={{ fontSize: 10, color: "var(--text-muted)" }}>
+        {horizon === "" ? "适合所有投资者" : HORIZON_META[horizon].desc}
+      </span>
+    </div>
+  );
+});
 
 function areSetsEqual<T>(a: Set<T>, b: Set<T>): boolean {
   if (a.size !== b.size) return false;

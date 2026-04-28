@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useQuery, QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { Loader } from "lucide-react";
 import ReactEChartsCore from "echarts-for-react/lib/core";
 import * as echarts from "echarts/core";
@@ -234,6 +234,8 @@ function KlineChartInner({ code, defaultLod = "month", height = 380 }: KlineChar
         fields: "ohlc,vol",
       }),
     enabled: code.length > 0,
+    staleTime: 120_000,
+    refetchOnWindowFocus: false,
   });
 
   const rows = useMemo(() => {
@@ -378,10 +380,5 @@ function KlineChartInner({ code, defaultLod = "month", height = 380 }: KlineChar
 
 export function KlineChart(props: KlineChartProps) {
   const { code, defaultLod = "month" } = props;
-  const [client] = useState(() => new QueryClient());
-  return (
-    <QueryClientProvider client={client}>
-      <KlineChartInner key={`${code}:${defaultLod}`} {...props} />
-    </QueryClientProvider>
-  );
+  return <KlineChartInner key={`${code}:${defaultLod}`} {...props} />;
 }

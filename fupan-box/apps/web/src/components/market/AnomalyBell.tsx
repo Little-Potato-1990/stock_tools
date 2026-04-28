@@ -6,6 +6,7 @@ import { api } from "@/lib/api";
 import { useUIStore } from "@/stores/ui-store";
 
 const POLL_MS = 60_000; // 60s 轮询
+const FIRST_POLL_DELAY_MS = 1_500;
 
 /**
  * 右下角浮动「盘中异动」入口.
@@ -35,11 +36,25 @@ export function AnomalyBell() {
   }, []);
 
   useEffect(() => {
-    // refresh 内部走的是 fetch -> await -> setState, setState 并非同步发生在 effect body
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    refresh();
-    const t = setInterval(refresh, POLL_MS);
-    return () => clearInterval(t);
+    const runIfVisible = () => {
+      if (typeof document !== "undefined" && document.visibilityState !== "visible") return;
+      refresh();
+    };
+
+    const starter = setTimeout(runIfVisible, FIRST_POLL_DELAY_MS);
+    const t = setInterval(runIfVisible, POLL_MS);
+    const onVisible = () => runIfVisible();
+    if (typeof document !== "undefined") {
+      document.addEventListener("visibilitychange", onVisible);
+    }
+
+    return () => {
+      clearTimeout(starter);
+      clearInterval(t);
+      if (typeof document !== "undefined") {
+        document.removeEventListener("visibilitychange", onVisible);
+      }
+    };
   }, [refresh]);
 
   const anyDrawerOpen =

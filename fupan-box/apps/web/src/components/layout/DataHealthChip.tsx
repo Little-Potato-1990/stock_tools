@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useState } from "react";
 import { CheckCircle2, AlertCircle, Clock, XCircle, RefreshCw } from "lucide-react";
 import { api } from "@/lib/api";
+import { useDataHealth } from "@/stores/data-health-store";
 
 type Health = Awaited<ReturnType<typeof api.getDataHealth>>;
 
@@ -46,27 +47,8 @@ function formatStale(min: number | null): string {
 }
 
 export function DataHealthChip() {
-  const [data, setData] = useState<Health | null>(null);
-  const [loading, setLoading] = useState(true);
   const [hover, setHover] = useState(false);
-
-  const load = useCallback(async () => {
-    setLoading(true);
-    try {
-      const d = await api.getDataHealth();
-      setData(d);
-    } catch {
-      setData(null);
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    load();
-    const t = setInterval(load, 60_000);
-    return () => clearInterval(t);
-  }, [load]);
+  const { data, loading, fetching, refresh } = useDataHealth();
 
   if (loading && !data) {
     return (
@@ -88,7 +70,7 @@ export function DataHealthChip() {
   if (!data) {
     return (
       <button
-        onClick={load}
+        onClick={refresh}
         className="rounded w-full text-center transition-opacity hover:opacity-80"
         style={{
           padding: "7px 6px",
@@ -112,7 +94,7 @@ export function DataHealthChip() {
   return (
     <div className="relative">
       <button
-        onClick={load}
+        onClick={refresh}
         onMouseEnter={() => setHover(true)}
         onMouseLeave={() => setHover(false)}
         className="rounded w-full transition-colors"
@@ -130,7 +112,7 @@ export function DataHealthChip() {
         >
           <Icon size={12} />
           <span className="truncate flex-1">{meta.label}</span>
-          {loading && <RefreshCw size={10} className="animate-spin" />}
+          {fetching && <RefreshCw size={10} className="animate-spin" />}
         </div>
         <div
           className="mt-0.5 flex items-center gap-1"

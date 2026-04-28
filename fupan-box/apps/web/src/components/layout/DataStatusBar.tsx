@@ -21,8 +21,9 @@
  *   failed  → 红底 (网络/接口错)
  */
 
-import { useCallback, useEffect, useState } from "react";
+import { useState } from "react";
 import { CheckCircle2, AlertCircle, Clock, XCircle, RefreshCw, ChevronDown } from "lucide-react";
+import { useDataHealth } from "@/stores/data-health-store";
 import { api } from "@/lib/api";
 
 type Health = Awaited<ReturnType<typeof api.getDataHealth>>;
@@ -73,31 +74,8 @@ function formatStale(min: number | null): string {
 }
 
 export function DataStatusBar() {
-  const [data, setData] = useState<Health | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [failed, setFailed] = useState(false);
   const [expanded, setExpanded] = useState(false);
-
-  const load = useCallback(async () => {
-    setLoading(true);
-    try {
-      const d = await api.getDataHealth();
-      setData(d);
-      setFailed(false);
-    } catch {
-      setData(null);
-      setFailed(true);
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    load();
-    // 60s 自动刷新, 与侧边栏 chip 一致
-    const t = setInterval(load, 60_000);
-    return () => clearInterval(t);
-  }, [load]);
+  const { data, failed, fetching, refresh } = useDataHealth();
 
   const status: keyof typeof META = failed ? "failed" : data?.status ?? "empty";
   const meta = META[status];
@@ -179,13 +157,13 @@ export function DataStatusBar() {
             </button>
           )}
           <button
-            onClick={load}
-            disabled={loading}
+            onClick={refresh}
+            disabled={fetching}
             className="p-0.5 transition-opacity hover:opacity-70"
             style={{ color: "var(--text-muted)" }}
             title="立即刷新"
           >
-            <RefreshCw size={11} className={loading ? "animate-spin" : ""} />
+            <RefreshCw size={11} className={fetching ? "animate-spin" : ""} />
           </button>
         </div>
       </div>

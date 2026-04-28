@@ -1,9 +1,9 @@
 "use client";
 
 import { useState } from "react";
+import dynamic from "next/dynamic";
 import { ChevronDown, ChevronRight, Table } from "lucide-react";
 import { OverviewBar } from "@/components/market/OverviewBar";
-import { SentimentChart } from "@/components/market/SentimentChart";
 import {
   SentimentAiCard,
   type DialAnchor,
@@ -11,6 +11,23 @@ import {
   type SentimentBrief,
 } from "@/components/market/SentimentAiCard";
 import { SentimentEvidenceGrid } from "@/components/market/SentimentEvidenceGrid";
+
+const SentimentChart = dynamic(
+  () => import("@/components/market/SentimentChart").then((m) => m.SentimentChart),
+  {
+    loading: () => (
+      <div className="px-3 py-3 space-y-2">
+        {[1, 2, 3].map((i) => (
+          <div
+            key={i}
+            className="h-44 rounded animate-pulse"
+            style={{ background: "var(--bg-card)" }}
+          />
+        ))}
+      </div>
+    ),
+  },
+);
 
 /** L1 dial 锚点 → OverviewBar 中需要高亮的指标 label.
  *  3 列拆开方便 Step E 在 OverviewBar 里渲染角标. */

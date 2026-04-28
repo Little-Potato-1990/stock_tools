@@ -253,32 +253,43 @@ function LhbDailyTab({ highlight }: { highlight: LhbDialAnchor | null }) {
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<string | null>(null);
 
+  const normalizeRows = useCallback((raw: Array<{ trade_date: string; data: Record<string, unknown> }>) => {
+    const parsed: Array<{ trade_date: string; data: LhbSnapshotData }> = [];
+    for (const r of raw) {
+      const data = parseLhbSnapshot(r.data);
+      if (data) parsed.push({ trade_date: r.trade_date, data });
+    }
+    parsed.sort((a, b) => (a.trade_date < b.trade_date ? 1 : a.trade_date > b.trade_date ? -1 : 0));
+    return parsed;
+  }, []);
+
   useEffect(() => {
     let cancel = false;
-    setLoading(true);
+    const controller = new AbortController();
     api
-      .getSnapshotRange("lhb", 30)
-      .then((raw) => {
+      .getSnapshotRange("lhb", 30, { signal: controller.signal })
+      .then((raw30) => {
         if (cancel) return;
-        const parsed: Array<{ trade_date: string; data: LhbSnapshotData }> = [];
-        for (const r of raw) {
-          const data = parseLhbSnapshot(r.data);
-          if (data) parsed.push({ trade_date: r.trade_date, data });
-        }
-        parsed.sort((a, b) => (a.trade_date < b.trade_date ? 1 : a.trade_date > b.trade_date ? -1 : 0));
-        setRows(parsed);
-        if (parsed.length > 0) {
-          setSelectedDate((d) => d ?? parsed[0].trade_date);
+        const parsed30 = normalizeRows(raw30);
+        if (parsed30.length > 0) {
+          setRows(parsed30);
+          setSelectedDate((d) => d ?? parsed30[0].trade_date);
         }
       })
-      .catch(console.error)
+      .catch((e: unknown) => {
+        if (e instanceof DOMException && e.name === "AbortError") return;
+        console.error(e);
+      })
       .finally(() => {
-        if (!cancel) setLoading(false);
+        if (!cancel) {
+          setLoading(false);
+        }
       });
     return () => {
       cancel = true;
+      controller.abort();
     };
-  }, []);
+  }, [normalizeRows]);
 
   const dateIndex = useMemo(() => {
     if (!selectedDate || rows.length === 0) return -1;
@@ -466,7 +477,7 @@ function LhbDailyTab({ highlight }: { highlight: LhbDialAnchor | null }) {
       <div style={{ border: "1px solid var(--border-color)", borderTop: "none", borderRadius: "0 0 6px 6px" }}>
         {sortedStocks.length === 0
           ? mutedEmpty("当日无上榜个股")
-          : sortedStocks.map((stock) => {
+          : sortedStocks.map((stock, idx) => {
               const code = stock.stock_code;
               const isOpen = expanded === code;
               const insts = getInstsForStock(current.data.insts_by_code, code);
@@ -486,7 +497,7 @@ function LhbDailyTab({ highlight }: { highlight: LhbDialAnchor | null }) {
 
               return (
                 <div
-                  key={code}
+                  key={`${code}-${stock.reason}-${idx}`}
                   style={{
                     borderBottom: "1px solid var(--border-color)",
                     background: isHighlight ? "rgba(168,85,247,0.06)" : "var(--bg-card)",
@@ -670,6 +681,10 @@ function LhbOfficeHistoryTab() {
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<Awaited<ReturnType<typeof api.getLhbOfficeHistory>> | null>(null);
   const prevScopeRef = useRef<LhbScope>(scope);
+  const requestAbortRef = useRef<AbortController | null>(null);
+  const cacheRef = useRef<
+    Map<string, { expiresAt: number; value: Awaited<ReturnType<typeof api.getLhbOfficeHistory>> }>
+  >(new Map());
 
   useLayoutEffect(() => {
     if (scope === "office_history" && prevScopeRef.current !== "office_history") {
@@ -684,16 +699,46 @@ function LhbOfficeHistoryTab() {
       setResult(null);
       return;
     }
+
+    const cacheKey = `${q.toLowerCase()}::${days}`;
+    const cached = cacheRef.current.get(cacheKey);
+    if (cached && cached.expiresAt > Date.now()) {
+      setResult(cached.value);
+      return;
+    }
+
+    requestAbortRef.current?.abort();
+    const controller = new AbortController();
+    requestAbortRef.current = controller;
     setLoading(true);
     api
-      .getLhbOfficeHistory(q, days)
-      .then(setResult)
-      .catch((e) => {
+      .getLhbOfficeHistory(q, days, { signal: controller.signal })
+      .then((data) => {
+        setResult(data);
+        cacheRef.current.set(cacheKey, {
+          expiresAt: Date.now() + 90_000,
+          value: data,
+        });
+      })
+      .catch((e: unknown) => {
+        if (e instanceof DOMException && e.name === "AbortError") return;
         console.error(e);
         setResult(null);
       })
-      .finally(() => setLoading(false));
+      .finally(() => {
+        if (requestAbortRef.current === controller) {
+          requestAbortRef.current = null;
+          setLoading(false);
+        }
+      });
   }, [officeInput, days]);
+
+  useEffect(() => {
+    return () => {
+      requestAbortRef.current?.abort();
+      requestAbortRef.current = null;
+    };
+  }, []);
 
   const sortedRecords = useMemo(() => {
     if (!result?.records) return [];
@@ -877,28 +922,40 @@ function LhbOfficeHistoryTab() {
 
 // —— Tab: 游资追踪 ——
 
-function LhbHotMoneyTab({ highlight }: { highlight: LhbDialAnchor | null }) {
+function LhbHotMoneyTab({
+  highlight,
+  prefetched,
+}: {
+  highlight: LhbDialAnchor | null;
+  prefetched: { days: (typeof OFFICE_DAY_OPTIONS)[number]; data: Awaited<ReturnType<typeof api.getLhbHotMoney>> } | null;
+}) {
   const setLhbScope = useUIStore((s) => s.setLhbScope);
   const setLhbOfficeQuery = useUIStore((s) => s.setLhbOfficeQuery);
 
   const [days, setDays] = useState<(typeof OFFICE_DAY_OPTIONS)[number]>(30);
-  const [loading, setLoading] = useState(true);
-  const [payload, setPayload] = useState<Awaited<ReturnType<typeof api.getLhbHotMoney>> | null>(null);
+  const [loading, setLoading] = useState(!(prefetched && prefetched.days === 30));
+  const [payload, setPayload] = useState<Awaited<ReturnType<typeof api.getLhbHotMoney>> | null>(
+    prefetched && prefetched.days === 30 ? prefetched.data : null,
+  );
 
   useEffect(() => {
     let cancel = false;
-    setLoading(true);
+    const controller = new AbortController();
     api
-      .getLhbHotMoney(days, 50)
+      .getLhbHotMoney(days, 50, { signal: controller.signal })
       .then((d) => {
         if (!cancel) setPayload(d);
       })
-      .catch(console.error)
+      .catch((e: unknown) => {
+        if (e instanceof DOMException && e.name === "AbortError") return;
+        console.error(e);
+      })
       .finally(() => {
         if (!cancel) setLoading(false);
       });
     return () => {
       cancel = true;
+      controller.abort();
     };
   }, [days]);
 
@@ -966,7 +1023,10 @@ function LhbHotMoneyTab({ highlight }: { highlight: LhbDialAnchor | null }) {
             fontSize: 12,
           }}
           value={days}
-          onChange={(e) => setDays(Number(e.target.value) as (typeof OFFICE_DAY_OPTIONS)[number])}
+          onChange={(e) => {
+            setLoading(true);
+            setDays(Number(e.target.value) as (typeof OFFICE_DAY_OPTIONS)[number]);
+          }}
         >
           {OFFICE_DAY_OPTIONS.map((d) => (
             <option key={d} value={d}>
@@ -1012,7 +1072,7 @@ function LhbHotMoneyTab({ highlight }: { highlight: LhbDialAnchor | null }) {
             row.net_buy_total >= 0 ? "var(--accent-red)" : "var(--accent-green)";
           return (
             <div
-              key={row.exalter}
+              key={`${row.exalter}-${idx}`}
               className="flex items-start px-2 py-1.5 tabular-nums"
               style={{
                 fontSize: 13,
@@ -1055,22 +1115,61 @@ export function LhbPage() {
   const setScope = useUIStore((s) => s.setLhbScope);
   const [highlight, setHighlight] = useState<LhbDialAnchor | null>(null);
   const [trend5d, setTrend5d] = useState<LhbTrendPoint[]>([]);
+  const [mountedTabs, setMountedTabs] = useState<Record<LhbScope, boolean>>(() => ({
+    daily: scope === "daily",
+    office_history: scope === "office_history",
+    hot_money: scope === "hot_money",
+  }));
+  const [hotMoneyPrefetched, setHotMoneyPrefetched] = useState<{
+    days: (typeof OFFICE_DAY_OPTIONS)[number];
+    data: Awaited<ReturnType<typeof api.getLhbHotMoney>>;
+  } | null>(null);
+
+  const changeScope = useCallback((next: LhbScope) => {
+    setScope(next);
+    setMountedTabs((prev) => (prev[next] ? prev : { ...prev, [next]: true }));
+  }, [setScope]);
 
   const handleEvidenceClick = (anchor: LhbDialAnchor) => {
     // hot_money dial 切到 hot_money tab, 其它都在 daily tab.
     // stock_count 仅切到 daily tab 并 flashGlow 摘要栏 (无行级 highlight 规则).
     if (anchor === "hot_money") {
-      setScope("hot_money");
+      changeScope("hot_money");
       setHighlight((prev) => (prev === anchor ? null : anchor));
       return;
     }
-    if (scope !== "daily") setScope("daily");
+    if (scope !== "daily") changeScope("daily");
     setHighlight((prev) => (prev === anchor ? null : anchor));
     if (anchor === "stock_count") {
       // 等 scope 切换 + LhbDailyTab 渲染完再 glow
       setTimeout(() => flashGlow(DAILY_SUMMARY_ID), 80);
     }
   };
+
+  useEffect(() => {
+    const t = setTimeout(() => {
+      setMountedTabs((prev) => (prev[scope] ? prev : { ...prev, [scope]: true }));
+    }, 0);
+    return () => clearTimeout(t);
+  }, [scope]);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    const timer = setTimeout(() => {
+      if (typeof document !== "undefined" && document.visibilityState !== "visible") return;
+      api
+        .getLhbHotMoney(30, 50, { signal: controller.signal })
+        .then((data) => setHotMoneyPrefetched({ days: 30, data }))
+        .catch((e: unknown) => {
+          if (e instanceof DOMException && e.name === "AbortError") return;
+          // 预热失败不影响主流程。
+        });
+    }, 900);
+    return () => {
+      clearTimeout(timer);
+      controller.abort();
+    };
+  }, []);
 
   return (
     <div>
@@ -1100,7 +1199,7 @@ export function LhbPage() {
         {SUB_TABS.map(({ key, label }) => (
           <button
             key={key}
-            onClick={() => setScope(key)}
+            onClick={() => changeScope(key)}
             className="font-medium transition-colors relative"
             style={{
               padding: "0 14px",
@@ -1121,9 +1220,21 @@ export function LhbPage() {
         ))}
       </div>
 
-      {scope === "daily" && <LhbDailyTab highlight={highlight} />}
-      {scope === "office_history" && <LhbOfficeHistoryTab />}
-      {scope === "hot_money" && <LhbHotMoneyTab highlight={highlight} />}
+      {mountedTabs.daily && (
+        <div style={{ display: scope === "daily" ? "block" : "none" }}>
+          <LhbDailyTab highlight={highlight} />
+        </div>
+      )}
+      {mountedTabs.office_history && (
+        <div style={{ display: scope === "office_history" ? "block" : "none" }}>
+          <LhbOfficeHistoryTab />
+        </div>
+      )}
+      {mountedTabs.hot_money && (
+        <div style={{ display: scope === "hot_money" ? "block" : "none" }}>
+          <LhbHotMoneyTab highlight={highlight} prefetched={hotMoneyPrefetched} />
+        </div>
+      )}
     </div>
   );
 }

@@ -678,20 +678,31 @@ function TabHolders() {
   );
 }
 
-const TAB_RENDERERS: Record<TabId, () => React.ReactNode> = {
-  overview: () => <TabOverview />,
-  north: () => <TabNorth />,
-  concept: () => <TabConcept />,
-  industry: () => <TabIndustry />,
-  stock: () => <TabStock />,
-  limit: () => <TabLimit />,
-  etf: () => <TabEtf />,
-  announce: () => <TabAnnounce />,
-  holders: () => <TabHolders />,
+const TAB_COMPONENTS: Record<TabId, React.ComponentType> = {
+  overview: TabOverview,
+  north: TabNorth,
+  concept: TabConcept,
+  industry: TabIndustry,
+  stock: TabStock,
+  limit: TabLimit,
+  etf: TabEtf,
+  announce: TabAnnounce,
+  holders: TabHolders,
 };
 
 export function CapitalPage() {
   const [tab, setTab] = useState<TabId>("overview");
+  const [mountedTabs, setMountedTabs] = useState<Record<TabId, boolean>>({
+    overview: true,
+    north: false,
+    concept: false,
+    industry: false,
+    stock: false,
+    limit: false,
+    etf: false,
+    announce: false,
+    holders: false,
+  });
   const current = TABS.find((t) => t.id === tab)!;
 
   return (
@@ -711,7 +722,10 @@ export function CapitalPage() {
           return (
             <button
               key={t.id}
-              onClick={() => setTab(t.id)}
+              onClick={() => {
+                setTab(t.id);
+                setMountedTabs((prev) => (prev[t.id] ? prev : { ...prev, [t.id]: true }));
+              }}
               className="flex items-center gap-1.5 px-3 py-1.5 transition-colors flex-shrink-0"
               style={{
                 fontSize: "var(--font-xs)",
@@ -730,7 +744,17 @@ export function CapitalPage() {
         })}
       </div>
 
-      <div>{TAB_RENDERERS[tab]()}</div>
+      <div>
+        {TABS.map((t) => {
+          if (!mountedTabs[t.id]) return null;
+          const TabComp = TAB_COMPONENTS[t.id];
+          return (
+            <div key={t.id} style={{ display: t.id === tab ? "block" : "none" }}>
+              <TabComp />
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }

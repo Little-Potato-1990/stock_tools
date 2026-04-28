@@ -304,6 +304,22 @@ export interface Anomaly {
 
 class ApiClient {
   private token: string | null = null;
+  private anonymousRateLimitedUntil = 0;
+  private getCache = new Map<string, { expiresAt: number; value: unknown }>();
+  private inFlightGets = new Map<string, Promise<unknown>>();
+  private readonly defaultAnonymousGetTtlMs = 1_500;
+  private readonly getTtlMsByPath: Record<string, number> = {
+    "/api/snapshot/status/health": 15_000,
+    "/api/ai/models": 30_000,
+    "/api/intraday/anomalies/unseen-count": 15_000,
+  };
+
+  private makeRateLimitError() {
+    const err = new Error("rate_limited") as Error & { code?: string; status?: number };
+    err.code = "RATE_LIMITED";
+    err.status = 429;
+    return err;
+  }
 
   /** 给原生 fetch / SSE 用 — 拼完整 URL */
   buildUrl(path: string): string {
@@ -318,6 +334,30 @@ class ApiClient {
   }
 
   private async request<T>(path: string, options?: RequestInit): Promise<T> {
+    const method = (options?.method ?? "GET").toUpperCase();
+    const now = Date.now();
+    const ttl =
+      options?.signal
+        ? 0
+        :
+      method === "GET"
+        ? (this.getTtlMsByPath[path] ?? (!this.token ? this.defaultAnonymousGetTtlMs : 0))
+        : 0;
+    const cacheKey = `${method}:${path}`;
+    if (ttl > 0) {
+      const cached = this.getCache.get(cacheKey);
+      if (cached && cached.expiresAt > now) {
+        return cached.value as T;
+      }
+      const inFlight = this.inFlightGets.get(cacheKey);
+      if (inFlight) {
+        return (await inFlight) as T;
+      }
+    }
+    if (!this.token && now < this.anonymousRateLimitedUntil && method === "GET") {
+      throw this.makeRateLimitError();
+    }
+
     const headers: Record<string, string> = {
       "Content-Type": "application/json",
       ...(options?.headers as Record<string, string>),
@@ -326,31 +366,46 @@ class ApiClient {
       headers["Authorization"] = `Bearer ${this.token}`;
     }
 
-    const res = await fetch(`${API_BASE}${path}`, { ...options, headers });
-    if (!res.ok) {
-      // 401: 匿名访问受保护接口 -> 抛 NotLoggedInError, 调用方应静默处理 (展示登录 CTA 而非弹错误)
-      if (res.status === 401) {
-        // token 过期: 清掉本地 token, 让 UI 切回匿名态
-        if (this.token) {
-          this.token = null;
-          if (typeof window !== "undefined") localStorage.removeItem("token");
+    const runFetch = async (): Promise<T> => {
+      const res = await fetch(`${API_BASE}${path}`, { ...options, headers });
+      if (!res.ok) {
+        // 401: 匿名访问受保护接口 -> 抛 NotLoggedInError, 调用方应静默处理 (展示登录 CTA 而非弹错误)
+        if (res.status === 401) {
+          // token 过期: 清掉本地 token, 让 UI 切回匿名态
+          if (this.token) {
+            this.token = null;
+            if (typeof window !== "undefined") localStorage.removeItem("token");
+          }
+          const err = new Error("requires_login") as Error & { code?: string; status?: number };
+          err.code = "REQUIRES_LOGIN";
+          err.status = 401;
+          throw err;
         }
-        const err = new Error("requires_login") as Error & { code?: string; status?: number };
-        err.code = "REQUIRES_LOGIN";
-        err.status = 401;
-        throw err;
+        // 429: 匿名访问触发限流
+        if (res.status === 429) {
+          if (!this.token) this.anonymousRateLimitedUntil = Date.now() + 10_000;
+          throw this.makeRateLimitError();
+        }
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.detail || `API error: ${res.status}`);
       }
-      // 429: 匿名访问触发限流
-      if (res.status === 429) {
-        const err = new Error("rate_limited") as Error & { code?: string; status?: number };
-        err.code = "RATE_LIMITED";
-        err.status = 429;
-        throw err;
+      return res.json();
+    };
+
+    if (ttl > 0) {
+      const task = (async () => {
+        const data = await runFetch();
+        this.getCache.set(cacheKey, { expiresAt: Date.now() + ttl, value: data });
+        return data;
+      })();
+      this.inFlightGets.set(cacheKey, task as Promise<unknown>);
+      try {
+        return (await task) as T;
+      } finally {
+        this.inFlightGets.delete(cacheKey);
       }
-      const body = await res.json().catch(() => ({}));
-      throw new Error(body.detail || `API error: ${res.status}`);
     }
-    return res.json();
+    return runFetch();
   }
 
   private async throwForNonOkResponse(res: Response): Promise<never> {
@@ -374,8 +429,8 @@ class ApiClient {
     throw new Error(body.detail || `API error: ${res.status}`);
   }
 
-  get<T>(path: string) {
-    return this.request<T>(path);
+  get<T>(path: string, options?: RequestInit) {
+    return this.request<T>(path, options);
   }
 
   post<T>(path: string, body: unknown) {
@@ -394,9 +449,10 @@ class ApiClient {
     return this.request<T>(path, { method: "DELETE" });
   }
 
-  getSnapshotRange(type: string, days = 5) {
+  getSnapshotRange(type: string, days = 5, options?: RequestInit) {
     return this.get<Array<{ trade_date: string; data: Record<string, unknown> }>>(
-      `/api/snapshot/${type}/range?days=${days}`
+      `/api/snapshot/${type}/range?days=${days}`,
+      options,
     );
   }
 
@@ -443,8 +499,11 @@ class ApiClient {
     return !!this.token;
   }
 
-  getWatchlist() {
-    return this.get<Array<{ id: number; stock_code: string; note: string | null; ai_reason: string | null; created_at: string }>>("/api/watchlist/");
+  getWatchlist(options?: RequestInit) {
+    return this.get<Array<{ id: number; stock_code: string; note: string | null; ai_reason: string | null; created_at: string }>>(
+      "/api/watchlist/",
+      options,
+    );
   }
 
   addToWatchlist(stock_code: string, note?: string) {
@@ -487,7 +546,7 @@ class ApiClient {
     watch?: string;        // sort=smart: 自选股代码列表(逗号分隔)
     hot_themes?: string;   // sort=smart: 当前热点题材
     debug_score?: boolean;
-  }) {
+  }, options?: RequestInit) {
     void enrich; // 兼容旧签名: 后端总是返回打标后字段
     const sp = new URLSearchParams();
     sp.set("count", String(count));
@@ -518,7 +577,7 @@ class ApiClient {
       importance?: number;
       sentiment?: "bullish" | "neutral" | "bearish";
       impact_horizon?: "short" | "swing" | "long" | "mixed";
-    }>>(`/api/market/news?${sp.toString()}`);
+    }>>(`/api/market/news?${sp.toString()}`, options);
   }
 
   getNewsBrief(opts?: { tradeDate?: string; hours?: number; refresh?: boolean }) {
@@ -669,7 +728,7 @@ class ApiClient {
     }>(`/api/market/strong-stocks-grid?scope=${scope}&days=${days}&rows=${rows}`);
   }
 
-  getLhbOfficeHistory(exalter: string, days = 30) {
+  getLhbOfficeHistory(exalter: string, days = 30, options?: RequestInit) {
     return this.get<{
       exalter: string;
       days: number;
@@ -688,10 +747,10 @@ class ApiClient {
         net_buy: number;
         reason: string;
       }>;
-    }>(`/api/snapshot/lhb/office-history?exalter=${encodeURIComponent(exalter)}&days=${days}`);
+    }>(`/api/snapshot/lhb/office-history?exalter=${encodeURIComponent(exalter)}&days=${days}`, options);
   }
 
-  getLhbHotMoney(days = 30, limit = 50) {
+  getLhbHotMoney(days = 30, limit = 50, options?: RequestInit) {
     return this.get<{
       days: number;
       limit: number;
@@ -704,7 +763,7 @@ class ApiClient {
         net_buy_total: number;
         stock_count: number;
       }>;
-    }>(`/api/snapshot/lhb/hot-money?days=${days}&limit=${limit}`);
+    }>(`/api/snapshot/lhb/hot-money?days=${days}&limit=${limit}`, options);
   }
 
   getAiModels() {

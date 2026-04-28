@@ -28,6 +28,7 @@ export function AiDensitySwitch({ accent, compact = true }: Props = {}) {
     <span
       style={{
         display: "inline-flex",
+        flexShrink: 0,
         borderRadius: 3,
         overflow: "hidden",
         border: "1px solid var(--border-color)",

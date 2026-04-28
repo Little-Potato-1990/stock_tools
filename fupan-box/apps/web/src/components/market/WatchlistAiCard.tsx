@@ -56,7 +56,8 @@ export function WatchlistAiCard({ itemCount }: Props) {
 
   if (itemCount === 0) return null;
 
-  const avg = data?.summary?.avg_change_pct;
+  const summary = data?.summary ?? null;
+  const avg = summary?.avg_change_pct;
 
   return (
     <div
@@ -106,10 +107,10 @@ export function WatchlistAiCard({ itemCount }: Props) {
 
           <div className="grid grid-cols-3 gap-2 mb-2 text-xs">
             <div style={{ color: "var(--text-muted)" }}>
-              共 {data.summary.total} 只 / 命中 {data.summary.found}
+              共 {summary?.total ?? 0} 只 / 命中 {summary?.found ?? 0}
             </div>
             <div style={{ color: "var(--accent-red)" }}>
-              涨停 {data.summary.limit_up} / 跌停 {data.summary.limit_down}
+              涨停 {summary?.limit_up ?? 0} / 跌停 {summary?.limit_down ?? 0}
             </div>
             <div style={{ color: avg != null && avg >= 0 ? "var(--accent-red)" : "var(--accent-green)" }}>
               均 {avg != null ? `${avg >= 0 ? "+" : ""}${avg.toFixed(2)}%` : "—"}

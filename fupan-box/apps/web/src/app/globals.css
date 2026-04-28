@@ -149,6 +149,11 @@ body {
 
 table { border-collapse: collapse; }
 
+/* 防止按钮内图标抢占点击命中 */
+button svg {
+  pointer-events: none;
+}
+
 /* 数据表 (急速复盘风格 - 仅底部细分隔, 无 hover, 无右描边) */
 .data-table {
   width: 100%;
@@ -311,14 +316,14 @@ table { border-collapse: collapse; }
 /* 浮动 Ai 入口 (右下角) */
 .floating-ai-btn {
   position: fixed;
-  right: 16px;
-  bottom: 16px;
+  right: 8px;
+  bottom: 8px;
   z-index: 35;
   background: var(--accent-purple);
   color: #fff;
   border-radius: 4px;
-  padding: 4px 12px;
-  font-size: 12px;
+  padding: 3px 8px;
+  font-size: 10px;
   font-weight: 700;
   box-shadow: 0 6px 16px rgba(0, 0, 0, 0.45);
   cursor: pointer;

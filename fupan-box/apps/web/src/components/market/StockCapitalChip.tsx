@@ -64,11 +64,17 @@ interface Props {
 
 export function StockCapitalChip({ code, variant = "compact", context, silent = false }: Props) {
   const [data, setData] = useState<StockContext | null>(context ?? null);
-  const [loading, setLoading] = useState(!context);
+  const [loading, setLoading] = useState(!context && !silent);
 
   useEffect(() => {
     if (context) {
       setData(context);
+      setLoading(false);
+      return;
+    }
+    // 次要场景(表格小徽章)不主动触发网络请求，避免一次渲染打爆匿名限流。
+    if (silent) {
+      setData(null);
       setLoading(false);
       return;
     }
@@ -79,7 +85,7 @@ export function StockCapitalChip({ code, variant = "compact", context, silent = 
       .catch(() => { if (!cancelled) setData(null); })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
-  }, [code, context]);
+  }, [code, context, silent]);
 
   if (loading && !silent) {
     return (

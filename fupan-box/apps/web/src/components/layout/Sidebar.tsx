@@ -207,13 +207,18 @@ export function Sidebar() {
           if (!isActive) e.currentTarget.style.background = "transparent";
         }}
       >
-        <Icon size={14} strokeWidth={isActive ? 2.4 : 1.8} />
-        <span className="flex-1 truncate">{item.label}</span>
+        <span style={{ pointerEvents: "none", display: "inline-flex" }}>
+          <Icon size={14} strokeWidth={isActive ? 2.4 : 1.8} />
+        </span>
+        <span className="flex-1 truncate" style={{ pointerEvents: "none" }}>
+          {item.label}
+        </span>
         {hint !== undefined && (
           <span
             style={{
               fontSize: 10,
               fontWeight: 700,
+              pointerEvents: "none",
               color: isActive
                 ? "#1a1d28"
                 : highlight
@@ -232,6 +237,7 @@ export function Sidebar() {
             style={{
               padding: "1px 5px",
               borderRadius: 3,
+              pointerEvents: "none",
               fontSize: 9,
               letterSpacing: "0.04em",
               background: isActive
@@ -252,6 +258,8 @@ export function Sidebar() {
       className="h-full flex flex-col flex-shrink-0"
       style={{
         width: 168,
+        position: "relative",
+        zIndex: 40,
         background: "var(--bg-secondary)",
         borderRight: "1px solid var(--border-color)",
       }}

@@ -45,6 +45,7 @@ const fmtInt = (v: number | null | undefined) => {
 };
 
 export function MyHoldingsPage() {
+  const [loggedIn, setLoggedIn] = useState(false);
   const openImportCenter = useImportCenterStore((s) => s.open);
   const openStockDetail = useUIStore((s) => s.openStockDetail);
 
@@ -59,7 +60,13 @@ export function MyHoldingsPage() {
   const [loading, setLoading] = useState(false);
   const [isRevalidating, setIsRevalidating] = useState(false);
 
+  useEffect(() => {
+    api.restoreToken();
+    setLoggedIn(api.isLoggedIn());
+  }, []);
+
   const loadAll = useCallback(async () => {
+    if (!api.isLoggedIn()) return;
     setLoading(true);
     try {
       const [hres, rres, jobs, traw] = await Promise.all([
@@ -72,7 +79,7 @@ export function MyHoldingsPage() {
       ]);
       setHoldings(hres.items || []);
       setRecon(rres ?? null);
-      setRecentJobs(jobs.slice(0, 8));
+      setRecentJobs(Array.isArray(jobs) ? jobs.slice(0, 8) : []);
       setRawTrades(traw.items);
       setRawTotal(traw.total);
     } finally {
@@ -81,9 +88,11 @@ export function MyHoldingsPage() {
   }, [rawLimit, filterCode]);
 
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    loadAll();
-  }, [loadAll]);
+    if (loggedIn) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      void loadAll();
+    }
+  }, [loadAll, loggedIn]);
 
   const handleRevalidate = useCallback(async () => {
     setIsRevalidating(true);
@@ -103,6 +112,41 @@ export function MyHoldingsPage() {
     () => holdings.reduce((sum, h) => sum + (h.pnl ?? 0), 0),
     [holdings],
   );
+
+  if (!loggedIn) {
+    return (
+      <div>
+        <div
+          className="px-3 py-2"
+          style={{
+            borderBottom: "1px solid var(--border-color)",
+            background: "var(--bg-secondary)",
+          }}
+        >
+          <span className="font-bold" style={{ fontSize: "var(--font-md)", color: "var(--text-primary)" }}>
+            我的持仓
+          </span>
+        </div>
+        <div className="flex items-center justify-center" style={{ minHeight: "60vh", pointerEvents: "none" }}>
+          <div
+            className="w-full max-w-sm p-6 rounded-xl text-center"
+            style={{
+              background: "var(--bg-card)",
+              border: "1px solid var(--border-color)",
+              color: "var(--text-secondary)",
+              fontSize: "var(--font-md)",
+            }}
+          >
+            <Coins size={28} style={{ color: "var(--accent-orange)" }} className="mx-auto mb-3" />
+            <p className="mb-2">登录后可使用截图导入和持仓对账</p>
+            <p style={{ color: "var(--text-muted)", fontSize: "var(--font-xs)" }}>
+              请先到「我的自选」登录
+            </p>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div>

@@ -180,7 +180,7 @@ function HeroBlock({ brief }: { brief: AiBrief }) {
             {brief.regime_label}
           </span>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap justify-end">
           <AiDensitySwitch />
           <button
             onClick={() => openDebate("market", undefined, "今日大盘")}
@@ -189,6 +189,8 @@ function HeroBlock({ brief }: { brief: AiBrief }) {
               background: "var(--accent-purple)",
               color: "#fff",
               fontSize: 11,
+              whiteSpace: "nowrap",
+              flexShrink: 0,
               border: "none",
               cursor: "pointer",
             }}
@@ -197,7 +199,7 @@ function HeroBlock({ brief }: { brief: AiBrief }) {
             <Scale size={11} />
             AI 辩论
           </button>
-          <span style={{ fontSize: "var(--font-xs)", color: "var(--text-muted)" }}>
+          <span style={{ fontSize: "var(--font-xs)", color: "var(--text-muted)", whiteSpace: "nowrap" }}>
             {brief.trade_date} · 模型 {brief.model} · 生成于{" "}
             {brief.generated_at.slice(11, 16)}
           </span>
@@ -1572,6 +1574,7 @@ export function TodayReviewPage() {
   const [brief, setBrief] = useState<AiBrief | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [picked, setPicked] = useState<SimilarDay | null>(null);
+  const [secondaryReady, setSecondaryReady] = useState(false);
   const status = usePrivateStatus();
 
   const marks: UserMarksData = {
@@ -1593,6 +1596,13 @@ export function TodayReviewPage() {
       aborted = true;
     };
   }, []);
+
+  useEffect(() => {
+    if (!brief) return;
+    if (secondaryReady) return;
+    const t = setTimeout(() => setSecondaryReady(true), 120);
+    return () => clearTimeout(t);
+  }, [brief, secondaryReady]);
 
   if (error) {
     return (
@@ -1631,18 +1641,33 @@ export function TodayReviewPage() {
       <div id="section-mainline" style={{ borderRadius: 6 }}>
         <MainLineBlock lines={brief.main_lines} />
       </div>
-      <div id="section-leaders" style={{ borderRadius: 6 }}>
-        <LeadersBlock leaders={brief.leaders} />
-      </div>
-      <div id="section-plan" style={{ borderRadius: 6 }}>
-        <PlanBlock
-          plan={brief.tomorrow_plan}
-          similar={brief.similar_days}
-          judgment={brief.similar_judgment}
-          onPickSimilar={setPicked}
-          marks={marks}
-        />
-      </div>
+      {secondaryReady ? (
+        <>
+          <div id="section-leaders" style={{ borderRadius: 6 }}>
+            <LeadersBlock leaders={brief.leaders} />
+          </div>
+          <div id="section-plan" style={{ borderRadius: 6 }}>
+            <PlanBlock
+              plan={brief.tomorrow_plan}
+              similar={brief.similar_days}
+              judgment={brief.similar_judgment}
+              onPickSimilar={setPicked}
+              marks={marks}
+            />
+          </div>
+        </>
+      ) : (
+        <div className="space-y-3" aria-hidden>
+          <div
+            className="h-36 animate-pulse rounded"
+            style={{ background: "var(--bg-card)", border: "1px solid var(--border-color)" }}
+          />
+          <div
+            className="h-32 animate-pulse rounded"
+            style={{ background: "var(--bg-card)", border: "1px solid var(--border-color)" }}
+          />
+        </div>
+      )}
       {picked && (
         <CompareModal
           current={brief}

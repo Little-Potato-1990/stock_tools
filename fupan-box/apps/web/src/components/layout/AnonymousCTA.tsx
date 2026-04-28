@@ -51,9 +51,9 @@ export function AnonymousCTA() {
     <div
       className="fixed z-40"
       style={{
-        right: 16,
-        bottom: 16,
-        width: 280,
+        right: 12,
+        bottom: 88,
+        width: 248,
         background: "var(--bg-card)",
         border: "1px solid var(--accent-purple)",
         borderRadius: 6,

@@ -152,8 +152,10 @@ export function AiPanel() {
   }, []);
 
   useEffect(() => {
+    if (!open) return;
+    if (models.length > 0) return;
     api.getAiModels().then(setModels).catch(() => {});
-  }, []);
+  }, [open, models.length]);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });

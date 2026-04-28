@@ -31,6 +31,7 @@ type AiReview = {
 };
 
 export function MyReviewPage() {
+  const [loggedIn, setLoggedIn] = useState(false);
   const [trades, setTrades] = useState<TradeRecord[]>([]);
   const [pattern, setPattern] = useState<TradePattern | null>(null);
   const [loading, setLoading] = useState(false);
@@ -41,20 +42,66 @@ export function MyReviewPage() {
   const openStockDetail = useUIStore((s) => s.openStockDetail);
   const setActiveModule = useUIStore((s) => s.setActiveModule);
 
+  useEffect(() => {
+    api.restoreToken();
+    setLoggedIn(api.isLoggedIn());
+  }, []);
+
   const load = useCallback(async () => {
+    if (!api.isLoggedIn()) return;
     setLoading(true);
     try {
       const [t, p] = await Promise.all([api.listTrades(days), api.getTradePattern(days)]);
       setTrades(t);
       setPattern(p);
+    } catch {
+      setTrades([]);
+      setPattern(null);
     } finally {
       setLoading(false);
     }
   }, [days]);
 
   useEffect(() => {
-    load();
-  }, [load]);
+    if (loggedIn) {
+      void load();
+    }
+  }, [load, loggedIn]);
+
+  if (!loggedIn) {
+    return (
+      <div>
+        <div
+          className="px-3 py-2"
+          style={{
+            borderBottom: "1px solid var(--border-color)",
+            background: "var(--bg-secondary)",
+          }}
+        >
+          <span className="font-bold" style={{ fontSize: "var(--font-md)", color: "var(--text-primary)" }}>
+            我的复盘
+          </span>
+        </div>
+        <div className="flex items-center justify-center" style={{ minHeight: "60vh", pointerEvents: "none" }}>
+          <div
+            className="w-full max-w-sm p-6 rounded-xl text-center"
+            style={{
+              background: "var(--bg-card)",
+              border: "1px solid var(--border-color)",
+              color: "var(--text-secondary)",
+              fontSize: "var(--font-md)",
+            }}
+          >
+            <BookOpen size={28} style={{ color: "var(--accent-purple)" }} className="mx-auto mb-3" />
+            <p className="mb-2">登录后查看交易复盘与 AI 点评</p>
+            <p style={{ color: "var(--text-muted)", fontSize: "var(--font-xs)" }}>
+              先到「我的自选」登录, 再回到这里
+            </p>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   const removeTrade = async (id: number) => {
     if (!confirm("确认删除该笔交易?")) return;
