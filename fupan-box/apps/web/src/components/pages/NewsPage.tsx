@@ -3,6 +3,7 @@
 import { memo, useCallback, useState, useEffect, useMemo, useRef } from "react";
 import { Newspaper, RefreshCw, Sparkles, Filter, Search, X as XIcon, Globe, ArrowRight } from "lucide-react";
 import { api } from "@/lib/api";
+import { logDevPerf } from "@/lib/dev-perf";
 import { useUIStore } from "@/stores/ui-store";
 import { PageHeader } from "@/components/layout/PageHeader";
 import {
@@ -16,19 +17,13 @@ import {
   NewsItemCard,
   newsItemKey,
 } from "@/components/pages/NewsItemCard";
+import { HORIZON_META, type NewsHorizon } from "@/components/pages/news-constants";
 
 type NewsItem = Awaited<ReturnType<typeof api.getNews>>[number];
 
 type Filt = "all" | "important" | "watch" | "bullish" | "bearish";
 
-type Horizon = "" | "short" | "swing" | "long" | "mixed";
-
-const HORIZON_META: Record<Exclude<Horizon, "">, { label: string; color: string; desc: string }> = {
-  short: { label: "短线", color: "var(--accent-orange)", desc: "1-5 日盘面催化" },
-  swing: { label: "波段", color: "var(--accent-blue)", desc: "5-20 日驱动" },
-  long: { label: "长线", color: "var(--accent-purple)", desc: "6 月+ 产业逻辑" },
-  mixed: { label: "复合", color: "var(--text-secondary)", desc: "多时间维度" },
-};
+type Horizon = "" | NewsHorizon;
 
 interface ThreadFocus {
   kind: "thread";
@@ -73,7 +68,6 @@ export function NewsPage() {
   const firstNewsLoadDoneRef = useRef(false);
   const [renderCount, setRenderCount] = useState(20);
   const loadMoreRef = useRef<HTMLDivElement | null>(null);
-  const DEV_NEWS_PERF = process.env.NODE_ENV !== "production";
   const perfRunIdRef = useRef(0);
 
   const openThemeDetail = useUIStore((s) => s.openThemeDetail);
@@ -303,11 +297,12 @@ export function NewsPage() {
   }, [news, searchResults, watch]);
 
   const sortedDecorated = useMemo(() => {
+    if (searchResults != null) return decorated;
     return decorated.slice().sort((a, b) => {
       if (a._watchHit !== b._watchHit) return a._watchHit ? -1 : 1;
       return (b.importance || 0) - (a.importance || 0);
     });
-  }, [decorated]);
+  }, [decorated, searchResults]);
 
   const filtered = useMemo(() => {
     // 检索模式: 按相关度 (后端返回顺序), 跳过本地 filt/focus
@@ -349,14 +344,14 @@ export function NewsPage() {
     : undefined;
 
   const markNewsInteraction = useCallback((name: string) => {
-    if (!DEV_NEWS_PERF || typeof window === "undefined" || typeof performance === "undefined") return;
+    if (typeof window === "undefined" || typeof performance === "undefined") return;
     const runId = ++perfRunIdRef.current;
     const start = performance.now();
     requestAnimationFrame(() => {
       requestAnimationFrame(() => {
         const ms = performance.now() - start;
-        // 仅开发态统计交互到绘制耗时。
-        console.debug(`[news-perf] ${name} -> ${ms.toFixed(1)}ms`, {
+        // 开发态可开关统计交互到绘制耗时。
+        logDevPerf("news-perf", name, ms, {
           runId,
           filtered: filtered.length,
           visible: Math.min(renderCount, filtered.length),
@@ -366,7 +361,7 @@ export function NewsPage() {
         });
       });
     });
-  }, [DEV_NEWS_PERF, filtered.length, renderCount, horizon, filt, focus]);
+  }, [filtered.length, renderCount, horizon, filt, focus]);
 
   const handleDialClick = (anchor: NewsDialAnchor) => {
     setFocus(null);  // 清掉 main_thread 聚焦

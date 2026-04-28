@@ -2,16 +2,9 @@
 
 import { memo, useCallback, type MouseEvent } from "react";
 import { Star, Zap, TrendingUp, TrendingDown, Minus } from "lucide-react";
+import { HORIZON_META, type NewsHorizon as Horizon } from "@/components/pages/news-constants";
 
 type Sentiment = "bullish" | "bearish" | "neutral";
-type Horizon = "short" | "swing" | "long" | "mixed";
-
-const HORIZON_META: Record<Horizon, { label: string; color: string; desc: string }> = {
-  short: { label: "短线", color: "var(--accent-orange)", desc: "1-5 日盘面催化" },
-  swing: { label: "波段", color: "var(--accent-blue)", desc: "5-20 日驱动" },
-  long: { label: "长线", color: "var(--accent-purple)", desc: "6 月+ 产业逻辑" },
-  mixed: { label: "复合", color: "var(--text-secondary)", desc: "多时间维度" },
-};
 
 const SENTIMENT_META: Record<Sentiment, { label: string; color: string; icon: typeof TrendingUp }> = {
   bullish: { label: "利好", color: "var(--accent-red)", icon: TrendingUp },
