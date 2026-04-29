@@ -195,11 +195,10 @@ function SkillList({ onOpen }: { onOpen: (id: number | null) => void }) {
   }, []);
 
   useEffect(() => {
-    if (!api.isLoggedIn()) {
-      setErr("请先登录");
-      return;
-    }
-    load();
+    const timer = window.setTimeout(() => {
+      void load();
+    }, 0);
+    return () => window.clearTimeout(timer);
   }, [load]);
 
   const handleArchive = async (id: number) => {
@@ -420,17 +419,20 @@ function SkillEditor({
 
   useEffect(() => {
     if (isNew) return;
-    setLoading(true);
-    api
-      .getUserSkill(skillId!)
-      .then((d) => {
-        setDetail(d);
-        setName(d.name);
-        setIcon(d.icon || "");
-        setBody(d.body_markdown || "");
-      })
-      .catch((e) => setErr(e instanceof Error ? e.message : "加载失败"))
-      .finally(() => setLoading(false));
+    const timer = window.setTimeout(() => {
+      setLoading(true);
+      api
+        .getUserSkill(skillId!)
+        .then((d) => {
+          setDetail(d);
+          setName(d.name);
+          setIcon(d.icon || "");
+          setBody(d.body_markdown || "");
+        })
+        .catch((e) => setErr(e instanceof Error ? e.message : "加载失败"))
+        .finally(() => setLoading(false));
+    }, 0);
+    return () => window.clearTimeout(timer);
   }, [isNew, skillId]);
 
   const refreshDetail = useCallback(async () => {

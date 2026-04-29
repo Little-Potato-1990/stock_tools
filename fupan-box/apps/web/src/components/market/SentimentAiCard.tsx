@@ -170,17 +170,13 @@ function deriveDials(data: SentimentBrief): DialItem<DialAnchor>[] {
 interface Props {
   /** hero 模式: 字号更大, padding 更宽, 用作页面顶部主视觉 */
   hero?: boolean;
-  /** 用户在 L1 仪表盘上点击 "查看证据" 时回调, 把 anchor 抛给页面去高亮 L2. */
+  /** 用户在 L1 仪表盘上点击时回调, 把 anchor 抛给页面做联动高亮. */
   onEvidenceClick?: (anchor: DialAnchor) => void;
-  /** brief 加载完成后, 把 trend_5d 抛给页面共享 (避免 L2 重复请求). */
-  onTrendLoad?: (trend: TrendPoint[]) => void;
-  /** brief 加载完成后, 把整份 brief 抛给页面 (供 L2 显示 news 驱动). */
-  onBriefLoad?: (brief: SentimentBrief) => void;
   /** 点击消息面新闻时的跳转 */
   onNewsClick?: (id: number) => void;
 }
 
-export function SentimentAiCard({ hero = false, onEvidenceClick, onTrendLoad, onBriefLoad, onNewsClick }: Props = {}) {
+export function SentimentAiCard({ hero = false, onEvidenceClick, onNewsClick }: Props = {}) {
   const [data, setData] = useState<SentimentBrief | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -193,8 +189,6 @@ export function SentimentAiCard({ hero = false, onEvidenceClick, onTrendLoad, on
       const d = await api.getSentimentBrief(dateOverride, refresh);
       const brief = d as unknown as SentimentBrief;
       setData(brief);
-      if (onTrendLoad) onTrendLoad(brief.trend_5d ?? []);
-      if (onBriefLoad) onBriefLoad(brief);
     } catch (e) {
       setError(e instanceof Error ? e.message : "load failed");
     } finally {
@@ -203,9 +197,10 @@ export function SentimentAiCard({ hero = false, onEvidenceClick, onTrendLoad, on
   };
 
   useEffect(() => {
-    load();
-    // onTrendLoad 是 setState 引用, useEffect 依赖固定为 [] 避免重复请求
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    const timer = window.setTimeout(() => {
+      void load();
+    }, 0);
+    return () => window.clearTimeout(timer);
   }, []);
 
   if (loading) {

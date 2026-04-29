@@ -7,7 +7,6 @@ import { OverviewBar } from "@/components/market/OverviewBar";
 import {
   SentimentAiCard,
   type DialAnchor,
-  type SentimentBrief,
 } from "@/components/market/SentimentAiCard";
 
 const SentimentChart = dynamic(
@@ -86,7 +85,6 @@ function CollapseSection({
 
 export function SentimentPage() {
   const [highlight, setHighlight] = useState<DialAnchor | null>(null);
-  const [, setBrief] = useState<SentimentBrief | null>(null);
 
   const handleNewsClick = (id: number) => {
     // 点击 news → 跳到 news 页 (用 hash route, 由 NewsPage 自行解析)
@@ -95,9 +93,9 @@ export function SentimentPage() {
     }
   };
 
-  // L1 → L2 联动:
+  // L1 仪表盘联动:
   // - 同一 anchor 二次点击则取消高亮 (toggle)
-  // - 否则切换到新 anchor, 由 EvidenceGrid 滚到对应卡片
+  // - 否则切换到新 anchor, 用于 L4 热力表角标聚焦
   const handleEvidenceClick = (anchor: DialAnchor) => {
     setHighlight((prev) => (prev === anchor ? null : anchor));
   };
@@ -113,7 +111,6 @@ export function SentimentPage() {
       <SentimentAiCard
         hero
         onEvidenceClick={handleEvidenceClick}
-        onBriefLoad={setBrief}
         onNewsClick={handleNewsClick}
       />
 

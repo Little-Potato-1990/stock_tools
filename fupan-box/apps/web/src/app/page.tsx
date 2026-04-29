@@ -26,8 +26,6 @@ export default function Home() {
       return <ThemesPage />;
     case "watchlist":
       return <WatchlistPage />;
-    case "my_holdings":
-      return <MyReviewPage />;
     case "plans":
       return <PlansPage />;
     case "capital":
