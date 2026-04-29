@@ -2,8 +2,6 @@
 
 import { ReactNode, useEffect, useRef, useState } from "react";
 import { History, Sparkles, ChevronDown } from "lucide-react";
-import { FeedbackThumbs, FeedbackKind } from "./FeedbackThumbs";
-import { CacheMetaBadge, type CacheMeta } from "./CacheMetaBadge";
 
 /**
  * 5+ 张 AI 卡片共用的"骨架件" — loading / error / footer feedback 三个最重的样板.
@@ -46,14 +44,19 @@ export function AiCardError({ error }: { error?: string | null }) {
 }
 
 interface FooterProps {
-  kind: FeedbackKind;
+  kind:
+    | "today"
+    | "sentiment"
+    | "theme"
+    | "ladder"
+    | "lhb"
+    | "capital"
+    | "institutional";
   tradeDate?: string;
   model?: string;
   snapshot?: Record<string, unknown>;
   /** 额外提示信息, 比如"AI 命中率 / 数据来源", 可选 */
   extra?: ReactNode;
-  /** 后端 brief.__cache_meta__; 传入即自动渲染"X分钟前预热"徽章 */
-  cacheMeta?: CacheMeta | null;
   /**
    * #11 事后回看: 传入此回调即在 footer 渲染"历史"下拉 (今日/前1日/前3日/前7日/前30日).
    * 父组件接收 isoDate 字符串后自行重新拉取, 并把新的 trade_date 回填到 brief.
@@ -163,16 +166,18 @@ export function AiCardFooter({
   model,
   snapshot,
   extra,
-  cacheMeta,
   onPickDate,
 }: FooterProps) {
+  void kind;
+  void tradeDate;
+  void model;
+  void snapshot;
+  if (!onPickDate && !extra) return null;
   return (
     <div
       className="mt-2 pt-2 flex items-center gap-2 flex-wrap"
       style={{ borderTop: "1px dashed var(--border-color)" }}
     >
-      <FeedbackThumbs kind={kind} tradeDate={tradeDate} model={model} snapshot={snapshot} />
-      {cacheMeta ? <CacheMetaBadge meta={cacheMeta} /> : null}
       {onPickDate ? (
         <span className="ml-auto inline-flex items-center gap-1.5">
           {extra}

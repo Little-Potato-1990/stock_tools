@@ -11,36 +11,29 @@ import {
   Star,
   Target,
   Sparkles,
-  Award,
   BookOpen,
   Wallet,
-  Telescope,
   BrainCircuit,
-  Coins,
   type LucideIcon,
 } from "lucide-react";
 import { useUIStore, type NavModule } from "@/stores/ui-store";
 import { usePrivateStatus } from "@/stores/private-status-store";
-import { DataHealthChip } from "./DataHealthChip";
 import { UniverseSwitcher } from "@/components/common/UniverseSwitcher";
 
 interface NavItem {
   key: NavModule;
   label: string;
   icon: LucideIcon;
-  badge?: string;
 }
 
 const PUBLIC_NAV: NavItem[] = [
-  { key: "today", label: "今日复盘", icon: Sparkles, badge: "AI" },
+  { key: "today", label: "今日复盘", icon: Sparkles },
   { key: "sentiment", label: "大盘情绪", icon: Activity },
   { key: "themes", label: "题材追踪", icon: Layers },
   { key: "capital", label: "资金风向标", icon: DollarSign },
-  { key: "ai_track", label: "AI 战绩", icon: Award, badge: "AI" },
-  { key: "midlong", label: "个股深度", icon: SearchIcon, badge: "AI" },
   { key: "lhb", label: "龙虎榜分析", icon: Trophy },
+  { key: "midlong", label: "个股深度", icon: SearchIcon },
   { key: "news", label: "财经要闻", icon: Newspaper },
-  { key: "methodology", label: "方法论文库", icon: BookOpen },
 ];
 
 const SETTINGS_NAV: NavItem[] = [
@@ -114,17 +107,6 @@ export function Sidebar() {
         : "+ 加自选",
     },
     {
-      key: "my_holdings",
-      label: "我的持仓",
-      icon: Coins,
-      // 数据装入入口本身永远可见 (空状态会引导用户上传截图);
-      // 如果跟 trades unlocked 挂钩, 用户没有 trades 时点不进来就无法导入 = 死锁.
-      unlocked: true,
-      hint: status?.trades.unlocked
-        ? `${status.trades.count_total}`
-        : "+ 截图导入",
-    },
-    {
       key: "plans",
       label: "我的计划",
       icon: Target,
@@ -138,9 +120,8 @@ export function Sidebar() {
     },
     {
       key: "my_review",
-      label: "我的复盘",
+      label: "交易复盘",
       icon: BookOpen,
-      badge: "AI",
       unlocked: status?.trades.unlocked ?? false,
       hint: status?.trades.unlocked
         ? `7日 ${status.trades.count_7d}`
@@ -150,23 +131,17 @@ export function Sidebar() {
       key: "skills",
       label: "我的体系",
       icon: BrainCircuit,
-      badge: "AI",
       unlocked: true,
       hint: "自定义",
-    },
-    {
-      key: "skill_scan",
-      label: "体系扫描",
-      icon: Telescope,
-      badge: "AI",
-      unlocked: true,
-      hint: "选股",
     },
   ];
 
   const renderItem = (item: NavItem, opts?: Partial<PrivateNavItem>) => {
     const Icon = item.icon;
-    const isActive = activeModule === item.key;
+    const isSkillsGroupActive =
+      item.key === "skills" &&
+      (activeModule === "skills" || activeModule === "methodology" || activeModule === "skill_scan");
+    const isActive = activeModule === item.key || isSkillsGroupActive;
     const unlocked = opts?.unlocked ?? true;
     const hint = opts?.hint;
     const highlight = (opts?.highlight ?? 0) > 0;
@@ -222,24 +197,6 @@ export function Sidebar() {
             {hint}
           </span>
         )}
-        {item.badge && hint === undefined && (
-          <span
-            className="font-bold"
-            style={{
-              padding: "1px 5px",
-              borderRadius: 3,
-              pointerEvents: "none",
-              fontSize: 9,
-              letterSpacing: "0.04em",
-              background: isActive
-                ? "rgba(26,29,40,0.85)"
-                : "var(--accent-purple)",
-              color: isActive ? "var(--accent-orange)" : "#fff",
-            }}
-          >
-            {item.badge}
-          </span>
-        )}
       </button>
     );
   };
@@ -286,16 +243,7 @@ export function Sidebar() {
       {/* 主导航: 三分区 */}
       <nav className="flex-1 overflow-y-auto py-2">
         <SectionTitle>公共复盘</SectionTitle>
-        {PUBLIC_NAV.map((item) =>
-          item.key === "ai_track"
-            ? renderItem(item, {
-                unlocked: true,
-                hint: status?.ai_track.unlocked
-                  ? `已验 ${status.ai_track.verified_7d}`
-                  : "待累计",
-              })
-            : renderItem(item)
-        )}
+        {PUBLIC_NAV.map((item) => renderItem(item))}
 
         <SectionTitle hint="登录可解锁个性化">可选增强</SectionTitle>
         {privateNav.map((item) =>
@@ -310,13 +258,6 @@ export function Sidebar() {
         {SETTINGS_NAV.map((item) => renderItem(item))}
       </nav>
 
-      {/* 底部: 数据健康度提示 (AI 副驾入口已移至右下角浮窗) */}
-      <div
-        className="px-3 py-2 space-y-2"
-        style={{ borderTop: "1px solid var(--border-color)" }}
-      >
-        <DataHealthChip />
-      </div>
     </aside>
   );
 }

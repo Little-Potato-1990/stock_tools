@@ -361,7 +361,7 @@ export function ImportCenter() {
   const kind = useImportCenterStore((s) => s.kind);
   const open = useImportCenterStore((s) => s.open);
   const close = useImportCenterStore((s) => s.close);
-  const setActiveModule = useUIStore((s) => s.setActiveModule);
+  const openAuthModal = useUIStore((s) => s.openAuthModal);
 
   const [files, setFiles] = useState<File[]>([]);
   const [dragActive, setDragActive] = useState(false);
@@ -712,7 +712,7 @@ export function ImportCenter() {
                   type="button"
                   onClick={() => {
                     close();
-                    setActiveModule("watchlist");
+                    openAuthModal();
                   }}
                   className="ml-auto px-2 py-1 rounded text-xs"
                   style={{ border: "1px solid rgba(255,255,255,0.24)", color: "#fff" }}

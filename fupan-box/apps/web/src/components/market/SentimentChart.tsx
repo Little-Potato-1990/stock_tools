@@ -85,8 +85,8 @@ function ChartCard({
     <div
       className="rounded"
       style={{
-        background: "var(--bg-card)",
-        border: "1px solid var(--border-color)",
+        background: "rgba(255,255,255,0.01)",
+        border: "1px solid rgba(255,255,255,0.08)",
         padding: "8px 10px",
       }}
     >
@@ -111,8 +111,8 @@ export function SentimentChart() {
   const [data, setData] = useState<SentimentRow[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [loaded, setLoaded] = useState(false);
-  // P1: 5 张高级图表默认折叠, 减少视觉噪音
-  const [advancedOpen, setAdvancedOpen] = useState(false);
+  // 高级图表默认展开，便于一次性查看完整信息
+  const [advancedOpen, setAdvancedOpen] = useState(true);
 
   useEffect(() => {
     api
@@ -159,73 +159,35 @@ export function SentimentChart() {
 
   const dates = data.map((d) => d.trade_date.slice(5).replace("-", "/"));
 
-  const pctTooltip = {
-    ...baseTooltip,
-    formatter: (params: unknown) => {
-      const items = params as Array<{
-        seriesName: string;
-        value: number;
-        marker: string;
-        axisValue: string;
-      }>;
-      if (!Array.isArray(items) || items.length === 0) return "";
-      let html = `<div style="font-size:11px">${items[0].axisValue}<br/>`;
-      for (const p of items) {
-        html += `${p.marker} ${p.seriesName}: <b>${(p.value * 100).toFixed(2)}%</b><br/>`;
-      }
-      return html + "</div>";
-    },
-  };
-
-  const pctYAxis = {
-    type: "value" as const,
-    axisLabel: {
-      color: "#5d6175",
-      fontSize: 9,
-      formatter: (v: number) => `${(v * 100).toFixed(0)}%`,
-    },
-    splitLine: { lineStyle: { color: "rgba(42,45,58,0.6)" } },
-    axisLine: { show: false },
-    min: 0,
-    max: 1,
-  };
-
-  const lineSeries = (
-    name: string,
-    color: string,
-    values: Array<number | null>
-  ) => ({
-    name,
-    type: "line" as const,
-    data: values.map((v) => v ?? 0),
-    lineStyle: { color, width: 1.6 },
-    itemStyle: { color },
-    symbol: "circle" as const,
-    symbolSize: 4,
-    smooth: true,
+  // ===== 情绪周期: 单一综合情绪指数 (0-100) =====
+  const clamp01 = (v: number) => Math.max(0, Math.min(1, v));
+  const sentimentIndex = data.map((d) => {
+    const upRate = clamp01(d.up_rate ?? 0.5);
+    const earnRate = clamp01(d.yesterday_lu_up_rate ?? 0.5);
+    const heightFactor = clamp01((d.max_height ?? 0) / 8);
+    const brokenSafe = 1 - clamp01(d.broken_rate ?? 0);
+    const score =
+      100 *
+      (0.35 * upRate + 0.35 * earnRate + 0.2 * heightFactor + 0.1 * brokenSafe);
+    return Math.round(score);
   });
-
-  // P1: 在 "上日强势票上涨率" 系列上加 markPoint, 自动标极端值
-  // 规则化 (不依赖 LLM): >=0.70 红色 "过热, 注意分歧"; <=0.35 绿色 "冰点, 关注修复"
-  const luRates = data.map((d) => d.yesterday_lu_up_rate);
-  const luMarkPointData: Array<{
+  const sentimentMarkPointData: Array<{
     coord: [number, number];
     value: string;
     itemStyle: { color: string };
     label?: { color: string };
   }> = [];
-  for (let i = 0; i < luRates.length; i++) {
-    const v = luRates[i];
-    if (v == null) continue;
-    if (v >= 0.7) {
-      luMarkPointData.push({
+  for (let i = 0; i < sentimentIndex.length; i++) {
+    const v = sentimentIndex[i];
+    if (v >= 75) {
+      sentimentMarkPointData.push({
         coord: [i, v],
         value: "过热",
         itemStyle: { color: "#ef4444" },
         label: { color: "#fff" },
       });
-    } else if (v <= 0.35) {
-      luMarkPointData.push({
+    } else if (v <= 30) {
+      sentimentMarkPointData.push({
         coord: [i, v],
         value: "冰点",
         itemStyle: { color: "#22c55e" },
@@ -233,31 +195,51 @@ export function SentimentChart() {
       });
     }
   }
-
-  // ===== 情绪周期: 多曲线对比 (主图 — 全部上涨率) =====
   const cycleOption: echarts.EChartsCoreOption = {
     backgroundColor: "transparent",
     grid: { top: 36, right: 16, bottom: 24, left: 40, containLabel: false },
-    tooltip: pctTooltip,
-    legend: { ...baseLegend, type: "scroll", width: "70%" },
+    tooltip: {
+      ...baseTooltip,
+      formatter: (params: unknown) => {
+        const items = params as Array<{
+          value: number;
+          axisValue: string;
+          marker: string;
+        }>;
+        if (!Array.isArray(items) || items.length === 0) return "";
+        const p = items[0];
+        const score = Number(p.value);
+        const zone = score >= 75 ? "偏热" : score >= 60 ? "偏强" : score >= 45 ? "中性" : score >= 30 ? "偏弱" : "冰点";
+        return `<div style="font-size:11px">${p.axisValue}<br/>${p.marker} 综合情绪指数: <b>${score}</b><br/>阶段: <b>${zone}</b></div>`;
+      },
+    },
     xAxis: { type: "category", data: dates, ...baseLine },
-    yAxis: pctYAxis,
+    yAxis: {
+      type: "value",
+      min: 0,
+      max: 100,
+      axisLabel: { color: "#5d6175", fontSize: 9 },
+      splitLine: { lineStyle: { color: "rgba(42,45,58,0.6)" } },
+      axisLine: { show: false },
+    },
     series: [
-      lineSeries("收盘上涨率", "#3b82f6", data.map((d) => d.up_rate)),
       {
-        ...lineSeries("上日强势票上涨率", "#f59e0b", luRates),
+        name: "综合情绪指数",
+        type: "line",
+        data: sentimentIndex,
+        lineStyle: { color: "#8b5cf6", width: 2.4 },
+        itemStyle: { color: "#8b5cf6" },
+        symbol: "circle",
+        symbolSize: 5,
+        smooth: true,
+        areaStyle: { color: "rgba(139,92,246,0.10)" },
         markPoint: {
           symbol: "pin",
           symbolSize: 32,
-          data: luMarkPointData,
+          data: sentimentMarkPointData,
           label: { fontSize: 9, fontWeight: 700 },
         },
       },
-      lineSeries("上日妖股上涨率", "#ef4444", data.map((d) => d.yesterday_panic_up_rate ?? null)),
-      lineSeries("上日弱势票上涨率", "#22c55e", data.map((d) => d.yesterday_weak_up_rate ?? null)),
-      lineSeries("上证上涨率", "#8b5cf6", data.map((d) => d.sh_up_rate ?? null)),
-      lineSeries("深证上涨率", "#06b6d4", data.map((d) => d.sz_up_rate ?? null)),
-      lineSeries("创业板上涨率", "#ec4899", data.map((d) => d.gem_up_rate ?? null)),
     ],
   };
 
@@ -581,7 +563,7 @@ export function SentimentChart() {
     },
     series: [
       {
-        name: "强势系数",
+        name: "强势延续",
         type: "line",
         data: data.map((d) => (d.yesterday_lu_up_rate ?? 0) * 100),
         lineStyle: { color: "#ef4444", width: 2 },
@@ -601,7 +583,7 @@ export function SentimentChart() {
         smooth: true,
       },
       {
-        name: "反包系数",
+        name: "封板稳定度",
         type: "line",
         data: data.map((d) => (1 - (d.broken_rate ?? 0)) * 100),
         lineStyle: { color: "#8b5cf6", width: 2 },
@@ -629,8 +611,8 @@ export function SentimentChart() {
 
   return (
     <div className="p-3 space-y-2">
-      {/* P1: 主图 — 情绪周期 (始终展开, 极端值自动 markPoint) */}
-      <ChartCard title="情绪周期 (主图 · 自动标极端值)" option={cycleOption} height={260} />
+      {/* P1: 主图 — 综合情绪指数 (单值曲线) */}
+      <ChartCard title="情绪周期 (主图 · 综合情绪指数)" option={cycleOption} height={260} />
 
       {/* P1: 5 张高级图表折叠, 默认收起 */}
       <button

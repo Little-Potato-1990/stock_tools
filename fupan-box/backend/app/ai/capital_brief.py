@@ -19,7 +19,6 @@
 """
 from __future__ import annotations
 
-import json
 import logging
 from datetime import date, datetime
 from typing import Any
@@ -27,12 +26,64 @@ from typing import Any
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
 
-from app.ai.brief_generator import _call_llm, _latest_trade_date_with_data
-from app.ai.cross_context import NO_FLUFF_RULES
+from app.ai.brief_generator import _latest_trade_date_with_data
 from app.config import get_settings
 from app.models.capital import CapitalFlowDaily, EtfFlowDaily
 
 logger = logging.getLogger(__name__)
+
+
+def _pick_top_by_sign(
+    items: list[dict] | None,
+    *,
+    positive: bool,
+    top_n: int = 3,
+) -> list[dict]:
+    rows = []
+    for it in (items or []):
+        v = float(it.get("main_inflow", 0) or 0)
+        if positive and v > 0:
+            rows.append(it)
+        if (not positive) and v < 0:
+            rows.append(it)
+    return rows[:top_n]
+
+
+def _sum_main_inflow(items: list[dict]) -> float:
+    return float(sum(float(it.get("main_inflow", 0) or 0) for it in items))
+
+
+def _build_flow_facts(snapshot: dict) -> dict[str, Any]:
+    concepts_top = _pick_top_by_sign(snapshot.get("concepts_top"), positive=True, top_n=3)
+    concepts_bottom = _pick_top_by_sign(snapshot.get("concepts_bottom"), positive=False, top_n=3)
+    industries_top = _pick_top_by_sign(snapshot.get("industries_top"), positive=True, top_n=3)
+    industries_bottom = _pick_top_by_sign(snapshot.get("industries_bottom"), positive=False, top_n=3)
+
+    market = snapshot.get("market") or {}
+    north = snapshot.get("north") or {}
+    etf_team = snapshot.get("etf_team") or {}
+
+    return {
+        "main_net_inflow": float(market.get("主力净流入-净额", 0) or 0),
+        "north_net_inflow": float(north.get("net_inflow", 0) or 0),
+        "etf_team_inflow": float(etf_team.get("total_inflow", 0) or 0),
+        "concept_inflow_top3": {
+            "names": [str(x.get("name", "")).strip() for x in concepts_top if x.get("name")],
+            "total_inflow": _sum_main_inflow(concepts_top),
+        },
+        "concept_outflow_top3": {
+            "names": [str(x.get("name", "")).strip() for x in concepts_bottom if x.get("name")],
+            "total_inflow": _sum_main_inflow(concepts_bottom),
+        },
+        "industry_inflow_top3": {
+            "names": [str(x.get("name", "")).strip() for x in industries_top if x.get("name")],
+            "total_inflow": _sum_main_inflow(industries_top),
+        },
+        "industry_outflow_top3": {
+            "names": [str(x.get("name", "")).strip() for x in industries_bottom if x.get("name")],
+            "total_inflow": _sum_main_inflow(industries_bottom),
+        },
+    }
 
 
 def _load_capital_snapshot(trade_date: date) -> dict:
@@ -160,59 +211,6 @@ def _heuristic_brief(snapshot: dict) -> dict[str, Any]:
     }
 
 
-def _build_prompt(trade_date: str, snapshot: dict, hint: dict) -> tuple[str, str]:
-    system = (
-        "你是 A 股资金面分析师, 输出 JSON。"
-        "重点回答: 今日是谁在买/卖, 国家队是否出手, 该往哪个方向跟。"
-        + NO_FLUFF_RULES
-    )
-    user = (
-        f"今日 {trade_date} 资金快照:\n```json\n{json.dumps(snapshot, ensure_ascii=False)[:3500]}\n```\n\n"
-        f"规则版预判: stance={hint['stance']}\n\n"
-        "请输出 JSON, 严格按 schema:\n"
-        "```json\n"
-        "{\n"
-        '  "headline": "≤40字 今日资金一句话, 必须含三个数字(主力/北向/国家队)",\n'
-        '  "stance": "净流入主导|净流出主导|分化|防御",\n'
-        '  "signals": [{"label":"主力","text":"..."}, {"label":"北向","text":"..."}, {"label":"国家队","text":"..."}],\n'
-        '  "playbook": [{"label":"方向","action":"..."}, {"label":"仓位","action":"..."}],\n'
-        '  "evidence": ["3条 30字内 关键数字证据, 必须引用snapshot里的真实板块名+数字"]\n'
-        "}\n```\n不要 markdown fence。"
-    )
-    return system, user
-
-
-def _merge(snapshot: dict, hint: dict, llm_out: dict | None) -> dict[str, Any]:
-    if not llm_out:
-        return hint
-    valid_stance = {"净流入主导", "净流出主导", "分化", "防御"}
-    out = dict(hint)
-    if (h := (llm_out.get("headline") or "").strip()):
-        out["headline"] = h[:60]
-    if (s := llm_out.get("stance")) in valid_stance:
-        out["stance"] = s
-    sigs = []
-    for it in (llm_out.get("signals") or [])[:3]:
-        l = (it.get("label") or "").strip()[:8]
-        t = (it.get("text") or "").strip()[:50]
-        if l and t:
-            sigs.append({"label": l, "text": t})
-    if len(sigs) >= 3:
-        out["signals"] = sigs
-    play = []
-    for it in (llm_out.get("playbook") or [])[:3]:
-        l = (it.get("label") or "").strip()[:8]
-        a = (it.get("action") or "").strip()[:50]
-        if l and a:
-            play.append({"label": l, "action": a})
-    if play:
-        out["playbook"] = play
-    ev = [str(e).strip()[:60] for e in (llm_out.get("evidence") or [])[:3] if e]
-    if ev:
-        out["evidence"] = ev
-    return out
-
-
 async def generate_capital_brief(
     trade_date: date | None = None, model_id: str = "deepseek-v3",
 ) -> dict[str, Any]:
@@ -223,7 +221,8 @@ async def generate_capital_brief(
     base: dict[str, Any] = {
         "trade_date": trade_date.isoformat(),
         "generated_at": datetime.now().isoformat(timespec="seconds"),
-        "model": model_id,
+        # 资金卡彻底去 LLM 化: 固定为规则计算版本标识.
+        "model": "calc-v1",
         "headline": "",
         "stance": "分化",
         "signals": [],
@@ -231,17 +230,17 @@ async def generate_capital_brief(
         "evidence": [],
         "highlights": {
             "concept_top": snapshot.get("concepts_top", []),
+            "concept_bottom": snapshot.get("concepts_bottom", []),
             "industry_top": snapshot.get("industries_top", []),
+            "industry_bottom": snapshot.get("industries_bottom", []),
             "etf_team": snapshot.get("etf_team", {}),
         },
+        "flow_facts": _build_flow_facts(snapshot),
     }
     if not snapshot.get("market") and not snapshot.get("north"):
         base["headline"] = f"{trade_date.isoformat()} 暂无资金数据"
         return base
 
-    hint = _heuristic_brief(snapshot)
-    system, user = _build_prompt(trade_date.isoformat(), snapshot, hint)
-    llm_out = await _call_llm(system, user, model_id)
-    merged = _merge(snapshot, hint, llm_out)
-    base.update(merged)
+    del model_id  # keep function signature backward-compatible with API
+    base.update(_heuristic_brief(snapshot))
     return base

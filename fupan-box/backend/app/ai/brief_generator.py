@@ -508,11 +508,8 @@ async def _judge_similar_days(
 
     valid_tilt = {"延续", "反转", "震荡"}
     tilt = out.get("tilt") if out.get("tilt") in valid_tilt else fallback["tilt"]
-    try:
-        prob = int(out.get("probability", fallback["probability"]))
-        prob = max(0, min(100, prob))
-    except Exception:
-        prob = fallback["probability"]
+    # 概率统一使用规则统计值, 不允许被 LLM 覆盖.
+    prob = fallback["probability"]
     key_risk = (out.get("key_risk") or fallback["key_risk"] or "")[:60]
     note = (out.get("note") or fallback["note"] or "")[:80]
     return {"tilt": tilt, "probability": prob, "key_risk": key_risk, "note": note}

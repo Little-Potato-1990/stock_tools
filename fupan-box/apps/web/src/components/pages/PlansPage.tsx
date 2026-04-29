@@ -4,7 +4,6 @@ import { useState, useEffect, useCallback, useMemo } from "react";
 import {
   Plus,
   Trash2,
-  LogIn,
   Zap,
   CheckCircle,
   AlertCircle,
@@ -137,10 +136,22 @@ export function PlansPage() {
 
   const consumePendingPlan = useUIStore((s) => s.consumePendingPlan);
   const pendingPlan = useUIStore((s) => s.pendingPlanForCode);
+  const openAuthModal = useUIStore((s) => s.openAuthModal);
 
   useEffect(() => {
-    api.restoreToken();
-    setLoggedIn(api.isLoggedIn());
+    const syncLoginState = () => {
+      api.restoreToken();
+      setLoggedIn(api.isLoggedIn());
+    };
+    syncLoginState();
+    if (typeof window !== "undefined") {
+      window.addEventListener("app:auth-changed", syncLoginState);
+    }
+    return () => {
+      if (typeof window !== "undefined") {
+        window.removeEventListener("app:auth-changed", syncLoginState);
+      }
+    };
   }, []);
 
   // P1 #6: 从自选/异动/Drawer 跳过来时, 自动打开新建 form 并预填
@@ -316,14 +327,18 @@ export function PlansPage() {
             <Zap size={28} style={{ color: "var(--accent-purple)" }} className="mx-auto mb-3" />
             <p className="mb-3">写下你的操作计划, AI 盘中替你盯条件</p>
             <p style={{ color: "var(--text-muted)", fontSize: "var(--font-xs)" }}>
-              先到「我的自选」登录, 之后回到这里创建计划
+              你可以直接在这里登录
             </p>
-            <p
-              className="mt-4 inline-flex items-center gap-1.5"
-              style={{ color: "var(--text-muted)", fontSize: "var(--font-xs)" }}
+            <button
+              onClick={openAuthModal}
+              className="mt-4 px-3 py-1.5 rounded text-xs font-semibold transition-opacity hover:opacity-90"
+              style={{
+                background: "var(--accent-purple)",
+                color: "#fff",
+              }}
             >
-              <LogIn size={12} /> 自选页面 → 顶部右侧登录
-            </p>
+              立即登录
+            </button>
           </div>
         </div>
       </div>

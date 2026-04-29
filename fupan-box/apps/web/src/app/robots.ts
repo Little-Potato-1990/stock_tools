@@ -11,7 +11,7 @@ export default function robots(): MetadataRoute.Robots {
         disallow: [
           "/api/",        // 后端 API 路由
           "/account",     // 账号设置
-          "/my_review",   // 个人复盘
+          "/my_review",   // 交易复盘（登录态）
           "/plans",       // 私人交易计划
           "/watchlist",   // 自选股 (登录态)
         ],

@@ -7,10 +7,8 @@ import { OverviewBar } from "@/components/market/OverviewBar";
 import {
   SentimentAiCard,
   type DialAnchor,
-  type TrendPoint,
   type SentimentBrief,
 } from "@/components/market/SentimentAiCard";
-import { SentimentEvidenceGrid } from "@/components/market/SentimentEvidenceGrid";
 
 const SentimentChart = dynamic(
   () => import("@/components/market/SentimentChart").then((m) => m.SentimentChart),
@@ -88,8 +86,7 @@ function CollapseSection({
 
 export function SentimentPage() {
   const [highlight, setHighlight] = useState<DialAnchor | null>(null);
-  const [trend5d, setTrend5d] = useState<TrendPoint[]>([]);
-  const [brief, setBrief] = useState<SentimentBrief | null>(null);
+  const [, setBrief] = useState<SentimentBrief | null>(null);
 
   const handleNewsClick = (id: number) => {
     // 点击 news → 跳到 news 页 (用 hash route, 由 NewsPage 自行解析)
@@ -116,27 +113,19 @@ export function SentimentPage() {
       <SentimentAiCard
         hero
         onEvidenceClick={handleEvidenceClick}
-        onTrendLoad={setTrend5d}
         onBriefLoad={setBrief}
-      />
-
-      {/* L2: AI 引用证据 (4 张精选 sparkline + 消息面驱动新闻 — 与 L1 仪表盘联动) */}
-      <SentimentEvidenceGrid
-        trendData={trend5d}
-        highlight={highlight}
-        newsPool={brief?.news_pool}
-        pickedIds={brief?.news_ids}
         onNewsClick={handleNewsClick}
       />
 
       {/* L3: 详细图表 (情绪周期主图 + 5 张折叠子图) */}
       <SentimentChart />
 
-      {/* L4: 60 日全量热力表, 默认折叠 — 用于核对 AI 结论 */}
+      {/* L4: 60 日全量热力表, 默认展开 — 用于核对 AI 结论 */}
       <CollapseSection
         icon={<Table size={13} />}
         title="60 日情绪热力表"
         desc="50+ 指标全量 · AI 关注字段已加角标 · 用于核对 AI 结论"
+        defaultOpen
       >
         <OverviewBar aiHighlightFields={overviewHighlightFields} />
       </CollapseSection>

@@ -17,7 +17,6 @@ import {
   type ThemeBriefData,
   type ThemeDialAnchor,
 } from "@/components/market/ThemeAiCard";
-import { ThemeEvidenceGrid } from "@/components/market/ThemeEvidenceGrid";
 import { BoardGrid } from "@/components/market/BoardGrid";
 
 type SubTab = "trend" | "concept" | "industry";
@@ -408,16 +407,6 @@ export function ThemesPage() {
             hero
             onEvidenceClick={handleEvidenceClick}
             onBriefLoad={setBrief}
-          />
-
-          {/* L2: AI 圈定的 4 个题材 (主线/新晋/退潮/明日下注) — 含催化新闻 */}
-          <ThemeEvidenceGrid
-            brief={brief}
-            highlight={highlight}
-            onNewsClick={(id) => {
-              if (typeof window !== "undefined")
-                window.location.hash = `#/news?focus=${id}`;
-            }}
           />
 
           {loading ? (

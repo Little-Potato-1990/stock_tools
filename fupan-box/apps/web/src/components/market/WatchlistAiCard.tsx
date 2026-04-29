@@ -4,8 +4,6 @@ import { useEffect, useState, useCallback } from "react";
 import { Sparkles, RotateCcw, Loader2, AlertTriangle } from "lucide-react";
 import { api } from "@/lib/api";
 import { AiCardFooter } from "./AiCardChrome";
-import { EvidenceBadge } from "./EvidenceBadge";
-import { getCacheMeta } from "./CacheMetaBadge";
 import { useSkillStore } from "@/stores/skill-store";
 import { useUIStore } from "@/stores/ui-store";
 import { SkillChip } from "@/components/skill/SkillChip";
@@ -99,12 +97,6 @@ export function WatchlistAiCard({ itemCount }: Props) {
             <SkillTagText text={data.headline} />
           </p>
 
-          {data.evidence?.length > 0 && (
-            <div className="mb-2">
-              <EvidenceBadge evidence={data.evidence} />
-            </div>
-          )}
-
           <div className="grid grid-cols-3 gap-2 mb-2 text-xs">
             <div style={{ color: "var(--text-muted)" }}>
               共 {summary?.total ?? 0} 只 / 命中 {summary?.found ?? 0}
@@ -171,7 +163,6 @@ export function WatchlistAiCard({ itemCount }: Props) {
             tradeDate={data.trade_date}
             model={data.model}
             snapshot={{ headline: data.headline, focus: data.focus, evidence: data.evidence }}
-            cacheMeta={getCacheMeta(data)}
             onPickDate={(iso) => load(false, iso)}
           />
         </>

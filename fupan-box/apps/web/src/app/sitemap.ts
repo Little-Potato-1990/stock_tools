@@ -16,7 +16,6 @@ export default function sitemap(): MetadataRoute.Sitemap {
     { path: "?m=lhb", changeFrequency: "daily" as const, priority: 0.85 },
     { path: "?m=news", changeFrequency: "hourly" as const, priority: 0.85 },
     { path: "?m=sentiment", changeFrequency: "daily" as const, priority: 0.8 },
-    { path: "?m=ai_track", changeFrequency: "weekly" as const, priority: 0.7 },
   ];
 
   return modules.map((m) => ({

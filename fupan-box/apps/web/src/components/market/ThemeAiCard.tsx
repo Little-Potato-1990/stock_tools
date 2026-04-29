@@ -9,15 +9,11 @@ import {
   Zap,
   Target,
   MessageSquare,
+  Newspaper,
 } from "lucide-react";
 import { api } from "@/lib/api";
 import { useUIStore } from "@/stores/ui-store";
 import { AiCardError, AiCardFooter, AiCardLoading } from "./AiCardChrome";
-import { getCacheMeta } from "./CacheMetaBadge";
-import { EvidenceBadge } from "./EvidenceBadge";
-import { StreamHeadlineControl } from "./StreamHeadlineControl";
-import { useStreamingHeadline } from "@/hooks/useStreamingHeadline";
-import { Dial } from "./dial/Dial";
 import type { DialItem } from "./dial/types";
 
 export interface ThemeNewsRef {
@@ -156,14 +152,201 @@ function MiniTrend({ trend }: { trend: number[] }) {
   );
 }
 
+function ThemeNewsChips({
+  refs,
+  onClick,
+}: {
+  refs?: ThemeNewsRef[];
+  onClick: (id: number) => void;
+}) {
+  if (!refs || refs.length === 0) return null;
+  return (
+    <span className="flex items-center gap-1 mt-1 flex-wrap">
+      <Newspaper size={9} style={{ color: "var(--accent-purple)", flexShrink: 0 }} />
+      {refs.slice(0, 2).map((n) => (
+        <button
+          key={n.id}
+          onClick={() => onClick(n.id)}
+          className="rounded truncate transition-opacity hover:opacity-85"
+          style={{
+            padding: "0 5px",
+            fontSize: 9,
+            background: "rgba(168,85,247,0.10)",
+            color: "var(--accent-purple)",
+            border: "1px solid rgba(168,85,247,0.25)",
+            maxWidth: 120,
+            lineHeight: "14px",
+          }}
+          title={n.title}
+        >
+          {n.title}
+        </button>
+      ))}
+      {refs.length > 2 && (
+        <span style={{ fontSize: 9, color: "var(--text-muted)" }}>+{refs.length - 2}</span>
+      )}
+    </span>
+  );
+}
+
+function pickThemeItem(data: ThemeBriefData, anchor: ThemeDialAnchor): ThemeItem | null {
+  if (anchor === "leading") return data.leading[0] ?? null;
+  if (anchor === "emerging") return data.emerging[0] ?? null;
+  if (anchor === "fading") return data.fading[0] ?? null;
+  return null;
+}
+
+function ThemeTopMergedCard({
+  dial,
+  data,
+  hero,
+  onPickEvidence,
+  onNewsClick,
+}: {
+  dial: DialItem<ThemeDialAnchor>;
+  data: ThemeBriefData;
+  hero: boolean;
+  onPickEvidence?: (anchor: ThemeDialAnchor) => void;
+  onNewsClick: (id: number) => void;
+}) {
+  const Icon = dial.icon;
+  const item = pickThemeItem(data, dial.anchor);
+  return (
+    <div
+      className="transition-colors"
+      style={{
+        padding: hero ? "10px 12px" : "8px 10px",
+        background: "var(--bg-card)",
+        border: "1px solid var(--border-color)",
+        borderRadius: 4,
+      }}
+    >
+      <button
+        type="button"
+        onClick={() => onPickEvidence?.(dial.anchor)}
+        className="w-full text-left"
+        title={`${dial.label}: ${dial.caption} — 点击联动题材矩阵`}
+      >
+        <div className="flex items-center justify-between gap-1 mb-1">
+          <span
+            className="flex items-center gap-1"
+            style={{ fontSize: 10, color: "var(--text-muted)", fontWeight: 600 }}
+          >
+            <Icon size={11} style={{ color: dial.color }} />
+            {dial.label}
+          </span>
+          {dial.delta && (
+            <span
+              className="tabular-nums"
+              style={{ fontSize: 9, color: dial.color, fontWeight: 600 }}
+            >
+              {dial.delta}
+            </span>
+          )}
+        </div>
+        <div className="flex items-baseline gap-0.5 mb-0.5">
+          <span
+            className="font-bold tabular-nums"
+            style={{
+              fontSize: hero ? 22 : 18,
+              color: dial.color,
+              lineHeight: 1,
+            }}
+          >
+            {dial.value}
+          </span>
+          {dial.unit && (
+            <span
+              className="font-bold"
+              style={{ fontSize: hero ? 12 : 11, color: dial.color, opacity: 0.85 }}
+            >
+              {dial.unit}
+            </span>
+          )}
+        </div>
+      </button>
+
+      {dial.anchor === "next_bet" ? (
+        <div style={{ marginTop: 4 }}>
+          {data.next_bet?.name ? (
+            <>
+              <div className="font-bold truncate" style={{ fontSize: 13, color: dial.color }}>
+                {data.next_bet.name}
+              </div>
+              <div
+                className="line-clamp-2"
+                style={{
+                  fontSize: 10,
+                  color: "var(--text-secondary)",
+                  lineHeight: 1.4,
+                  marginTop: 2,
+                }}
+              >
+                {data.next_bet.reason}
+              </div>
+            </>
+          ) : (
+            <div style={{ fontSize: 10, color: "var(--text-muted)" }}>AI 未给出下注题材</div>
+          )}
+        </div>
+      ) : item ? (
+        <div style={{ marginTop: 4 }}>
+          <div className="flex items-center justify-between gap-1">
+            <span className="font-bold truncate" style={{ fontSize: 13, color: dial.color }}>
+              {item.name}
+            </span>
+            {item.today_rank ? (
+              <span
+                className="inline-flex items-center justify-center font-bold"
+                style={{
+                  padding: "0 5px",
+                  borderRadius: 2,
+                  background: dial.color,
+                  color: "#fff",
+                  fontSize: 9,
+                  lineHeight: "14px",
+                  flexShrink: 0,
+                }}
+              >
+                #{item.today_rank}
+              </span>
+            ) : null}
+          </div>
+          <div
+            className="line-clamp-2"
+            style={{
+              fontSize: 10,
+              color: "var(--text-secondary)",
+              lineHeight: 1.4,
+              marginTop: 2,
+            }}
+          >
+            {item.ai_note}
+          </div>
+          {item.lu_trend && item.lu_trend.length > 0 && (
+            <div className="mt-1.5" title={`近 5 日涨停: ${item.lu_trend.join("/")}`}>
+              <MiniTrend trend={item.lu_trend} />
+            </div>
+          )}
+          <ThemeNewsChips refs={item.news_refs} onClick={onNewsClick} />
+        </div>
+      ) : (
+        <div style={{ marginTop: 4, fontSize: 10, color: "var(--text-muted)" }}>{dial.caption}</div>
+      )}
+    </div>
+  );
+}
+
 function ThemeRow({
   item,
   color,
   onAsk,
+  onNewsClick,
 }: {
   item: ThemeItem;
   color: string;
   onAsk: () => void;
+  onNewsClick: (id: number) => void;
 }) {
   return (
     <div
@@ -197,7 +380,8 @@ function ThemeRow({
         style={{ color: "var(--text-secondary)", lineHeight: 1.45 }}
         className="flex-1"
       >
-        {item.ai_note}
+        <span>{item.ai_note}</span>
+        <ThemeNewsChips refs={item.news_refs} onClick={onNewsClick} />
       </span>
       {item.lu_trend && item.lu_trend.length > 0 && (
         <span
@@ -244,7 +428,6 @@ export function ThemeAiCard({ hero = false, onEvidenceClick, onBriefLoad }: Prop
   const askAI = useUIStore((s) => s.askAI);
   const openThemeDetail = useUIStore((s) => s.openThemeDetail);
   const aiStyle = useUIStore((s) => s.aiStyle);
-  const stream = useStreamingHeadline("theme", data?.trade_date, data?.model);
 
   const load = async (refresh = false, dateOverride?: string) => {
     setLoading(true);
@@ -273,6 +456,9 @@ export function ThemeAiCard({ hero = false, onEvidenceClick, onBriefLoad }: Prop
     askAI(
       `题材「${theme}」当前 AI 判断为: ${note}\n请深入分析这个题材的核心逻辑、关键龙头股、以及未来 1-3 天可能的走向。`
     );
+  };
+  const openNewsById = (id: number) => {
+    if (typeof window !== "undefined") window.location.hash = `#/news?focus=${id}`;
   };
 
   const dials = deriveThemeDials(data);
@@ -309,14 +495,6 @@ export function ThemeAiCard({ hero = false, onEvidenceClick, onBriefLoad }: Prop
           {data.trade_date} · {data.model}
         </span>
         <div className="ml-auto flex items-center gap-1.5">
-          <EvidenceBadge evidence={data.evidence} />
-          <StreamHeadlineControl
-            isStreaming={stream.isStreaming}
-            hasOverride={stream.hasOverride}
-            onStart={stream.start}
-            onReset={stream.reset}
-            size={hero ? 13 : 11}
-          />
           <button
             onClick={() => load(true)}
             className="p-1 transition-opacity hover:opacity-70"
@@ -337,32 +515,20 @@ export function ThemeAiCard({ hero = false, onEvidenceClick, onBriefLoad }: Prop
           letterSpacing: hero ? 0.3 : 0,
         }}
       >
-        {stream.hasOverride ? (
-          <>
-            {stream.text || "…"}
-            {stream.isStreaming && (
-              <span
-                className="ml-0.5 inline-block animate-pulse"
-                style={{ color: "var(--accent-purple)" }}
-              >
-                ▍
-              </span>
-            )}
-          </>
-        ) : (
-          data.headline
-        )}
+        {data.headline}
       </div>
 
       {/* L1.A: 4 仪表盘 */}
       {aiStyle !== "headline" && (
         <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mb-3">
           {dials.map((d) => (
-            <Dial
+            <ThemeTopMergedCard
               key={d.anchor}
-              d={d}
+              dial={d}
+              data={data}
               hero={hero}
-              onClick={() => onEvidenceClick?.(d.anchor)}
+              onPickEvidence={onEvidenceClick}
+              onNewsClick={openNewsById}
             />
           ))}
         </div>
@@ -398,6 +564,7 @@ export function ThemeAiCard({ hero = false, onEvidenceClick, onBriefLoad }: Prop
                   item={it}
                   color="var(--accent-red)"
                   onAsk={() => askAboutTheme(it.name, it.ai_note)}
+                  onNewsClick={openNewsById}
                 />
               ))}
             </div>
@@ -430,6 +597,7 @@ export function ThemeAiCard({ hero = false, onEvidenceClick, onBriefLoad }: Prop
                   item={it}
                   color="var(--accent-green)"
                   onAsk={() => askAboutTheme(it.name, it.ai_note)}
+                  onNewsClick={openNewsById}
                 />
               ))}
             </div>
@@ -462,6 +630,7 @@ export function ThemeAiCard({ hero = false, onEvidenceClick, onBriefLoad }: Prop
                   item={it}
                   color="var(--accent-orange)"
                   onAsk={() => askAboutTheme(it.name, it.ai_note)}
+                  onNewsClick={openNewsById}
                 />
               ))}
             </div>
@@ -537,8 +706,6 @@ export function ThemeAiCard({ hero = false, onEvidenceClick, onBriefLoad }: Prop
         tradeDate={data.trade_date}
         model={data.model}
         snapshot={{ headline: data.headline, evidence: data.evidence, next_bet: data.next_bet }}
-        cacheMeta={getCacheMeta(data)}
-        onPickDate={(iso) => load(false, iso)}
       />
     </div>
   );

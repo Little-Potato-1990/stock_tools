@@ -3,7 +3,6 @@
 import { Sidebar } from "./Sidebar";
 import { AiPanel } from "./AiPanel";
 import { FloatingStockBadge } from "./FloatingStockBadge";
-import { DataStatusBar } from "./DataStatusBar";
 import { StockDetailDrawer } from "@/components/market/StockDetailDrawer";
 import { ThemeDetailDrawer } from "@/components/market/ThemeDetailDrawer";
 import { WhyRoseModal } from "@/components/market/WhyRoseModal";
@@ -13,6 +12,7 @@ import { AnomalyDrawer } from "@/components/market/AnomalyDrawer";
 import { LadderMatrixDrawer } from "@/components/market/LadderMatrixDrawer";
 import { CommandPalette } from "@/components/common/CommandPalette";
 import { ImportCenter } from "@/components/common/ImportCenter";
+import { AuthModal } from "@/components/layout/AuthModal";
 import { useUIStore } from "@/stores/ui-store";
 
 export function MainLayout({ children }: { children: React.ReactNode }) {
@@ -28,7 +28,6 @@ export function MainLayout({ children }: { children: React.ReactNode }) {
     >
       <Sidebar />
       <div className="flex-1 min-h-0 min-w-0 flex flex-col" style={{ position: "relative", zIndex: 1 }}>
-        <DataStatusBar />
         <main className="flex-1 min-h-0 min-w-0 overflow-y-auto">{children}</main>
       </div>
 
@@ -43,6 +42,7 @@ export function MainLayout({ children }: { children: React.ReactNode }) {
       <DebateModal />
       <CommandPalette />
       <ImportCenter />
+      <AuthModal />
     </div>
   );
 }

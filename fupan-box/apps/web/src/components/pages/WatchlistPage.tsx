@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { api } from "@/lib/api";
-import { Plus, Trash2, LogIn, UserPlus, Search, Target, AlertTriangle } from "lucide-react";
+import { Plus, Trash2, Search, Target, AlertTriangle } from "lucide-react";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { WatchlistAiCard } from "@/components/market/WatchlistAiCard";
 import { StockCapitalChip } from "@/components/market/StockCapitalChip";
@@ -26,23 +26,26 @@ export function WatchlistPage() {
   const openStockDetail = useUIStore((s) => s.openStockDetail);
   const requestPlanFor = useUIStore((s) => s.requestPlanFor);
   const setAnomalyFilterCode = useUIStore((s) => s.setAnomalyFilterCode);
+  const openAuthModal = useUIStore((s) => s.openAuthModal);
   const openImportCenter = useImportCenterStore((s) => s.open);
-
-  const [authMode, setAuthMode] = useState<"login" | "register">("login");
-  const [username, setUsername] = useState("");
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [authError, setAuthError] = useState("");
-  const [authSubmitting, setAuthSubmitting] = useState(false);
 
   const [addCode, setAddCode] = useState("");
   const [addNote, setAddNote] = useState("");
 
   useEffect(() => {
-    api.restoreToken();
-    if (api.isLoggedIn()) {
-      setLoggedIn(true);
+    const syncLoginState = () => {
+      api.restoreToken();
+      setLoggedIn(api.isLoggedIn());
+    };
+    syncLoginState();
+    if (typeof window !== "undefined") {
+      window.addEventListener("app:auth-changed", syncLoginState);
     }
+    return () => {
+      if (typeof window !== "undefined") {
+        window.removeEventListener("app:auth-changed", syncLoginState);
+      }
+    };
   }, []);
 
   const fetchList = useCallback(async () => {
@@ -67,38 +70,6 @@ export function WatchlistPage() {
   useEffect(() => {
     if (loggedIn) fetchList();
   }, [loggedIn, fetchList]);
-
-  const handleAuth = async () => {
-    if (authSubmitting) return;
-    setAuthError("");
-    const u = username.trim();
-    const e = email.trim();
-    const p = password.trim();
-    if (!u || !p) {
-      setAuthError("请先填写用户名和密码");
-      return;
-    }
-    if (authMode === "register" && !e) {
-      setAuthError("注册需要填写邮箱");
-      return;
-    }
-    try {
-      setAuthSubmitting(true);
-      if (authMode === "register") {
-        await api.register(u, e, p);
-      } else {
-        await api.login(u, p);
-      }
-      setLoggedIn(true);
-      setUsername("");
-      setPassword("");
-      setEmail("");
-    } catch (e: unknown) {
-      setAuthError(e instanceof Error ? e.message : "操作失败");
-    } finally {
-      setAuthSubmitting(false);
-    }
-  };
 
   const handleAdd = async () => {
     if (!addCode.trim()) return;
@@ -125,65 +96,21 @@ export function WatchlistPage() {
     return (
       <div className="flex items-center justify-center" style={{ minHeight: "60vh" }}>
         <div className="w-full max-w-sm p-6 rounded-xl" style={{ background: "var(--bg-card)", border: "1px solid var(--border-color)" }}>
-          <h2 className="text-lg font-semibold mb-4 text-center">
-            {authMode === "login" ? "登录" : "注册"}
+          <h2 className="text-lg font-semibold mb-2 text-center" style={{ color: "var(--text-primary)" }}>
+            我的自选
           </h2>
-
-          <div className="space-y-3">
-            <input
-              value={username}
-              onChange={(e) => setUsername(e.target.value)}
-              placeholder="用户名"
-              className="w-full px-3 py-2 rounded-lg text-sm outline-none"
-              style={{ background: "var(--bg-tertiary)", color: "var(--text-primary)", border: "1px solid var(--border-color)" }}
-            />
-            {authMode === "register" && (
-              <input
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="邮箱"
-                type="email"
-                className="w-full px-3 py-2 rounded-lg text-sm outline-none"
-                style={{ background: "var(--bg-tertiary)", color: "var(--text-primary)", border: "1px solid var(--border-color)" }}
-              />
-            )}
-            <input
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              placeholder="密码"
-              type="password"
-              onKeyDown={(e) => e.key === "Enter" && handleAuth()}
-              className="w-full px-3 py-2 rounded-lg text-sm outline-none"
-              style={{ background: "var(--bg-tertiary)", color: "var(--text-primary)", border: "1px solid var(--border-color)" }}
-            />
-          </div>
-
-          {authError && <p className="text-xs mt-2" style={{ color: "var(--accent-red)" }}>{authError}</p>}
-
+          <p className="text-sm text-center" style={{ color: "var(--text-muted)" }}>
+            登录后可管理自选并查看 AI 一句话定调
+          </p>
           <button
-            onClick={handleAuth}
-            className="w-full mt-4 py-2 rounded-lg text-sm font-medium flex items-center justify-center gap-2"
-            disabled={authSubmitting}
+            onClick={openAuthModal}
+            className="w-full mt-4 py-2 rounded-lg text-sm font-medium"
             style={{
               background: "var(--accent-purple)",
               color: "white",
-              opacity: authSubmitting ? 0.7 : 1,
-              cursor: authSubmitting ? "not-allowed" : "pointer",
             }}
           >
-            {authSubmitting
-              ? "提交中..."
-              : authMode === "login"
-              ? <><LogIn size={14} />登录</>
-              : <><UserPlus size={14} />注册并登录</>}
-          </button>
-
-          <button
-            onClick={() => setAuthMode(authMode === "login" ? "register" : "login")}
-            className="w-full mt-2 py-1.5 text-xs text-center"
-            style={{ color: "var(--text-muted)" }}
-          >
-            {authMode === "login" ? "没有账号？点击注册" : "已有账号？点击登录"}
+            立即登录
           </button>
         </div>
       </div>

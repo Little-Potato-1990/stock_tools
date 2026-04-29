@@ -37,7 +37,7 @@ from app.ai.swing_brief import generate_swing_brief
 from app.ai.theme_brief import generate_theme_brief
 from app.ai.why_rose import generate_why_rose
 from app.api._cache import invalidate
-from app.api.auth import get_current_user
+from app.api.auth import get_current_user, optional_user
 from app.api.quota import check_and_log_quota
 from app.database import get_db
 from app.models.user import User
@@ -372,7 +372,7 @@ async def get_debate(
     trade_date: date = Query(None),
     model: str = Query("deepseek-v3"),
     refresh: int = Query(0),
-    user: User = Depends(get_current_user),
+    user: User | None = Depends(optional_user),
     db: AsyncSession = Depends(get_db),
 ):
     """多 Agent 辩论 (一次性, 含缓存): 多头/空头/裁判 三方观点 + 最终结论."""
@@ -382,7 +382,7 @@ async def get_debate(
         invalidate("debate")
         invalidate_pg(key)
     pg_hit = await asyncio.to_thread(pg_get, key) if not refresh else None
-    if pg_hit is None:
+    if pg_hit is None and user is not None:
         await check_and_log_quota(db, user, action="debate", model=model)
     return await cached_brief(
         key, run_debate, topic_type, topic_key, td, model,

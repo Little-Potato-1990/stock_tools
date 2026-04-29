@@ -7,9 +7,7 @@ import { PageHeader } from "@/components/layout/PageHeader";
 import {
   LhbAiCard,
   type LhbDialAnchor,
-  type LhbTrendPoint,
 } from "@/components/market/LhbAiCard";
-import { LhbEvidenceGrid } from "@/components/market/LhbEvidenceGrid";
 import { StockCapitalChip } from "@/components/market/StockCapitalChip";
 import { api } from "@/lib/api";
 import { fmtSignedAmount, fmtPctChange, fmtAmountRate } from "@/lib/format";
@@ -1114,7 +1112,6 @@ export function LhbPage() {
   const scope = useUIStore((s) => s.lhbScope);
   const setScope = useUIStore((s) => s.setLhbScope);
   const [highlight, setHighlight] = useState<LhbDialAnchor | null>(null);
-  const [trend5d, setTrend5d] = useState<LhbTrendPoint[]>([]);
   const [mountedTabs, setMountedTabs] = useState<Record<LhbScope, boolean>>(() => ({
     daily: scope === "daily",
     office_history: scope === "office_history",
@@ -1182,11 +1179,7 @@ export function LhbPage() {
       <LhbAiCard
         hero
         onEvidenceClick={handleEvidenceClick}
-        onTrendLoad={setTrend5d}
       />
-
-      {/* L2: AI 引用证据 (4 张精选 sparkline) */}
-      <LhbEvidenceGrid trendData={trend5d} highlight={highlight} />
 
       <div
         className="flex items-center px-3"

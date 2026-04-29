@@ -17,7 +17,7 @@ const DISMISS_HOURS = 24;
 
 export function AnonymousCTA() {
   const [show, setShow] = useState(false);
-  const setActiveModule = useUIStore((s) => s.setActiveModule);
+  const openAuthModal = useUIStore((s) => s.openAuthModal);
 
   useEffect(() => {
     if (api.isLoggedIn()) {
@@ -95,7 +95,7 @@ export function AnonymousCTA() {
 
       <div className="px-3 py-2 flex gap-1.5" style={{ borderTop: "1px solid var(--border-color)" }}>
         <button
-          onClick={() => { setActiveModule("account"); dismiss(); }}
+          onClick={() => { openAuthModal(); dismiss(); }}
           className="flex-1 flex items-center justify-center gap-1 font-bold transition-all"
           style={{
             background: "var(--accent-purple)",

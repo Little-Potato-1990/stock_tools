@@ -281,7 +281,6 @@ export interface PrivateStatus {
     triggered_codes: string[];
   };
   trades: { unlocked: boolean; count_total: number; count_7d: number };
-  ai_track: { unlocked: boolean; verified_7d: number };
 }
 
 export interface Anomaly {
@@ -309,7 +308,6 @@ class ApiClient {
   private inFlightGets = new Map<string, Promise<unknown>>();
   private readonly defaultAnonymousGetTtlMs = 1_500;
   private readonly getTtlMsByPath: Record<string, number> = {
-    "/api/snapshot/status/health": 15_000,
     "/api/ai/models": 30_000,
     "/api/intraday/anomalies/unseen-count": 15_000,
   };
@@ -799,42 +797,6 @@ class ApiClient {
     return this.get<AiBrief>(`/api/ai/brief${q}`);
   }
 
-  postFeedback(payload: {
-    brief_kind: "today" | "sentiment" | "theme" | "ladder" | "lhb" | "news" | "capital" | "institutional";
-    trade_date: string;
-    rating: 1 | -1;
-    model?: string | null;
-    reason?: string | null;
-    evidence_correct?: boolean | null;
-    snapshot?: Record<string, unknown> | null;
-  }) {
-    return this.post<{ ok: boolean; id: number; created_at: string }>(
-      "/api/ai/feedback",
-      payload,
-    );
-  }
-
-  getFeedbackStats(days = 30) {
-    return this.get<{
-      days: number;
-      by_kind: Record<string, {
-        up: number; down: number; total: number;
-        evidence_yes: number; evidence_no: number;
-        up_rate: number; evidence_correct_rate: number | null;
-      }>;
-      overall: {
-        total: number; up: number; down: number;
-        up_rate: number; evidence_correct_rate: number | null;
-      };
-      recent: Array<{
-        kind: string; rating: number; trade_date: string;
-        model: string | null; reason: string | null;
-        evidence_correct: boolean | null; headline: string | null;
-        created_at: string;
-      }>;
-    }>(`/api/ai/feedback/stats?days=${days}`);
-  }
-
   getThemeBriefSummary(tradeDate?: string) {
     const q = tradeDate ? `?trade_date=${tradeDate}` : "";
     return this.get<{
@@ -1151,87 +1113,6 @@ class ApiClient {
     }>(`/api/ai/debate?${params.toString()}`);
   }
 
-  getAiTrackStats(days = 30) {
-    return this.get<{
-      window_days: number;
-      from_date: string;
-      to_date: string;
-      overall: { verified: number; hits: number; hit_rate: number | null };
-      by_kind: Record<
-        string,
-        {
-          total: number;
-          verified: number;
-          hits: number;
-          hit_rate: number | null;
-          avg_score: number | null;
-        }
-      >;
-      recent: Array<{
-        trade_date: string;
-        kind: string;
-        key: string;
-        model: string;
-        payload: Record<string, unknown>;
-        verify_payload: Record<string, unknown> | null;
-        hit: boolean | null;
-        score: number | null;
-        verified_at: string | null;
-      }>;
-    }>(`/api/ai/track/stats?days=${days}`);
-  }
-
-  triggerAiTrackVerify(horizon = 3) {
-    return this.post<{
-      checked: number;
-      hit: number;
-      miss: number;
-      skip: number;
-    }>(`/api/ai/track/verify?horizon=${horizon}`, {});
-  }
-
-  getAiTrackDiagnosis(days = 60) {
-    return this.get<{
-      window_days: number;
-      total_verified: number;
-      items: {
-        hit_rate_trend?: Array<{
-          start: string;
-          end: string;
-          total: number;
-          hits: number;
-          hit_rate: number;
-        }>;
-        regime_failures?: Array<{
-          trade_date: string;
-          kind: string;
-          predicted: string | null;
-          actual: Record<string, unknown> | null;
-        }>;
-        stock_bias?: Record<
-          string,
-          { total: number; hits: number; hit_rate: number | null; avg_score: number | null }
-        >;
-        high_conf_calibration?: {
-          high_score: { total: number; hits: number; hit_rate: number | null };
-          low_score: { total: number; hits: number; hit_rate: number | null };
-        };
-        time_decay?: Array<{
-          segment: string;
-          date_range: string;
-          total: number;
-          hits: number;
-          hit_rate: number;
-        }>;
-        model_comparison?: Record<
-          string,
-          { total: number; hits: number; hit_rate: number }
-        >;
-      };
-      summary: string;
-    }>(`/api/ai/track/diagnosis?days=${days}`);
-  }
-
   // ===== P0 我的交易复盘 =====
   listTrades(days = 30) {
     return this.get<Array<TradeRecord>>(`/api/trades/?days=${days}`);
@@ -1412,30 +1293,6 @@ class ApiClient {
   // 私人维度聚合 — 给 Sidebar 解锁判断 + MyDigestFloating 用
   getPrivateStatus() {
     return this.get<PrivateStatus>("/api/me/private-status");
-  }
-
-  getDataHealth() {
-    return this.get<{
-      status: "ok" | "stale" | "partial" | "empty";
-      latest_trade_date: string | null;
-      today: string;
-      today_ready: boolean;
-      ready: boolean;
-      snapshot_types: string[];
-      missing: string[];
-      last_pipeline: {
-        trade_date: string | null;
-        finished_at: string | null;
-        records_count: number;
-      } | null;
-      last_failure: {
-        trade_date: string;
-        step: string;
-        started_at: string;
-        error_message: string | null;
-      } | null;
-      stale_minutes: number | null;
-    }>(`/api/snapshot/status/health`);
   }
 
   // ===== Phase 2/3: 中长视角 (Mid-Long Perspective) =====

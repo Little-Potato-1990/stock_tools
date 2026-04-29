@@ -4,25 +4,18 @@ import { useEffect, useState } from "react";
 import {
   Sparkles,
   RefreshCw,
-  Activity,
   Thermometer,
   Coins,
   Flame,
   AlertTriangle,
-  TrendingUp,
-  TrendingDown,
-  type LucideIcon,
 } from "lucide-react";
 import { api } from "@/lib/api";
 import { useUIStore } from "@/stores/ui-store";
 import { AiCardError, AiCardFooter, AiCardLoading } from "./AiCardChrome";
-import { getCacheMeta } from "./CacheMetaBadge";
-import { StreamHeadlineControl } from "./StreamHeadlineControl";
-import { AiDensitySwitch } from "./AiDensitySwitch";
 import { AiActionBar } from "./AiActionBar";
-import { useStreamingHeadline } from "@/hooks/useStreamingHeadline";
 import { Dial } from "./dial/Dial";
 import type { DialItem } from "./dial/types";
+import { SentimentEvidenceGrid } from "./SentimentEvidenceGrid";
 
 export interface TrendPoint {
   date: string;
@@ -174,96 +167,6 @@ function deriveDials(data: SentimentBrief): DialItem<DialAnchor>[] {
   ];
 }
 
-interface SignalSection {
-  kind: "strong" | "weak" | "reverse";
-  label: string;
-  color: string;
-  icon: LucideIcon;
-  text: string;
-  source: string;
-}
-
-/** signals 数组 prompt 固定为: 涨停 / 炸板 / 赚钱效应 三个维度.
- *  按位置分配 强势(涨停) / 反向(炸板) / 弱势(赚钱效应), 由文字内容反映正负. */
-function classifySignals(
-  signals: Array<{ label: string; text: string }>,
-): SignalSection[] {
-  const out: SignalSection[] = [];
-  const get = (i: number) => signals[i];
-  const s0 = get(0);
-  const s1 = get(1);
-  const s2 = get(2);
-  if (s0) {
-    out.push({
-      kind: "strong",
-      label: "强信号",
-      color: "var(--accent-red)",
-      icon: TrendingUp,
-      text: s0.text,
-      source: s0.label,
-    });
-  }
-  if (s1) {
-    out.push({
-      kind: "reverse",
-      label: "反向信号",
-      color: "var(--accent-yellow)",
-      icon: AlertTriangle,
-      text: s1.text,
-      source: s1.label,
-    });
-  }
-  if (s2) {
-    out.push({
-      kind: "weak",
-      label: "弱信号",
-      color: "var(--accent-green)",
-      icon: TrendingDown,
-      text: s2.text,
-      source: s2.label,
-    });
-  }
-  return out;
-}
-
-function SignalLine({ s }: { s: SignalSection }) {
-  const Icon = s.icon;
-  return (
-    <div
-      className="flex items-start gap-2"
-      style={{
-        padding: "6px 10px",
-        borderLeft: `2px solid ${s.color}`,
-        background: "var(--bg-card)",
-        borderRadius: "0 3px 3px 0",
-      }}
-    >
-      <span
-        className="flex items-center gap-1 flex-shrink-0"
-        style={{ marginTop: 1 }}
-      >
-        <Icon size={11} style={{ color: s.color }} />
-        <span
-          className="font-bold"
-          style={{ fontSize: 10, color: s.color, letterSpacing: "0.04em" }}
-        >
-          {s.label}
-        </span>
-      </span>
-      <span
-        style={{
-          fontSize: "var(--font-xs)",
-          color: "var(--text-secondary)",
-          lineHeight: 1.5,
-        }}
-      >
-        <span style={{ color: "var(--text-muted)" }}>{s.source} · </span>
-        {s.text}
-      </span>
-    </div>
-  );
-}
-
 interface Props {
   /** hero 模式: 字号更大, padding 更宽, 用作页面顶部主视觉 */
   hero?: boolean;
@@ -273,14 +176,15 @@ interface Props {
   onTrendLoad?: (trend: TrendPoint[]) => void;
   /** brief 加载完成后, 把整份 brief 抛给页面 (供 L2 显示 news 驱动). */
   onBriefLoad?: (brief: SentimentBrief) => void;
+  /** 点击消息面新闻时的跳转 */
+  onNewsClick?: (id: number) => void;
 }
 
-export function SentimentAiCard({ hero = false, onEvidenceClick, onTrendLoad, onBriefLoad }: Props = {}) {
+export function SentimentAiCard({ hero = false, onEvidenceClick, onTrendLoad, onBriefLoad, onNewsClick }: Props = {}) {
   const [data, setData] = useState<SentimentBrief | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const aiStyle = useUIStore((s) => s.aiStyle);
-  const stream = useStreamingHeadline("sentiment", data?.trade_date, data?.model);
 
   const load = async (refresh = false, dateOverride?: string) => {
     setLoading(true);
@@ -313,8 +217,6 @@ export function SentimentAiCard({ hero = false, onEvidenceClick, onTrendLoad, on
   }
 
   const dials = deriveDials(data);
-  const signalSections = classifySignals(data.signals);
-
   return (
     <div
       className={hero ? "px-6 py-5" : "px-3 py-2.5"}
@@ -358,13 +260,8 @@ export function SentimentAiCard({ hero = false, onEvidenceClick, onTrendLoad, on
           {data.trade_date} · {data.model}
         </span>
         <div className="ml-auto flex items-center gap-1.5">
-          <AiDensitySwitch accent={PHASE_COLOR[data.phase]} />
-          <StreamHeadlineControl
-            isStreaming={stream.isStreaming}
-            hasOverride={stream.hasOverride}
-            onStart={stream.start}
-            onReset={stream.reset}
-            size={hero ? 13 : 11}
+          <AiActionBar
+            askPrompt={`当前情绪阶段判断为「${data.phase_label}」: ${data.judgment}\n请基于近 5 日数据进一步推演明日可能的走势, 并给出更具体的应对建议。`}
             accent={PHASE_COLOR[data.phase]}
           />
           <button
@@ -388,21 +285,7 @@ export function SentimentAiCard({ hero = false, onEvidenceClick, onTrendLoad, on
           letterSpacing: hero ? 0.3 : 0,
         }}
       >
-        {stream.hasOverride ? (
-          <>
-            {stream.text || "…"}
-            {stream.isStreaming && (
-              <span
-                className="ml-0.5 inline-block animate-pulse"
-                style={{ color: PHASE_COLOR[data.phase] }}
-              >
-                ▍
-              </span>
-            )}
-          </>
-        ) : (
-          data.judgment
-        )}
+        {data.judgment}
       </div>
 
       {/* === L1.A: 4 仪表盘 (concise & detailed 模式都展示, 是 AI 结论的核心可视化) === */}
@@ -419,100 +302,19 @@ export function SentimentAiCard({ hero = false, onEvidenceClick, onTrendLoad, on
         </div>
       )}
 
-      {/* === L1.B: 三段读数 (强 / 反向 / 弱), concise & detailed 都展示 === */}
-      {aiStyle !== "headline" && signalSections.length > 0 && (
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-1.5 mb-3">
-          {signalSections.map((s) => (
-            <SignalLine key={s.kind} s={s} />
-          ))}
-        </div>
-      )}
-
-      {/* === L1.C: 短线对策 (仅 detailed 模式展示, 给愿意深读的用户) === */}
-      {aiStyle === "detailed" && data.playbook.length > 0 && (
-        <div
-          className="mb-3"
-          style={{
-            padding: "8px 10px",
-            background: "var(--bg-card)",
-            borderRadius: 4,
-            border: "1px solid var(--border-color)",
-          }}
-        >
-          <div
-            className="flex items-center gap-1 mb-2"
-            style={{ fontSize: 10, color: "var(--accent-purple)", fontWeight: 700 }}
-          >
-            <Sparkles size={10} />
-            短线对策
-          </div>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
-            {data.playbook.map((s, i) => (
-              <div
-                key={i}
-                className="flex items-start gap-1.5"
-                style={{ fontSize: "var(--font-xs)" }}
-              >
-                <span
-                  className="font-bold flex-shrink-0"
-                  style={{ color: "var(--text-muted)", width: 36 }}
-                >
-                  {s.label}
-                </span>
-                <span style={{ color: "var(--text-primary)" }}>{s.action}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* === L1.D: 5 日趋势小条 (仅 detailed) === */}
-      {aiStyle === "detailed" && data.trend_5d.length > 0 && (
-        <div className="flex items-center gap-2 mb-3">
-          <Activity size={10} style={{ color: "var(--text-muted)" }} />
-          <span style={{ fontSize: 10, color: "var(--text-muted)" }}>近 5 日:</span>
-          <div className="flex items-end gap-2 flex-1">
-            {data.trend_5d.map((p) => (
-              <div
-                key={p.date}
-                className="flex flex-col items-center"
-                title={`${p.date} 涨停 ${p.lu} / 炸板率 ${(p.broken_rate * 100).toFixed(0)}%`}
-              >
-                <span
-                  className="font-bold tabular-nums"
-                  style={{
-                    fontSize: 10,
-                    color: p.yesterday_lu_up_rate >= 0.5 ? "var(--accent-red)" : "var(--accent-green)",
-                  }}
-                >
-                  {p.lu}
-                </span>
-                <span style={{ fontSize: 9, color: "var(--text-muted)" }}>
-                  {p.date.slice(5)}
-                </span>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* === Footer: action bar + feedback === */}
-      <div className="flex items-center justify-end mb-1">
-        <AiActionBar
-          summary={`大盘情绪「${data.phase_label}」: ${data.judgment}`}
-          evidence={data.evidence}
-          askPrompt={`当前情绪阶段判断为「${data.phase_label}」: ${data.judgment}\n请基于近 5 日数据进一步推演明日可能的走势, 并给出更具体的应对建议。`}
-          accent={PHASE_COLOR[data.phase]}
-        />
-      </div>
+      {/* 消息面驱动并入 headline 主卡，避免上下重复跳转 */}
+      <SentimentEvidenceGrid
+        newsPool={data.news_pool}
+        pickedIds={data.news_ids}
+        onNewsClick={onNewsClick}
+        inCard
+      />
 
       <AiCardFooter
         kind="sentiment"
         tradeDate={data.trade_date}
         model={data.model}
         snapshot={{ headline: data.judgment, phase: data.phase, evidence: data.evidence }}
-        cacheMeta={getCacheMeta(data)}
-        onPickDate={(iso) => load(false, iso)}
       />
     </div>
   );

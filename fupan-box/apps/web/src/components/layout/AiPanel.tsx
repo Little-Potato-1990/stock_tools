@@ -31,10 +31,9 @@ const MODULE_LABELS: Record<NavModule, string> = {
   news: "资讯",
   methodology: "方法论文库",
   watchlist: "自选股",
-  my_holdings: "我的持仓",
+  my_holdings: "交易复盘",
   plans: "我的计划",
-  ai_track: "AI 预测追踪",
-  my_review: "我的复盘",
+  my_review: "交易复盘",
   skills: "我的体系",
   skill_scan: "体系扫描",
   account: "账户套餐",
@@ -58,6 +57,7 @@ export function AiPanel() {
   const pendingPrompt = useUIStore((s) => s.pendingChatPrompt);
   const consumePending = useUIStore((s) => s.consumePendingPrompt);
   const setActiveModule = useUIStore((s) => s.setActiveModule);
+  const openAuthModal = useUIStore((s) => s.openAuthModal);
   const activeSkillRef = useSkillStore((s) => s.activeRef);
 
   const [watchlist, setWatchlist] = useState<Array<{ code: string; name?: string }>>([]);
@@ -133,7 +133,7 @@ export function AiPanel() {
   const bottomRef = useRef<HTMLDivElement>(null);
   const pickerRef = useRef<HTMLDivElement>(null);
   const historyRef = useRef<HTMLDivElement>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
     if (!open) return;
@@ -144,12 +144,41 @@ export function AiPanel() {
   useEffect(() => {
     if (!open || !pendingPrompt) return;
     const p = consumePending();
-    if (p) setInput(p);
+    if (p?.prompt) {
+      setInput(p.prompt);
+    }
   }, [open, pendingPrompt, consumePending]);
 
   useEffect(() => {
     api.restoreToken();
     setLoggedIn(api.isLoggedIn());
+  }, []);
+
+  // 登录态可能在其它模块发生变化（登录/登出），打开面板时强制同步一次。
+  useEffect(() => {
+    if (!open) return;
+    api.restoreToken();
+    setLoggedIn(api.isLoggedIn());
+  }, [open]);
+
+  // 窗口切回前台或 localStorage 变化时同步登录态，避免显示滞后。
+  useEffect(() => {
+    const syncLoginState = () => {
+      api.restoreToken();
+      setLoggedIn(api.isLoggedIn());
+    };
+    if (typeof window !== "undefined") {
+      window.addEventListener("focus", syncLoginState);
+      window.addEventListener("storage", syncLoginState);
+      window.addEventListener("app:auth-changed", syncLoginState);
+    }
+    return () => {
+      if (typeof window !== "undefined") {
+        window.removeEventListener("focus", syncLoginState);
+        window.removeEventListener("storage", syncLoginState);
+        window.removeEventListener("app:auth-changed", syncLoginState);
+      }
+    };
   }, []);
 
   useEffect(() => {
@@ -290,6 +319,16 @@ export function AiPanel() {
       { id: "welcome", role: "assistant", content: "新对话已开始。" },
     ]);
   };
+
+  // 文本框随内容自动增高, 让长上下文可读。
+  useEffect(() => {
+    const el = inputRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    const next = Math.min(el.scrollHeight, 220);
+    el.style.height = `${next}px`;
+    el.style.overflowY = el.scrollHeight > 220 ? "auto" : "hidden";
+  }, [input, open]);
 
   const currentModel = models.find((m) => m.id === selectedModel);
   const groupedModels = models.reduce<Record<string, ModelInfo[]>>((acc, m) => {
@@ -687,22 +726,34 @@ export function AiPanel() {
               }}
             >
               <LogIn size={14} />
-              <span>登录后使用 AI 对话（自选股页面可登录）</span>
+              <span>登录后使用 AI 对话</span>
+              <button
+                onClick={openAuthModal}
+                className="ml-auto px-2 py-1 rounded text-xs font-semibold transition-opacity hover:opacity-90"
+                style={{ background: "var(--accent-purple)", color: "#fff" }}
+              >
+                立即登录
+              </button>
             </div>
           ) : (
             <div
-              className="flex items-center gap-2"
+              className="flex items-end gap-2"
               style={{
                 background: "var(--bg-tertiary)",
                 padding: "6px 10px",
                 borderRadius: 4,
               }}
             >
-              <input
+              <textarea
                 ref={inputRef}
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && !e.shiftKey && handleSend()}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && !e.shiftKey) {
+                    e.preventDefault();
+                    void handleSend();
+                  }
+                }}
                 placeholder={
                   focusedStock
                     ? `问点关于 ${focusedStock.name ?? focusedStock.code} 的...`
@@ -713,6 +764,10 @@ export function AiPanel() {
                 style={{
                   color: "var(--text-primary)",
                   fontSize: "var(--font-md)",
+                  resize: "none",
+                  lineHeight: 1.45,
+                  minHeight: 22,
+                  maxHeight: 220,
                 }}
               />
               <button

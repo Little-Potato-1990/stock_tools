@@ -14,13 +14,8 @@ import {
 import { api } from "@/lib/api";
 import { useUIStore } from "@/stores/ui-store";
 import { AiCardError, AiCardFooter, AiCardLoading } from "./AiCardChrome";
-import { getCacheMeta } from "./CacheMetaBadge";
-import { EvidenceBadge } from "./EvidenceBadge";
-import { StreamHeadlineControl } from "./StreamHeadlineControl";
-import { useStreamingHeadline } from "@/hooks/useStreamingHeadline";
-import { Dial } from "./dial/Dial";
 import type { DialItem } from "./dial/types";
-import { fmtAmountParts, fmtDeltaAmount, fmtSignedAmount } from "@/lib/format";
+import { fmtAmount, fmtAmountParts, fmtDeltaAmount, fmtSignedAmount } from "@/lib/format";
 
 interface KeyOffice {
   name: string;
@@ -89,6 +84,144 @@ interface LhbSnapshotRow {
     insts_by_code?: Record<string, LhbInstMini[]>;
     hot_money_top?: LhbHotMoneyMini[];
   };
+}
+
+function pickTrendValue(p: LhbTrendPoint, anchor: LhbDialAnchor): number {
+  if (anchor === "total_net") return p.total_net;
+  if (anchor === "inst_net") return p.inst_net;
+  if (anchor === "hot_money") return p.hot_money;
+  return p.stock_count;
+}
+
+function describeAmountVsAvg(vals: number[], today: number): string {
+  if (vals.length < 2) return `今日 ${fmtAmount(today)}`;
+  const avg = vals.reduce((a, b) => a + b, 0) / vals.length;
+  const delta = today - avg;
+  const dir =
+    delta > Math.max(Math.abs(avg) * 0.2, 5e7)
+      ? "高于"
+      : delta < -Math.max(Math.abs(avg) * 0.2, 5e7)
+        ? "低于"
+        : "接近";
+  return `今日 ${fmtAmount(today)}, ${dir} 5 日均值 ${fmtAmount(avg)}`;
+}
+
+function describeCountVsAvg(vals: number[], today: number, unit: "席" | "只"): string {
+  if (vals.length < 2) return `今日 ${Math.round(today)}${unit}`;
+  const avg = vals.reduce((a, b) => a + b, 0) / vals.length;
+  const delta = today - avg;
+  const dir =
+    delta > Math.max(avg * 0.15, 3)
+      ? "高于"
+      : delta < -Math.max(avg * 0.15, 3)
+        ? "低于"
+        : "接近";
+  return `今日 ${Math.round(today)}${unit}, ${dir} 5 日均值 ${avg.toFixed(0)}${unit}`;
+}
+
+function MiniTrendBars({ values, color }: { values: number[]; color: string }) {
+  if (values.length === 0) return null;
+  const max = Math.max(...values.map((v) => Math.abs(v)), 1);
+  return (
+    <div className="flex items-end gap-1" style={{ height: 22 }}>
+      {values.map((v, i) => {
+        const isLast = i === values.length - 1;
+        const h = Math.max(2, (Math.abs(v) / max) * 18);
+        return (
+          <div key={i} style={{ flex: 1, display: "flex", justifyContent: "center" }}>
+            <span
+              style={{
+                width: "100%",
+                height: h,
+                background: isLast ? color : "var(--text-muted)",
+                opacity: isLast ? 1 : 0.45,
+                borderRadius: "2px 2px 0 0",
+              }}
+            />
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function LhbTopMergedCard({
+  dial,
+  trend,
+  hero,
+  onClick,
+}: {
+  dial: DialItem<LhbDialAnchor>;
+  trend: LhbTrendPoint[];
+  hero: boolean;
+  onClick?: () => void;
+}) {
+  const Icon = dial.icon;
+  const vals = trend.map((p) => pickTrendValue(p, dial.anchor));
+  const today = vals[vals.length - 1] ?? 0;
+  const detail =
+    dial.anchor === "total_net" || dial.anchor === "inst_net"
+      ? describeAmountVsAvg(vals, today)
+      : describeCountVsAvg(vals, today, dial.anchor === "hot_money" ? "席" : "只");
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="flex flex-col text-left transition-colors"
+      style={{
+        padding: hero ? "10px 12px" : "8px 10px",
+        background: "var(--bg-card)",
+        border: "1px solid var(--border-color)",
+        borderRadius: 4,
+        cursor: "pointer",
+      }}
+      title={`${dial.label}: ${dial.caption} — 点击联动`}
+    >
+      <div className="flex items-center justify-between gap-1 mb-1">
+        <span
+          className="flex items-center gap-1"
+          style={{ fontSize: 10, color: "var(--text-muted)", fontWeight: 600 }}
+        >
+          <Icon size={11} style={{ color: dial.color }} />
+          {dial.label}
+        </span>
+        {dial.delta && (
+          <span
+            className="tabular-nums"
+            style={{ fontSize: 9, color: dial.color, fontWeight: 600 }}
+          >
+            {dial.delta}
+          </span>
+        )}
+      </div>
+      <div className="flex items-baseline gap-0.5 mb-0.5">
+        <span
+          className="font-bold tabular-nums"
+          style={{
+            fontSize: hero ? 22 : 18,
+            color: dial.color,
+            lineHeight: 1,
+          }}
+        >
+          {dial.value}
+        </span>
+        {dial.unit && (
+          <span
+            className="font-bold"
+            style={{ fontSize: hero ? 12 : 11, color: dial.color, opacity: 0.85 }}
+          >
+            {dial.unit}
+          </span>
+        )}
+      </div>
+      <div style={{ fontSize: 10, color: "var(--text-secondary)", lineHeight: 1.35 }}>
+        {detail}
+      </div>
+      <div className="mt-1">
+        <MiniTrendBars values={vals} color={dial.color} />
+      </div>
+    </button>
+  );
 }
 
 function deriveLhbTrend(rows: LhbSnapshotRow[]): LhbTrendPoint[] {
@@ -249,7 +382,6 @@ export function LhbAiCard({ hero = false, onEvidenceClick, onTrendLoad }: Props 
   const aiStyle = useUIStore((s) => s.aiStyle);
   const setLhbScope = useUIStore((s) => s.setLhbScope);
   const setLhbOfficeQuery = useUIStore((s) => s.setLhbOfficeQuery);
-  const stream = useStreamingHeadline("lhb", data?.trade_date, data?.model);
 
   const load = async (refresh = false, dateOverride?: string) => {
     setLoading(true);
@@ -312,14 +444,6 @@ export function LhbAiCard({ hero = false, onEvidenceClick, onTrendLoad }: Props 
           {data.trade_date} · {data.model}
         </span>
         <div className="ml-auto flex items-center gap-1.5">
-          <EvidenceBadge evidence={data.evidence} />
-          <StreamHeadlineControl
-            isStreaming={stream.isStreaming}
-            hasOverride={stream.hasOverride}
-            onStart={stream.start}
-            onReset={stream.reset}
-            size={hero ? 13 : 11}
-          />
           <button
             onClick={() => load(true)}
             className="p-1 transition-opacity hover:opacity-70"
@@ -340,30 +464,17 @@ export function LhbAiCard({ hero = false, onEvidenceClick, onTrendLoad }: Props 
           letterSpacing: hero ? 0.3 : 0,
         }}
       >
-        {stream.hasOverride ? (
-          <>
-            {stream.text || "…"}
-            {stream.isStreaming && (
-              <span
-                className="ml-0.5 inline-block animate-pulse"
-                style={{ color: "var(--accent-purple)" }}
-              >
-                ▍
-              </span>
-            )}
-          </>
-        ) : (
-          data.headline
-        )}
+        {data.headline}
       </div>
 
       {/* L1.A: 4 仪表盘 */}
       {aiStyle !== "headline" && dials.length > 0 && (
         <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mb-3">
           {dials.map((d) => (
-            <Dial
+            <LhbTopMergedCard
               key={d.anchor}
-              d={d}
+              dial={d}
+              trend={trend}
               hero={hero}
               onClick={() => onEvidenceClick?.(d.anchor)}
             />
@@ -529,8 +640,6 @@ export function LhbAiCard({ hero = false, onEvidenceClick, onTrendLoad }: Props 
         tradeDate={data.trade_date}
         model={data.model}
         snapshot={{ headline: data.headline, evidence: data.evidence, key_offices: data.key_offices }}
-        cacheMeta={getCacheMeta(data)}
-        onPickDate={(iso) => load(false, iso)}
       />
     </div>
   );

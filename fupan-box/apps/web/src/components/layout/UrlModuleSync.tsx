@@ -14,11 +14,11 @@ import { useUIStore, type NavModule, normalizeNavModule } from "@/stores/ui-stor
 const VALID_MODULES: NavModule[] = [
   "today", "sentiment", "themes", "capital", "midlong",
   "lhb", "news", "watchlist", "plans",
-  "ai_track", "my_review", "account",
+  "my_review", "account",
 ];
 
 // 老 URL 的 ?m= 值, 兼容老书签 / 分享链接 (会被 normalize 到合法 NavModule)
-const LEGACY_ALIASES = new Set<string>(["search"]);
+const LEGACY_ALIASES = new Set<string>(["search", "my_holdings"]);
 
 function UrlSyncInner() {
   const searchParams = useSearchParams();

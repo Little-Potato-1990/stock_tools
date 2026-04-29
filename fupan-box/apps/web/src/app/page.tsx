@@ -10,12 +10,8 @@ import { CapitalPage } from "@/components/pages/CapitalPage";
 import { MidLongPage } from "@/components/pages/MidLongPage";
 import { LhbPage } from "@/components/pages/LhbPage";
 import { NewsPage } from "@/components/pages/NewsPage";
-import { MethodologyPage } from "@/components/pages/MethodologyPage";
-import { AiTrackPage } from "@/components/pages/AiTrackPage";
 import { MyReviewPage } from "@/components/pages/MyReviewPage";
-import { MyHoldingsPage } from "@/components/pages/MyHoldingsPage";
 import { SkillsPage } from "@/components/pages/SkillsPage";
-import { SkillScanPage } from "@/components/pages/SkillScanPage";
 import { AccountPage } from "@/components/pages/AccountPage";
 
 export default function Home() {
@@ -31,7 +27,7 @@ export default function Home() {
     case "watchlist":
       return <WatchlistPage />;
     case "my_holdings":
-      return <MyHoldingsPage />;
+      return <MyReviewPage />;
     case "plans":
       return <PlansPage />;
     case "capital":
@@ -43,15 +39,13 @@ export default function Home() {
     case "news":
       return <NewsPage />;
     case "methodology":
-      return <MethodologyPage />;
-    case "ai_track":
-      return <AiTrackPage />;
+      return <SkillsPage />;
     case "my_review":
       return <MyReviewPage />;
     case "skills":
       return <SkillsPage />;
     case "skill_scan":
-      return <SkillScanPage />;
+      return <SkillsPage />;
     case "account":
       return <AccountPage />;
     default:

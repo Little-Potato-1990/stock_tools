@@ -44,7 +44,7 @@ const fmtInt = (v: number | null | undefined) => {
   return v.toLocaleString("zh-CN");
 };
 
-export function MyHoldingsPage() {
+export function MyHoldingsPage({ embedded = false }: { embedded?: boolean } = {}) {
   const [loggedIn, setLoggedIn] = useState(false);
   const openImportCenter = useImportCenterStore((s) => s.open);
   const openStockDetail = useUIStore((s) => s.openStockDetail);
@@ -59,10 +59,22 @@ export function MyHoldingsPage() {
 
   const [loading, setLoading] = useState(false);
   const [isRevalidating, setIsRevalidating] = useState(false);
+  const openAuthModal = useUIStore((s) => s.openAuthModal);
 
   useEffect(() => {
-    api.restoreToken();
-    setLoggedIn(api.isLoggedIn());
+    const syncLoginState = () => {
+      api.restoreToken();
+      setLoggedIn(api.isLoggedIn());
+    };
+    syncLoginState();
+    if (typeof window !== "undefined") {
+      window.addEventListener("app:auth-changed", syncLoginState);
+    }
+    return () => {
+      if (typeof window !== "undefined") {
+        window.removeEventListener("app:auth-changed", syncLoginState);
+      }
+    };
   }, []);
 
   const loadAll = useCallback(async () => {
@@ -114,6 +126,35 @@ export function MyHoldingsPage() {
   );
 
   if (!loggedIn) {
+    if (embedded) {
+      return (
+        <div className="p-3">
+          <div
+            className="w-full max-w-sm p-6 rounded-xl text-center"
+            style={{
+              background: "var(--bg-card)",
+              border: "1px solid var(--border-color)",
+              color: "var(--text-secondary)",
+              fontSize: "var(--font-md)",
+              margin: "0 auto",
+            }}
+          >
+            <Coins size={28} style={{ color: "var(--accent-orange)" }} className="mx-auto mb-3" />
+            <p className="mb-2">登录后可使用截图导入和持仓对账</p>
+            <p style={{ color: "var(--text-muted)", fontSize: "var(--font-xs)" }}>
+              你可以直接在这里登录
+            </p>
+            <button
+              onClick={openAuthModal}
+              className="mt-3 px-3 py-1.5 rounded text-xs font-semibold transition-opacity hover:opacity-90"
+              style={{ background: "var(--accent-purple)", color: "#fff" }}
+            >
+              立即登录
+            </button>
+          </div>
+        </div>
+      );
+    }
     return (
       <div>
         <div
@@ -127,7 +168,7 @@ export function MyHoldingsPage() {
             我的持仓
           </span>
         </div>
-        <div className="flex items-center justify-center" style={{ minHeight: "60vh", pointerEvents: "none" }}>
+        <div className="flex items-center justify-center" style={{ minHeight: "60vh" }}>
           <div
             className="w-full max-w-sm p-6 rounded-xl text-center"
             style={{
@@ -140,13 +181,63 @@ export function MyHoldingsPage() {
             <Coins size={28} style={{ color: "var(--accent-orange)" }} className="mx-auto mb-3" />
             <p className="mb-2">登录后可使用截图导入和持仓对账</p>
             <p style={{ color: "var(--text-muted)", fontSize: "var(--font-xs)" }}>
-              请先到「我的自选」登录
+              你可以直接在这里登录
             </p>
+            <button
+              onClick={openAuthModal}
+              className="mt-3 px-3 py-1.5 rounded text-xs font-semibold transition-opacity hover:opacity-90"
+              style={{ background: "var(--accent-purple)", color: "#fff" }}
+            >
+              立即登录
+            </button>
           </div>
         </div>
       </div>
     );
   }
+
+  const body = (
+    <div className="p-3 space-y-3">
+      <ImportEntryCard
+        onUploadHoldings={() => openImportCenter("holdings")}
+        onUploadTrades={() => openImportCenter("trades")}
+      />
+
+      <HoldingsTable
+        holdings={holdings}
+        totalMV={totalMV}
+        totalPnl={totalPnl}
+        onClickRow={(code, name) => openStockDetail(code, name ?? undefined)}
+      />
+
+      <DataQualityCard
+        data={
+          recon
+            ? {
+                summary: recon.summary,
+                per_stock: recon.per_stock,
+                coverage: recon.coverage,
+              }
+            : null
+        }
+        onRevalidate={handleRevalidate}
+        isRevalidating={isRevalidating}
+      />
+
+      <RecentImportsList jobs={recentJobs} loading={loading} />
+
+      <RawTradesTable
+        rows={rawTrades}
+        total={rawTotal}
+        limit={rawLimit}
+        onLimitChange={setRawLimit}
+        filterCode={filterCode}
+        onFilterCode={setFilterCode}
+        onClickRow={(code, name) => openStockDetail(code, name ?? undefined)}
+      />
+    </div>
+  );
+  if (embedded) return body;
 
   return (
     <div>
@@ -166,7 +257,7 @@ export function MyHoldingsPage() {
             我的持仓
           </span>
           <span style={{ fontSize: 10, color: "var(--text-muted)" }}>
-            截图导入持仓 / 交易记录, 自动 OCR + FIFO 配对, 共「我的复盘」「AI 副驾」共用
+            截图导入持仓 / 交易记录, 自动 OCR + FIFO 配对, 共「交易复盘」「AI 副驾」共用
           </span>
         </div>
         <button
@@ -179,46 +270,7 @@ export function MyHoldingsPage() {
           <RefreshCw size={12} className={loading ? "animate-spin" : ""} />
         </button>
       </div>
-
-      <div className="p-3 space-y-3">
-        <ImportEntryCard
-          onUploadHoldings={() => openImportCenter("holdings")}
-          onUploadTrades={() => openImportCenter("trades")}
-        />
-
-        <HoldingsTable
-          holdings={holdings}
-          totalMV={totalMV}
-          totalPnl={totalPnl}
-          onClickRow={(code, name) => openStockDetail(code, name ?? undefined)}
-        />
-
-        <DataQualityCard
-          data={
-            recon
-              ? {
-                  summary: recon.summary,
-                  per_stock: recon.per_stock,
-                  coverage: recon.coverage,
-                }
-              : null
-          }
-          onRevalidate={handleRevalidate}
-          isRevalidating={isRevalidating}
-        />
-
-        <RecentImportsList jobs={recentJobs} loading={loading} />
-
-        <RawTradesTable
-          rows={rawTrades}
-          total={rawTotal}
-          limit={rawLimit}
-          onLimitChange={setRawLimit}
-          filterCode={filterCode}
-          onFilterCode={setFilterCode}
-          onClickRow={(code, name) => openStockDetail(code, name ?? undefined)}
-        />
-      </div>
+      {body}
     </div>
   );
 }

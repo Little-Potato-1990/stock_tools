@@ -1,6 +1,5 @@
 "use client";
 
-import { ChevronDown } from "lucide-react";
 import { TrendArrow } from "./TrendArrow";
 import { colorFromTrend } from "@/lib/format";
 import type { DialItem } from "./types";
@@ -14,9 +13,7 @@ interface DialProps<TAnchor extends string> {
    */
   active?: boolean;
   onClick?: () => void;
-  /** dial 底部的引导文案. 默认 "查看证据" (定位到 L2 证据), NewsAiCard 用 "筛选列表". */
-  jumpHint?: string;
-  /** 自定义 title tooltip. 默认 "{label}: {caption} — 点击{jumpHint}". */
+  /** 自定义 title tooltip. 默认 "{label}: {caption}". */
   tooltip?: string;
 }
 
@@ -34,7 +31,6 @@ export function Dial<TAnchor extends string>({
   hero = false,
   active = false,
   onClick,
-  jumpHint = "查看证据",
   tooltip,
 }: DialProps<TAnchor>) {
   const Icon = d.icon;
@@ -52,7 +48,7 @@ export function Dial<TAnchor extends string>({
         borderRadius: 4,
         cursor: "pointer",
       }}
-      title={tooltip ?? `${d.label}: ${d.caption} — 点击${jumpHint}`}
+      title={tooltip ?? `${d.label}: ${d.caption}`}
     >
       <div className="flex items-center justify-between gap-1 mb-1">
         <span
@@ -105,13 +101,6 @@ export function Dial<TAnchor extends string>({
         }}
       >
         {d.caption}
-      </div>
-      <div
-        className="flex items-center gap-0.5 mt-1.5 transition-opacity opacity-60 group-hover:opacity-100"
-        style={{ fontSize: 9, color: d.color, fontWeight: 600 }}
-      >
-        {jumpHint}
-        <ChevronDown size={9} />
       </div>
     </button>
   );

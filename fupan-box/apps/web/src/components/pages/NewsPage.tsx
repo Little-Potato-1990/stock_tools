@@ -308,6 +308,10 @@ export function NewsPage() {
     // 检索模式: 按相关度 (后端返回顺序), 跳过本地 filt/focus
     if (searchResults != null) return decorated;
     let arr = sortedDecorated;
+    if (horizon) {
+      // 前端兜底过滤: 即便后端缓存/排序导致结果接近, 点击后也有稳定反馈。
+      arr = arr.filter((it) => it.impact_horizon === horizon);
+    }
     if (focus) {
       arr = arr.filter((it) => it.id != null && focus.ids.has(it.id as number));
     } else {
@@ -317,7 +321,7 @@ export function NewsPage() {
       else if (filt === "bearish") arr = arr.filter((it) => it.sentiment === "bearish");
     }
     return arr;
-  }, [decorated, filt, focus, searchResults, sortedDecorated]);
+  }, [decorated, filt, focus, horizon, searchResults, sortedDecorated]);
 
   const counts = useMemo(() => {
     let important = 0;
@@ -337,6 +341,21 @@ export function NewsPage() {
       bullish,
       bearish,
     };
+  }, [decorated]);
+  const horizonCounts = useMemo(() => {
+    const out: Record<NewsHorizon, number> = {
+      short: 0,
+      swing: 0,
+      long: 0,
+      mixed: 0,
+    };
+    for (const it of decorated) {
+      const h = it.impact_horizon;
+      if (h === "short" || h === "swing" || h === "long" || h === "mixed") {
+        out[h] += 1;
+      }
+    }
+    return out;
   }, [decorated]);
 
   const subtitle = decorated.length > 0
@@ -590,6 +609,7 @@ export function NewsPage() {
         <NewsHorizonStrip
           disabled={searchResults != null}
           horizon={horizon}
+          counts={horizonCounts}
           onReset={resetHorizon}
           onToggle={toggleHorizon}
         />
@@ -888,11 +908,13 @@ const NewsFilterStrip = memo(function NewsFilterStrip({
 const NewsHorizonStrip = memo(function NewsHorizonStrip({
   disabled,
   horizon,
+  counts,
   onReset,
   onToggle,
 }: {
   disabled: boolean;
   horizon: Horizon;
+  counts: Record<NewsHorizon, number>;
   onReset: () => void;
   onToggle: (next: Exclude<Horizon, "">) => void;
 }) {
@@ -936,7 +958,9 @@ const NewsHorizonStrip = memo(function NewsHorizonStrip({
         );
       })}
       <span className="ml-auto" style={{ fontSize: 10, color: "var(--text-muted)" }}>
-        {horizon === "" ? "适合所有投资者" : HORIZON_META[horizon].desc}
+        {horizon === ""
+          ? `适合所有投资者 · 共 ${Object.values(counts).reduce((s, n) => s + n, 0)} 条`
+          : `${HORIZON_META[horizon].desc} · ${counts[horizon]} 条`}
       </span>
     </div>
   );

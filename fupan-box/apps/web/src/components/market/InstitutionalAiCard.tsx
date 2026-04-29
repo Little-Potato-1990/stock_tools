@@ -4,7 +4,6 @@ import { useEffect, useState } from "react";
 import { Sparkles, RefreshCw, Users, Crown, Building2 } from "lucide-react";
 import { api } from "@/lib/api";
 import { AiCardError, AiCardFooter, AiCardLoading } from "./AiCardChrome";
-import { getCacheMeta } from "./CacheMetaBadge";
 import { AiActionBar } from "./AiActionBar";
 import { useUIStore } from "@/stores/ui-store";
 
@@ -124,14 +123,20 @@ export function InstitutionalAiCard({ hero = false }: { hero?: boolean } = {}) {
         <span style={{ fontSize: "var(--font-xs)", color: "var(--text-muted)" }}>
           报告期 {data.report_date ?? "—"} · {data.model}
         </span>
-        <button
-          onClick={() => load(true)}
-          className="ml-auto p-1 transition-opacity hover:opacity-70"
-          title="重新生成"
-          style={{ color: "var(--text-muted)" }}
-        >
-          <RefreshCw size={hero ? 13 : 11} />
-        </button>
+        <div className="ml-auto flex items-center gap-1.5">
+          <AiActionBar
+            askPrompt={`本期主力身份动向定调为「${data.stance}」: ${data.headline}\n请进一步分析国家队/险资/社保/公募/QFII 各自的加仓主线, 并给出具体跟随策略。`}
+            accent={accent}
+          />
+          <button
+            onClick={() => load(true)}
+            className="p-1 transition-opacity hover:opacity-70"
+            title="重新生成"
+            style={{ color: "var(--text-muted)" }}
+          >
+            <RefreshCw size={hero ? 13 : 11} />
+          </button>
+        </div>
       </div>
 
       <div
@@ -266,21 +271,11 @@ export function InstitutionalAiCard({ hero = false }: { hero?: boolean } = {}) {
         </div>
       )}
 
-      <div className="flex items-center justify-end mb-1">
-        <AiActionBar
-          summary={`主力身份「${data.stance}」: ${data.headline}`}
-          evidence={data.evidence}
-          askPrompt={`本期主力身份动向定调为「${data.stance}」: ${data.headline}\n请进一步分析国家队/险资/社保/公募/QFII 各自的加仓主线, 并给出具体跟随策略。`}
-          accent={accent}
-        />
-      </div>
-
       <AiCardFooter
         kind="institutional"
         tradeDate={data.trade_date}
         model={data.model}
         snapshot={{ headline: data.headline, stance: data.stance, evidence: data.evidence }}
-        cacheMeta={getCacheMeta(data)}
         onPickDate={(iso) => load(false, iso)}
       />
     </div>

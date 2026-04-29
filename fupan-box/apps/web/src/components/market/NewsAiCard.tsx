@@ -2,20 +2,13 @@
 
 import {
   Sparkles,
-  Newspaper,
   Star,
-  TrendingUp,
-  TrendingDown,
-  AlertTriangle,
   Target,
   ShieldAlert,
   Briefcase,
   Landmark,
   ArrowRight,
 } from "lucide-react";
-import { Dial } from "./dial/Dial";
-import type { DialItem } from "./dial/types";
-import { CacheMetaBadge, getCacheMeta } from "./CacheMetaBadge";
 
 interface NewsLite {
   id?: number;
@@ -88,94 +81,15 @@ function fallbackCounts(news: NewsLite[]): NewsBriefPayload["stats"] {
   };
 }
 
-function deriveDials(
-  c: NewsBriefPayload["stats"],
-  watchHits: number,
-): DialItem<NewsDialAnchor>[] {
-  const importantPct = c.total > 0 ? Math.round((c.important / c.total) * 100) : 0;
-  const importantCaption =
-    importantPct >= 30 ? "重磅密度高, 注意主线变量"
-    : importantPct >= 15 ? "重磅占比正常"
-    : "多为日常资讯, 无重大变量";
-  const importantColor =
-    importantPct >= 30 ? "var(--accent-red)"
-    : importantPct >= 15 ? "var(--accent-orange)"
-    : "var(--text-muted)";
-
-  const net = c.bullish - c.bearish;
-  const netCaption =
-    net >= 5 ? `利好 ${c.bullish} 利空 ${c.bearish}, 情绪偏多`
-    : net <= -5 ? `利好 ${c.bullish} 利空 ${c.bearish}, 情绪偏空`
-    : `利好 ${c.bullish} 利空 ${c.bearish}, 多空相当`;
-  const netColor =
-    net >= 5 ? "var(--accent-red)"
-    : net <= -5 ? "var(--accent-green)"
-    : "var(--text-muted)";
-
-  const wh = watchHits || c.watch || 0;
-  const watchCaption =
-    wh >= 3 ? "自选多次命中, 优先关注"
-    : wh >= 1 ? "有自选命中, 可点开"
-    : "无自选命中";
-  const watchColor =
-    wh >= 3 ? "var(--accent-orange)"
-    : wh >= 1 ? "var(--accent-yellow)"
-    : "var(--text-muted)";
-
-  const totalCaption =
-    c.total >= 50 ? "信息流密集"
-    : c.total >= 20 ? "正常密度"
-    : "信息稀疏";
-
-  return [
-    {
-      anchor: "total",
-      icon: Newspaper,
-      label: "今日要闻",
-      value: `${c.total}`,
-      unit: "条",
-      trend: "flat",
-      caption: totalCaption,
-      color: "var(--text-primary)",
-    },
-    {
-      anchor: "important",
-      icon: AlertTriangle,
-      label: "重磅密度",
-      value: `${importantPct}`,
-      unit: "%",
-      trend: importantPct >= 15 ? "up" : "flat",
-      delta: `${c.important} 条`,
-      caption: importantCaption,
-      color: importantColor,
-    },
-    {
-      anchor: "net_sentiment",
-      icon: net >= 0 ? TrendingUp : TrendingDown,
-      label: "情绪净值",
-      value: `${net >= 0 ? "+" : ""}${net}`,
-      trend: net > 0 ? "up" : net < 0 ? "down" : "flat",
-      caption: netCaption,
-      color: netColor,
-    },
-    {
-      anchor: "watch",
-      icon: Star,
-      label: "自选命中",
-      value: `${wh}`,
-      unit: "条",
-      trend: wh >= 1 ? "up" : "flat",
-      caption: watchCaption,
-      color: watchColor,
-    },
-  ];
+interface TopInsightCard {
+  key: string;
+  title: string;
+  value: string;
+  sub: string;
+  color: string;
+  icon: typeof Target;
+  onClick?: () => void;
 }
-
-const SENT_BADGE = {
-  bullish: { label: "利好", color: "var(--accent-red)" },
-  bearish: { label: "利空", color: "var(--accent-green)" },
-  neutral: { label: "中性", color: "var(--text-muted)" },
-} as const;
 
 interface Props {
   news: NewsLite[];
@@ -205,11 +119,8 @@ export function NewsAiCard({
   onDialClick,
   onThreadClick,
   onBucketClick,
-  onCodeClick,
-  onThemeClick,
 }: Props) {
   const stats = brief?.stats ?? fallbackCounts(news);
-  const dials = deriveDials(stats, watchHits);
   // 优先级: streaming > brief.headline > loading text > 兜底句
   let headline: string;
   if (briefStreaming) headline = briefStreaming;
@@ -223,6 +134,49 @@ export function NewsAiCard({
   const shock = brief?.shock ?? [];
   const earnings = brief?.earnings ?? [];
   const alerts = brief?.watchlist_alerts ?? [];
+  const watchHitCount = Math.max(alerts.length, watchHits || 0);
+  const firstThread = threads[0];
+  const firstShock = shock[0];
+  const watchCodeList = Array.from(new Set(alerts.flatMap((a) => a.codes || []))).slice(0, 3);
+  const watchCodeText = watchCodeList.length > 0 ? watchCodeList.join("/") : "无";
+  const tomorrowShort = (brief?.tomorrow_brief || "暂无盯点").slice(0, 32);
+  const topCards: TopInsightCard[] = [
+    {
+      key: "thread",
+      title: "主线追踪",
+      value: firstThread?.name || "暂无",
+      sub: firstThread?.summary || "暂无主线结论",
+      color: "var(--accent-purple)",
+      icon: Target,
+      onClick: firstThread ? () => onThreadClick?.(firstThread) : undefined,
+    },
+    {
+      key: "risk",
+      title: "风险雷达",
+      value: firstShock ? "有" : "低",
+      sub: firstShock?.summary || "暂无突发风险",
+      color: firstShock ? "var(--accent-red)" : "var(--accent-green)",
+      icon: ShieldAlert,
+      onClick: firstShock ? () => onBucketClick?.("shock", firstShock) : undefined,
+    },
+    {
+      key: "watch",
+      title: "自选命中",
+      value: `${watchHitCount}条`,
+      sub: watchCodeText === "无" ? "无自选命中" : `命中代码: ${watchCodeText}`,
+      color: watchHitCount > 0 ? "var(--accent-orange)" : "var(--text-muted)",
+      icon: Star,
+      onClick: () => onDialClick?.("watch"),
+    },
+    {
+      key: "tomorrow",
+      title: "明日盯点",
+      value: brief?.tomorrow_brief ? "已生成" : "待生成",
+      sub: brief?.tomorrow_brief || "暂无盯点",
+      color: "var(--accent-blue)",
+      icon: Sparkles,
+    },
+  ];
 
   return (
     <div
@@ -256,9 +210,6 @@ export function NewsAiCard({
               {brief.model}
             </span>
           )}
-          {getCacheMeta(brief) && (
-            <CacheMetaBadge meta={getCacheMeta(brief)} />
-          )}
         </span>
       </div>
 
@@ -276,110 +227,94 @@ export function NewsAiCard({
         {headline}
       </div>
 
-      {/* L1 dials */}
+      {/* L1 高密摘要条：让 headline 下方直接给出可执行信息 */}
       {!loading && stats.total > 0 && (
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mb-3">
-          {dials.map((d) => (
-            <Dial
-              key={d.anchor}
-              d={d}
-              hero={hero}
-              active={activeAnchor === d.anchor}
-              onClick={() => onDialClick?.(d.anchor)}
-              jumpHint="筛选列表"
-            />
-          ))}
+        <div
+          className="mb-2 flex flex-wrap items-center gap-1.5"
+          style={{
+            fontSize: 11,
+            color: "var(--text-secondary)",
+            lineHeight: 1.4,
+          }}
+        >
+          <SummaryPill
+            label="主线"
+            text={firstThread?.name || "暂无"}
+            color="var(--accent-purple)"
+            onClick={firstThread ? () => onThreadClick?.(firstThread) : undefined}
+          />
+          <SummaryPill
+            label="风险"
+            text={firstShock ? "有" : "低"}
+            color={firstShock ? "var(--accent-red)" : "var(--accent-green)"}
+            onClick={firstShock ? () => onBucketClick?.("shock", firstShock) : undefined}
+          />
+          <SummaryPill
+            label="自选"
+            text={watchCodeText === "无" ? "无命中" : watchCodeText}
+            color={watchHitCount > 0 ? "var(--accent-orange)" : "var(--text-muted)"}
+            onClick={() => onDialClick?.("watch")}
+          />
+          <SummaryPill
+            label="明日"
+            text={tomorrowShort}
+            color="var(--accent-blue)"
+          />
         </div>
       )}
 
-      {/* L2 main_threads */}
-      {threads.length > 0 && (
-        <div className="mb-3">
-          <SectionTitle icon={Target} text="主线追踪" color="var(--accent-purple)" />
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-2 mt-1.5">
-            {threads.map((t, idx) => {
-              const sb = SENT_BADGE[t.sentiment] ?? SENT_BADGE.neutral;
-              return (
-                <button
-                  key={`${t.name}-${idx}`}
-                  onClick={() => onThreadClick?.(t)}
-                  className="text-left px-3 py-2 rounded transition-colors hover:opacity-100"
-                  style={{
-                    background: "var(--bg-card)",
-                    border: "1px solid var(--border-color)",
-                    opacity: 0.95,
-                  }}
-                  title={`点击筛选「${t.name}」相关新闻`}
+      {/* L1 顶部决策看板（替代原低信息量 dials） */}
+      {!loading && stats.total > 0 && (
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mb-3">
+          {topCards.map((c) => {
+            const Icon = c.icon;
+            const isActive = c.key === "watch" && activeAnchor === "watch";
+            return (
+              <button
+                key={c.key}
+                onClick={c.onClick}
+                disabled={!c.onClick}
+                className="flex flex-col text-left"
+                style={{
+                  padding: hero ? "10px 12px" : "8px 10px",
+                  background: "var(--bg-card)",
+                  border: isActive ? `2px solid ${c.color}` : "1px solid var(--border-color)",
+                  borderRadius: 4,
+                  boxShadow: isActive ? `0 0 0 4px ${c.color}22` : undefined,
+                  cursor: c.onClick ? "pointer" : "default",
+                  opacity: c.onClick ? 1 : 0.95,
+                }}
+                title={c.onClick ? "点击定位下方对应内容" : undefined}
+              >
+                <div className="flex items-center gap-1 mb-1">
+                  <Icon size={11} style={{ color: c.color }} />
+                  <span style={{ fontSize: 10, color: "var(--text-muted)", fontWeight: 600 }}>
+                    {c.title}
+                  </span>
+                </div>
+                <div
+                  className="font-bold truncate"
+                  style={{ fontSize: hero ? 20 : 16, color: c.color, lineHeight: 1.1 }}
+                  title={c.value}
                 >
-                  <div className="flex items-center gap-1.5 mb-1">
-                    <span
-                      className="font-bold"
-                      style={{ color: "var(--text-primary)", fontSize: "var(--font-md)" }}
-                    >
-                      {t.name}
-                    </span>
-                    <span
-                      style={{
-                        padding: "1px 5px",
-                        background: "transparent",
-                        border: `1px solid ${sb.color}`,
-                        color: sb.color,
-                        fontSize: 10,
-                        borderRadius: 2,
-                      }}
-                    >
-                      {sb.label}
-                    </span>
-                    <ArrowRight size={11} style={{ color: "var(--text-muted)", marginLeft: "auto" }} />
-                  </div>
-                  <div
-                    className="leading-snug mb-1"
-                    style={{ color: "var(--text-secondary)", fontSize: "var(--font-sm)" }}
-                  >
-                    {t.summary}
-                  </div>
-                  {(t.stock_codes?.length ?? 0) + (t.themes?.length ?? 0) > 0 && (
-                    <div className="flex flex-wrap gap-1">
-                      {(t.themes || []).slice(0, 3).map((th) => (
-                        <span
-                          key={th}
-                          onClick={(e) => { e.stopPropagation(); onThemeClick?.(th); }}
-                          className="cursor-pointer"
-                          style={{
-                            padding: "1px 5px",
-                            fontSize: 10,
-                            background: "rgba(245,158,11,0.14)",
-                            color: "var(--accent-orange)",
-                            border: "1px solid rgba(245,158,11,0.3)",
-                            borderRadius: 2,
-                          }}
-                        >
-                          {th}
-                        </span>
-                      ))}
-                      {(t.stock_codes || []).slice(0, 4).map((c) => (
-                        <span
-                          key={c}
-                          onClick={(e) => { e.stopPropagation(); onCodeClick?.(c); }}
-                          className="cursor-pointer tabular-nums"
-                          style={{
-                            padding: "1px 5px",
-                            fontSize: 10,
-                            background: "var(--bg-tertiary)",
-                            color: "var(--text-secondary)",
-                            border: "1px solid var(--border-color)",
-                            borderRadius: 2,
-                          }}
-                        >
-                          {c}
-                        </span>
-                      ))}
-                    </div>
-                  )}
-                </button>
-              );
-            })}
-          </div>
+                  {c.value}
+                </div>
+                <div
+                  className="line-clamp-2"
+                  style={{
+                    marginTop: 4,
+                    fontSize: 10,
+                    color: "var(--text-secondary)",
+                    lineHeight: 1.35,
+                    minHeight: hero ? 26 : 24,
+                  }}
+                  title={c.sub}
+                >
+                  {c.sub}
+                </div>
+              </button>
+            );
+          })}
         </div>
       )}
 
@@ -476,25 +411,6 @@ export function NewsAiCard({
   );
 }
 
-function SectionTitle({
-  icon: Icon,
-  text,
-  color,
-}: {
-  icon: typeof Target;
-  text: string;
-  color: string;
-}) {
-  return (
-    <div className="flex items-center gap-1.5">
-      <Icon size={12} style={{ color }} />
-      <span className="font-bold" style={{ color, fontSize: "var(--font-sm)", letterSpacing: 0.5 }}>
-        {text}
-      </span>
-    </div>
-  );
-}
-
 function BucketCard({
   icon: Icon,
   title,
@@ -551,5 +467,37 @@ function BucketCard({
         </div>
       )}
     </div>
+  );
+}
+
+function SummaryPill({
+  label,
+  text,
+  color,
+  onClick,
+}: {
+  label: string;
+  text: string;
+  color: string;
+  onClick?: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={!onClick}
+      className="inline-flex items-center gap-1 rounded"
+      style={{
+        padding: "2px 6px",
+        background: "var(--bg-card)",
+        border: `1px solid ${onClick ? `${color}55` : "var(--border-color)"}`,
+        color: "var(--text-secondary)",
+        cursor: onClick ? "pointer" : "default",
+      }}
+      title={onClick ? "点击联动下方对应内容" : undefined}
+    >
+      <span style={{ color, fontWeight: 700 }}>{label}:</span>
+      <span className="truncate" style={{ maxWidth: 180 }}>{text}</span>
+    </button>
   );
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
   Sparkles,
   TrendingUp,
@@ -27,13 +27,7 @@ import {
 import { api } from "@/lib/api";
 import { useUIStore } from "@/stores/ui-store";
 import { usePrivateStatus } from "@/stores/private-status-store";
-import { EvidenceBadge } from "@/components/market/EvidenceBadge";
-import { StreamHeadlineControl } from "@/components/market/StreamHeadlineControl";
-import { useStreamingHeadline } from "@/hooks/useStreamingHeadline";
-import { FeedbackThumbs } from "@/components/market/FeedbackThumbs";
-import { AiDensitySwitch } from "@/components/market/AiDensitySwitch";
 import { AiActionBar } from "@/components/market/AiActionBar";
-import { MarketPerspectiveCard } from "@/components/market/MarketPerspectiveCard";
 import { colorFromTrend } from "@/lib/format";
 import { flashGlow } from "@/lib/scrollGlow";
 import type {
@@ -99,6 +93,53 @@ const ANNO_COLOR: Record<AnnotationLevel, string> = {
   negative: "var(--accent-green)",
 };
 
+interface CapitalBriefLite {
+  trade_date: string;
+  model: string;
+  headline: string;
+  stance: string;
+  signals: Array<{ label: string; text: string }>;
+  highlights?: {
+    concept_top?: Array<{ name: string; main_inflow?: number }>;
+    concept_bottom?: Array<{ name: string; main_inflow?: number }>;
+    industry_top?: Array<{ name: string; main_inflow?: number }>;
+    industry_bottom?: Array<{ name: string; main_inflow?: number }>;
+    etf_team?: { total_inflow?: number; etf_count?: number };
+  };
+  flow_facts?: {
+    main_net_inflow?: number;
+    north_net_inflow?: number;
+    etf_team_inflow?: number;
+    concept_inflow_top3?: { names?: string[]; total_inflow?: number };
+    concept_outflow_top3?: { names?: string[]; total_inflow?: number };
+    industry_inflow_top3?: { names?: string[]; total_inflow?: number };
+    industry_outflow_top3?: { names?: string[]; total_inflow?: number };
+  };
+}
+
+const CAPITAL_STANCE_COLOR: Record<string, string> = {
+  净流入主导: "var(--accent-red)",
+  净流出主导: "var(--accent-green)",
+  分化: "var(--accent-yellow)",
+  防御: "var(--accent-blue)",
+};
+
+function fmtYi(v?: number) {
+  if (v == null || Number.isNaN(v)) return "—";
+  return `${(v / 1e8).toFixed(1)}亿`;
+}
+
+function fmtYiSigned(v?: number) {
+  if (v == null || Number.isNaN(v)) return "—";
+  const yi = v / 1e8;
+  return `${yi > 0 ? "+" : ""}${yi.toFixed(1)}亿`;
+}
+
+function joinNames(names?: string[]) {
+  const out = (names || []).map((n) => n.trim()).filter(Boolean);
+  return out.length > 0 ? out.join("、") : "—";
+}
+
 function TrendIcon({ trend, size = 12 }: { trend: Trend; size?: number }) {
   if (trend === "up") return <TrendingUp size={size} style={{ color: "var(--accent-red)" }} />;
   if (trend === "down") return <TrendingDown size={size} style={{ color: "var(--accent-green)" }} />;
@@ -152,8 +193,6 @@ function SectionHeader({
 
 function HeroBlock({ brief }: { brief: AiBrief }) {
   const openDebate = useUIStore((s) => s.openDebate);
-  const aiStyle = useUIStore((s) => s.aiStyle);
-  const stream = useStreamingHeadline("today", brief.trade_date, brief.model);
   return (
     <div
       style={{
@@ -164,8 +203,8 @@ function HeroBlock({ brief }: { brief: AiBrief }) {
         padding: "14px 16px",
       }}
     >
-      <div className="flex items-center justify-between mb-2">
-        <div className="flex items-center gap-2">
+      <div className="flex items-start justify-between gap-3 mb-3">
+        <div className="flex items-center gap-2 flex-wrap">
           <AiTag>AI 今日定调</AiTag>
           <span
             style={{
@@ -181,14 +220,16 @@ function HeroBlock({ brief }: { brief: AiBrief }) {
           </span>
         </div>
         <div className="flex items-center gap-2 flex-wrap justify-end">
-          <AiDensitySwitch />
           <button
             onClick={() => openDebate("market", undefined, "今日大盘")}
-            className="flex items-center gap-1 px-2 py-1 rounded font-bold transition-colors"
+            className="inline-flex items-center gap-1 transition-colors"
             style={{
               background: "var(--accent-purple)",
               color: "#fff",
-              fontSize: 11,
+              padding: "2px 7px",
+              borderRadius: 3,
+              fontSize: 10,
+              fontWeight: 700,
               whiteSpace: "nowrap",
               flexShrink: 0,
               border: "none",
@@ -196,20 +237,11 @@ function HeroBlock({ brief }: { brief: AiBrief }) {
             }}
             title="多头/空头/裁判 三方 AI 多空辩论"
           >
-            <Scale size={11} />
+            <Scale size={10} />
             AI 辩论
           </button>
-          <span style={{ fontSize: "var(--font-xs)", color: "var(--text-muted)", whiteSpace: "nowrap" }}>
-            {brief.trade_date} · 模型 {brief.model} · 生成于{" "}
-            {brief.generated_at.slice(11, 16)}
-          </span>
-          <EvidenceBadge evidence={brief.evidence} size="md" label="依据" />
-          <StreamHeadlineControl
-            isStreaming={stream.isStreaming}
-            hasOverride={stream.hasOverride}
-            onStart={stream.start}
-            onReset={stream.reset}
-            size={13}
+          <AiActionBar
+            askPrompt={`今日 AI 给出的定调是「${brief.regime_label}」: ${brief.tagline}\n请基于今日盘口、主线、龙头数据, 给出明日的具体动作建议 (仓位 / 主攻方向 / 止损位)。`}
           />
         </div>
       </div>
@@ -223,44 +255,232 @@ function HeroBlock({ brief }: { brief: AiBrief }) {
           letterSpacing: "0.01em",
         }}
       >
-        {stream.hasOverride ? (
-          <>
-            {stream.text || "…"}
-            {stream.isStreaming && (
-              <span
-                className="ml-1 inline-block animate-pulse"
-                style={{ color: "var(--accent-purple)" }}
-              >
-                ▍
-              </span>
-            )}
-          </>
-        ) : (
-          brief.tagline
-        )}
+        {brief.tagline}
       </div>
 
-      {aiStyle !== "headline" && (
-        <div className="flex flex-wrap gap-2 mt-3">
-          {brief.key_metrics.map((m) => (
-            <MetricBadge key={m.label} metric={m} />
-          ))}
+      <div className="flex flex-wrap gap-2 mt-3">
+        {brief.key_metrics.map((m) => (
+          <MetricBadge key={m.label} metric={m} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function CapitalConfirmationCard({
+  data,
+  loading,
+  error,
+}: {
+  data: CapitalBriefLite | null;
+  loading: boolean;
+  error: string | null;
+}) {
+  const accent = data ? (CAPITAL_STANCE_COLOR[data.stance] ?? "var(--accent-purple)") : "var(--accent-purple)";
+  return (
+    <div>
+      <SectionHeader
+        icon={<CircleDollarSign size={16} style={{ color: "var(--accent-purple)" }} />}
+        title="资金确认"
+        hint="主力 / 北向 / ETF 资金事实口径"
+      />
+
+      {loading && !data ? (
+        <div
+          style={{
+            background: "var(--bg-card)",
+            border: "1px solid var(--border-color)",
+            borderRadius: 4,
+            padding: "10px 12px",
+            color: "var(--text-muted)",
+            fontSize: "var(--font-sm)",
+          }}
+        >
+          资金确认层加载中...
         </div>
-      )}
+      ) : !data ? null : (() => {
+        const facts = data.flow_facts;
+        const fallbackFacts = (() => {
+          const conceptIn = (data.highlights?.concept_top ?? []).slice(0, 3);
+          const industryIn = (data.highlights?.industry_top ?? []).slice(0, 3);
+          const conceptOut = (data.highlights?.concept_bottom ?? []).slice(0, 3);
+          const industryOut = (data.highlights?.industry_bottom ?? []).slice(0, 3);
+          return {
+            concept_inflow_top3: {
+              names: conceptIn.map((it) => it.name).filter(Boolean),
+              total_inflow: conceptIn.reduce((acc, it) => acc + (it.main_inflow || 0), 0),
+            },
+            concept_outflow_top3: {
+              names: conceptOut.map((it) => it.name).filter(Boolean),
+              total_inflow: conceptOut.reduce((acc, it) => acc + (it.main_inflow || 0), 0),
+            },
+            industry_inflow_top3: {
+              names: industryIn.map((it) => it.name).filter(Boolean),
+              total_inflow: industryIn.reduce((acc, it) => acc + (it.main_inflow || 0), 0),
+            },
+            industry_outflow_top3: {
+              names: industryOut.map((it) => it.name).filter(Boolean),
+              total_inflow: industryOut.reduce((acc, it) => acc + (it.main_inflow || 0), 0),
+            },
+          };
+        })();
+        const shownFacts = facts ?? fallbackFacts;
+        const conceptOutNames = joinNames(shownFacts.concept_outflow_top3?.names);
+        const industryOutNames = joinNames(shownFacts.industry_outflow_top3?.names);
+        const noOutflow =
+          conceptOutNames === "—" &&
+          industryOutNames === "—" &&
+          ((shownFacts.concept_outflow_top3?.total_inflow || 0) === 0) &&
+          ((shownFacts.industry_outflow_top3?.total_inflow || 0) === 0);
+        const factualHeadline = facts
+          ? `主力净流${fmtYiSigned(facts.main_net_inflow)} 北向净流${fmtYiSigned(facts.north_net_inflow)} 国家队ETF${fmtYiSigned(facts.etf_team_inflow)}`
+          : data.headline;
 
-      <div className="flex items-center justify-between gap-2 mt-3 pt-2" style={{ borderTop: "1px dashed rgba(139,92,246,0.28)" }}>
-        <FeedbackThumbs
-          kind="today"
-          tradeDate={brief.trade_date}
-          model={brief.model}
-          snapshot={{ headline: brief.tagline, evidence: brief.evidence, regime: brief.regime }}
-        />
-        <AiActionBar
-          summary={`今日定调「${brief.regime_label}」: ${brief.tagline}`}
-          evidence={brief.evidence}
-          askPrompt={`今日 AI 给出的定调是「${brief.regime_label}」: ${brief.tagline}\n请基于今日盘口、主线、龙头数据, 给出明日的具体动作建议 (仓位 / 主攻方向 / 止损位)。`}
-        />
-      </div>
+        return (
+          <div
+            style={{
+              background: "var(--bg-card)",
+              border: "1px solid var(--border-color)",
+              borderRadius: 4,
+              padding: "10px 12px",
+            }}
+          >
+            <div className="flex items-center gap-2 mb-2">
+              <span
+                className="font-bold"
+                style={{
+                  padding: "1px 8px",
+                  borderRadius: 3,
+                  background: `${accent}22`,
+                  color: accent,
+                  fontSize: 10,
+                  border: `1px solid ${accent}55`,
+                }}
+              >
+                {data.stance}
+              </span>
+            </div>
+
+            <div
+              className="font-bold mb-2"
+              style={{
+                fontSize: "var(--font-md)",
+                color: "var(--text-primary)",
+                lineHeight: 1.5,
+              }}
+            >
+              {factualHeadline}
+            </div>
+
+            {data.signals.length > 0 && (
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-2 mb-2">
+                {data.signals.slice(0, 3).map((s, i) => (
+                  <div
+                    key={`${s.label}-${i}`}
+                    style={{
+                      background: "rgba(139,92,246,0.10)",
+                      borderLeft: "2px solid var(--accent-purple)",
+                      borderRadius: "0 4px 4px 0",
+                      padding: "8px 10px",
+                    }}
+                  >
+                    <div className="font-bold mb-1" style={{ fontSize: 10, color: "var(--accent-purple)" }}>
+                      {s.label}
+                    </div>
+                    <div style={{ fontSize: "var(--font-sm)", color: "var(--text-secondary)", lineHeight: 1.45 }}>
+                      {s.text}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-2 mb-2">
+              <div
+                style={{
+                  background: "rgba(139,92,246,0.10)",
+                  borderLeft: "2px solid var(--accent-purple)",
+                  borderRadius: "0 4px 4px 0",
+                  padding: "8px 10px",
+                  fontSize: "var(--font-sm)",
+                  lineHeight: 1.5,
+                }}
+              >
+                <div className="font-bold mb-1" style={{ color: "var(--accent-purple)" }}>流入方向</div>
+                <div style={{ color: "var(--text-primary)" }}>
+                  <span className="font-bold" style={{ color: "var(--text-secondary)" }}>概念:</span>{" "}
+                  {joinNames(shownFacts.concept_inflow_top3?.names)}（{fmtYiSigned(shownFacts.concept_inflow_top3?.total_inflow)}）
+                </div>
+                <div style={{ color: "var(--text-primary)" }}>
+                  <span className="font-bold" style={{ color: "var(--text-secondary)" }}>行业:</span>{" "}
+                  {joinNames(shownFacts.industry_inflow_top3?.names)}（{fmtYiSigned(shownFacts.industry_inflow_top3?.total_inflow)}）
+                </div>
+              </div>
+              <div
+                style={{
+                  background: "rgba(139,92,246,0.10)",
+                  borderLeft: "2px solid var(--accent-purple)",
+                  borderRadius: "0 4px 4px 0",
+                  padding: "8px 10px",
+                  fontSize: "var(--font-sm)",
+                  lineHeight: 1.5,
+                }}
+              >
+                <div className="font-bold mb-1" style={{ color: "var(--accent-purple)" }}>流出方向</div>
+                {noOutflow ? (
+                  <div style={{ color: "var(--text-muted)" }}>暂无明显净流出</div>
+                ) : (
+                  <>
+                    <div style={{ color: "var(--text-primary)" }}>
+                      <span className="font-bold" style={{ color: "var(--text-secondary)" }}>概念:</span>{" "}
+                      {conceptOutNames}（{fmtYiSigned(shownFacts.concept_outflow_top3?.total_inflow)}）
+                    </div>
+                    <div style={{ color: "var(--text-primary)" }}>
+                      <span className="font-bold" style={{ color: "var(--text-secondary)" }}>行业:</span>{" "}
+                      {industryOutNames}（{fmtYiSigned(shownFacts.industry_outflow_top3?.total_inflow)}）
+                    </div>
+                  </>
+                )}
+              </div>
+            </div>
+
+            {(data.highlights?.concept_top?.length ||
+              data.highlights?.industry_top?.length ||
+              data.highlights?.etf_team?.etf_count) && (
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+                <div style={{ fontSize: "var(--font-xs)", color: "var(--text-secondary)" }}>
+                  <span style={{ color: "var(--text-muted)" }}>概念主流: </span>
+                  {(data.highlights?.concept_top ?? []).slice(0, 2).map((it, idx) => (
+                    <span key={`${it.name}-${idx}`} style={{ marginRight: 8 }}>
+                      {it.name} {fmtYi(it.main_inflow)}
+                    </span>
+                  ))}
+                </div>
+                <div style={{ fontSize: "var(--font-xs)", color: "var(--text-secondary)" }}>
+                  <span style={{ color: "var(--text-muted)" }}>行业主流: </span>
+                  {(data.highlights?.industry_top ?? []).slice(0, 2).map((it, idx) => (
+                    <span key={`${it.name}-${idx}`} style={{ marginRight: 8 }}>
+                      {it.name} {fmtYi(it.main_inflow)}
+                    </span>
+                  ))}
+                </div>
+                <div style={{ fontSize: "var(--font-xs)", color: "var(--text-secondary)" }}>
+                  <span style={{ color: "var(--text-muted)" }}>ETF托底: </span>
+                  {data.highlights?.etf_team?.etf_count
+                    ? `${data.highlights?.etf_team?.etf_count}只 · ${fmtYi(data.highlights?.etf_team?.total_inflow)}`
+                    : "无明显信号"}
+                </div>
+              </div>
+            )}
+
+            {error && (
+              <div style={{ marginTop: 6, fontSize: 10, color: "var(--accent-orange)" }}>
+                资金层刷新失败：{error}
+              </div>
+            )}
+          </div>
+        );
+      })()}
     </div>
   );
 }
@@ -402,7 +622,7 @@ function MainLineBlock({ lines }: { lines: MainLine[] }) {
         hint="AI 综合涨停密度、资金流向、新闻催化判定"
       />
       {lines.length === 0 ? (
-        <SectionEmptyHint message="今日尚无涨停板数据，主线题材待盘后 17:30 后 Tushare 涨停接口更新；点击侧栏「数据已就绪」可手动触发刷新。" />
+        <SectionEmptyHint message="今日尚无涨停板数据，主线题材待盘后 17:30 后 Tushare 涨停接口更新。" />
       ) : (
       <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
         {lines.map((line) => (
@@ -805,41 +1025,40 @@ function Timeline({ annotations }: { annotations: Leader["annotations"] }) {
       {annotations.map((anno, idx) => {
         const left = toX(anno.time);
         const isAbove = idx % 2 === 0;
+        const alignRight = left > 76;
         return (
-          <div
-            key={`${anno.time}-${idx}`}
-            style={{
-              position: "absolute",
-              left: `calc(${left}% + 10px - 4px)`,
-              top: isAbove ? 8 : 50,
-              maxWidth: 160,
-            }}
-          >
+          <div key={`${anno.time}-${idx}`}>
             <div
               style={{
+                position: "absolute",
+                left: `calc(${left}% + 10px - 4px)`,
+                top: 40,
                 width: 8,
                 height: 8,
                 borderRadius: "50%",
                 background: ANNO_COLOR[anno.level],
-                marginLeft: 0,
-                marginTop: isAbove ? 28 : 0,
-                position: isAbove ? "absolute" : "relative",
-                bottom: isAbove ? -34 : undefined,
               }}
             />
             <div
-              className="flex items-center gap-1"
               style={{
+                position: "absolute",
+                left: `calc(${left}% + 10px)`,
+                top: isAbove ? 8 : 50,
+                maxWidth: 150,
+                transform: alignRight ? "translateX(calc(-100% - 8px))" : "translateX(8px)",
+                textAlign: alignRight ? "right" : "left",
                 fontSize: 10,
                 color: "var(--text-secondary)",
                 lineHeight: 1.2,
                 whiteSpace: "nowrap",
+                overflow: "hidden",
+                textOverflow: "ellipsis",
               }}
             >
               <span style={{ color: ANNO_COLOR[anno.level], fontWeight: 700 }}>
                 {anno.time}
               </span>
-              <span>{anno.label}</span>
+              <span> {anno.label}</span>
             </div>
           </div>
         );
@@ -923,13 +1142,13 @@ function PlanBlock({
           hint="AI 给出触发条件，盘口直接对照"
         />
         {planEmpty ? (
-          <SectionEmptyHint message="明日 4 类候选池全部派生自当日涨停盘口数据 — 涨停板暂未更新，候选池待 17:30 后自动补齐。" />
+          <SectionEmptyHint message="明日 4 类候选池全部派生自当日涨停盘口数据 — 涨停板暂未更新，候选池待盘后自动补齐。" />
         ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-          <PromotionCard items={plan.promotion} marks={marks} />
-          <FirstBoardCard items={plan.first_board} marks={marks} />
-          <ResealCard items={plan.reseal} marks={marks} />
-          <AvoidCard items={plan.avoid} marks={marks} />
+          {plan.promotion.length > 0 && <PromotionCard items={plan.promotion} marks={marks} />}
+          {plan.first_board.length > 0 && <FirstBoardCard items={plan.first_board} marks={marks} />}
+          {plan.reseal.length > 0 && <ResealCard items={plan.reseal} marks={marks} />}
+          {plan.avoid.length > 0 && <AvoidCard items={plan.avoid} marks={marks} />}
         </div>
         )}
       </div>
@@ -1573,6 +1792,9 @@ function CompareCol({ brief, title }: { brief: AiBrief; title: string }) {
 export function TodayReviewPage() {
   const [brief, setBrief] = useState<AiBrief | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [capitalBrief, setCapitalBrief] = useState<CapitalBriefLite | null>(null);
+  const [capitalLoading, setCapitalLoading] = useState(false);
+  const [capitalError, setCapitalError] = useState<string | null>(null);
   const [picked, setPicked] = useState<SimilarDay | null>(null);
   const [secondaryReady, setSecondaryReady] = useState(false);
   const status = usePrivateStatus();
@@ -1582,12 +1804,29 @@ export function TodayReviewPage() {
     triggeredCodes: new Set(status?.plans.triggered_codes ?? []),
   };
 
+  const loadCapitalBrief = useCallback(async (tradeDate?: string) => {
+    setCapitalLoading(true);
+    setCapitalError(null);
+    try {
+      const d = await api.getCapitalBrief(tradeDate, false);
+      setCapitalBrief(d as CapitalBriefLite);
+      setCapitalError(null);
+    } catch (e) {
+      setCapitalError(e instanceof Error ? e.message : "load capital brief failed");
+    } finally {
+      setCapitalLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
     let aborted = false;
     api
       .getAiBrief()
       .then((b) => {
-        if (!aborted) setBrief(b);
+        if (!aborted) {
+          setBrief(b);
+          void loadCapitalBrief(b.trade_date);
+        }
       })
       .catch((e: Error) => {
         if (!aborted) setError(e.message);
@@ -1595,7 +1834,7 @@ export function TodayReviewPage() {
     return () => {
       aborted = true;
     };
-  }, []);
+  }, [loadCapitalBrief]);
 
   useEffect(() => {
     if (!brief) return;
@@ -1635,8 +1874,12 @@ export function TodayReviewPage() {
       <div id="section-hero" style={{ borderRadius: 6 }}>
         <HeroBlock brief={brief} />
       </div>
-      <div id="section-perspective" style={{ borderRadius: 6 }}>
-        <MarketPerspectiveCard brief={brief} />
+      <div id="section-capital-confirm" style={{ borderRadius: 6 }}>
+        <CapitalConfirmationCard
+          data={capitalBrief}
+          loading={capitalLoading}
+          error={capitalError}
+        />
       </div>
       <div id="section-mainline" style={{ borderRadius: 6 }}>
         <MainLineBlock lines={brief.main_lines} />

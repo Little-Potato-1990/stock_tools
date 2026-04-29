@@ -5,8 +5,6 @@ import { X, RefreshCw, Sparkles, MessageSquare, ExternalLink, Zap, ChevronRight,
 import { useUIStore } from "@/stores/ui-store";
 import { api } from "@/lib/api";
 import { StockCapitalChip } from "./StockCapitalChip";
-import { CacheMetaBadge, getCacheMeta } from "./CacheMetaBadge";
-import { ShareCardButton } from "@/components/common/ShareCardButton";
 
 type WhyRose = Awaited<ReturnType<typeof api.getWhyRose>>;
 
@@ -273,11 +271,6 @@ export function WhyRoseModal() {
                     <span>{data.trade_date}</span>
                     <span>·</span>
                     <span>{data.model}</span>
-                    {getCacheMeta(data) && (
-                      <span className="ml-auto">
-                        <CacheMetaBadge meta={getCacheMeta(data)} />
-                      </span>
-                    )}
                   </div>
                 </div>
               </div>
@@ -358,34 +351,6 @@ export function WhyRoseModal() {
             borderTop: "1px solid var(--border-color)",
           }}
         >
-          {data && (
-            <ShareCardButton
-              title={`${data.name}(${data.code})`}
-              subtitle={`AI 解读 · ${data.trade_date} · ${data.model}`}
-              verdict={`${data.verdict} ${data.verdict_label}`}
-              verdictColor={data.verdict === "S" ? "#a855f7" : data.verdict === "A" ? "#ef4444" : data.verdict === "B" ? "#f59e0b" : "#22c55e"}
-              headline={data.headline}
-              sections={[
-                ...(data.drivers.slice(0, 2).map((d) => ({ label: d.label, text: d.text }))),
-                { label: data.position.label, text: data.position.text },
-                { label: data.height.label, text: data.height.text },
-                { label: data.tomorrow.label, text: data.tomorrow.text },
-              ]}
-              variant="inline"
-              buttonLabel="生成分享卡"
-            />
-          )}
-          <button
-            onClick={close}
-            className="px-2.5 py-1 rounded transition-colors"
-            style={{
-              color: "var(--text-muted)",
-              fontSize: "var(--font-xs)",
-              background: "transparent",
-            }}
-          >
-            关闭
-          </button>
           <button
             onClick={handleAsk}
             disabled={!data}

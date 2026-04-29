@@ -22,7 +22,6 @@ export type NavModule =
   | "watchlist"
   | "my_holdings"
   | "plans"
-  | "ai_track"
   | "my_review"
   | "skills"
   | "skill_scan"
@@ -34,6 +33,7 @@ export type NavModule =
  */
 export function normalizeNavModule(m: string): NavModule {
   if (m === "search") return "midlong";
+  if (m === "my_holdings") return "my_review";
   return m as NavModule;
 }
 
@@ -94,6 +94,9 @@ interface UIState {
   aiPanelOpen: boolean;
   toggleAiPanel: () => void;
   closeAiPanel: () => void;
+  authModalOpen: boolean;
+  openAuthModal: () => void;
+  closeAuthModal: () => void;
 
   selectedModel: string;
   setSelectedModel: (m: string) => void;
@@ -137,9 +140,9 @@ interface UIState {
   setFocusedStock: (s: FocusedStock | null) => void;
 
   /** AI 副驾的预填问题 (从其他模块快捷追问) */
-  pendingChatPrompt: string | null;
-  askAI: (prompt: string, focusedStock?: FocusedStock | null) => void;
-  consumePendingPrompt: () => string | null;
+  pendingChatPrompt: { prompt: string; label?: string } | null;
+  askAI: (prompt: string, focusedStock?: FocusedStock | null, label?: string) => void;
+  consumePendingPrompt: () => { prompt: string; label?: string } | null;
 
   /** 最近 12 条用户交互痕迹 */
   recentInteractions: RecentInteraction[];
@@ -171,10 +174,9 @@ const getStoredModel = () => {
 
 const AI_STYLE_KEY = "ui:ai_style";
 const getStoredAiStyle = (): AiDensity => {
-  if (typeof window === "undefined") return "concise";
-  const v = localStorage.getItem(AI_STYLE_KEY);
-  if (v === "headline" || v === "concise" || v === "detailed") return v;
-  return "concise";
+  // 产品改版：固定完整模式，移除密度切换。
+  // 仍保留字段以兼容旧调用点，但统一返回 detailed。
+  return "detailed";
 };
 
 export const useUIStore = create<UIState>((set) => ({
@@ -190,6 +192,9 @@ export const useUIStore = create<UIState>((set) => ({
   aiPanelOpen: false,
   toggleAiPanel: () => set((s) => ({ aiPanelOpen: !s.aiPanelOpen })),
   closeAiPanel: () => set({ aiPanelOpen: false }),
+  authModalOpen: false,
+  openAuthModal: () => set({ authModalOpen: true }),
+  closeAuthModal: () => set({ authModalOpen: false }),
 
   selectedModel: getStoredModel(),
   setSelectedModel: (m) => {
@@ -245,14 +250,14 @@ export const useUIStore = create<UIState>((set) => ({
   setFocusedStock: (s) => set({ focusedStock: s }),
 
   pendingChatPrompt: null,
-  askAI: (prompt, focusedStock) =>
+  askAI: (prompt, focusedStock, label) =>
     set((s) => ({
-      pendingChatPrompt: prompt,
+      pendingChatPrompt: { prompt, label },
       aiPanelOpen: true,
       focusedStock: focusedStock ?? s.focusedStock,
     })),
   consumePendingPrompt: () => {
-    let val: string | null = null;
+    let val: { prompt: string; label?: string } | null = null;
     set((s) => {
       val = s.pendingChatPrompt;
       return { pendingChatPrompt: null };
@@ -273,15 +278,15 @@ export const useUIStore = create<UIState>((set) => ({
   },
 
   aiStyle: getStoredAiStyle(),
-  setAiStyle: (s) => {
+  setAiStyle: () => {
     if (typeof window !== "undefined") {
       try {
-        localStorage.setItem(AI_STYLE_KEY, s);
+        localStorage.setItem(AI_STYLE_KEY, "detailed");
       } catch {
         /* ignore */
       }
     }
-    set({ aiStyle: s });
+    set({ aiStyle: "detailed" });
   },
 
   pendingPlanForCode: null,

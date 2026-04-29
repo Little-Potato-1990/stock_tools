@@ -38,6 +38,7 @@ export function MethodologyPage() {
   const [view, setView] = useState<"systems" | "foundations">("systems");
   const [activeSlug, setActiveSlug] = useState<string | null>(null);
   const [navStack, setNavStack] = useState<string[]>([]);
+  const setActiveModule = useUIStore((s) => s.setActiveModule);
 
   const openSlug = (slug: string) => {
     if (activeSlug && activeSlug !== slug) {
@@ -69,7 +70,24 @@ export function MethodologyPage() {
             ? "投资体系 · 选一个适合你的风格"
             : "基础知识库 · 客观工具与概念词典"
         }
-        actions={<ViewSwitcher view={view} onChange={setView} />}
+        actions={
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setActiveModule("skills")}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded transition-opacity hover:opacity-90"
+              style={{
+                background: "var(--bg-tertiary)",
+                color: "var(--text-secondary)",
+                fontSize: "var(--font-sm)",
+                border: "1px solid var(--border-color)",
+              }}
+            >
+              <ArrowLeft size={12} />
+              我的体系
+            </button>
+            <ViewSwitcher view={view} onChange={setView} />
+          </div>
+        }
       />
       {view === "systems" ? (
         <SystemsView onOpen={openSlug} />

@@ -14,8 +14,6 @@ import {
 } from "lucide-react";
 import { useUIStore } from "@/stores/ui-store";
 import { api } from "@/lib/api";
-import { CacheMetaBadge, getCacheMeta } from "./CacheMetaBadge";
-import { ShareCardButton } from "@/components/common/ShareCardButton";
 
 type Debate = Awaited<ReturnType<typeof api.getDebate>>;
 
@@ -88,7 +86,7 @@ export function DebateModal() {
       "",
       "请你站在第三方角度: (1) 哪一方的论据更扎实? 哪条最薄弱? (2) 我作为短线散户应该如何执行? 给出明日盘前/盘中/盘后的具体动作清单。",
     ].join("\n");
-    askAI(prompt);
+    askAI(prompt, undefined, "AI 辩论上下文");
     close();
   };
 
@@ -304,47 +302,8 @@ export function DebateModal() {
               {data?.model && `模型: ${data.model}`}
               {data?.trade_date && ` · ${data.trade_date}`}
             </span>
-            {getCacheMeta(data) && (
-              <CacheMetaBadge meta={getCacheMeta(data)} />
-            )}
           </div>
           <div className="flex items-center gap-1.5">
-            {data && (
-              <ShareCardButton
-                title={data.topic_label || target.label || target.key || ""}
-                subtitle={`AI 多空辩论 · ${data.trade_date} · ${data.model}`}
-                verdict={`裁判: ${data.judge.verdict} (${data.judge.win_margin}分)`}
-                verdictColor={
-                  data.judge.verdict === "看多"
-                    ? "#ef4444"
-                    : data.judge.verdict === "看空"
-                      ? "#22c55e"
-                      : data.judge.verdict === "分歧"
-                        ? "#f59e0b"
-                        : "#6b7280"
-                }
-                headline={data.judge.summary}
-                sections={[
-                  { label: `多头 (置信度 ${data.bull.confidence})`, text: data.bull.headline },
-                  { label: `空头 (置信度 ${data.bear.confidence})`, text: data.bear.headline },
-                  { label: "关键变量", text: data.judge.key_variable },
-                  { label: "下一步", text: data.judge.next_step },
-                ]}
-                variant="inline"
-                buttonLabel="生成分享卡"
-              />
-            )}
-            <button
-              onClick={close}
-              className="px-2.5 py-1 rounded"
-              style={{
-                color: "var(--text-secondary)",
-                fontSize: "var(--font-xs)",
-                border: "1px solid var(--border-color)",
-              }}
-            >
-              关闭
-            </button>
             <button
               onClick={handleAsk}
               disabled={!data}

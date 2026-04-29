@@ -5,7 +5,6 @@ import { Sparkles, RefreshCw, TrendingUp, Activity } from "lucide-react";
 import { api } from "@/lib/api";
 import { AiCardError, AiCardFooter, AiCardLoading } from "./AiCardChrome";
 import { AiActionBar } from "./AiActionBar";
-import { getCacheMeta } from "./CacheMetaBadge";
 
 interface CapitalBrief {
   trade_date: string;
@@ -95,14 +94,20 @@ export function CapitalAiCard({ hero = false }: { hero?: boolean } = {}) {
         <span style={{ fontSize: "var(--font-xs)", color: "var(--text-muted)" }}>
           {data.trade_date} · {data.model}
         </span>
-        <button
-          onClick={() => load(true)}
-          className="ml-auto p-1 transition-opacity hover:opacity-70"
-          title="重新生成"
-          style={{ color: "var(--text-muted)" }}
-        >
-          <RefreshCw size={hero ? 13 : 11} />
-        </button>
+        <div className="ml-auto flex items-center gap-1.5">
+          <AiActionBar
+            askPrompt={`今日资金定调为「${data.stance}」: ${data.headline}\n请基于主力/北向/国家队三类资金的最新数据, 进一步推演明日方向并给出具体仓位建议。`}
+            accent={accent}
+          />
+          <button
+            onClick={() => load(true)}
+            className="p-1 transition-opacity hover:opacity-70"
+            title="重新生成"
+            style={{ color: "var(--text-muted)" }}
+          >
+            <RefreshCw size={hero ? 13 : 11} />
+          </button>
+        </div>
       </div>
 
       <div
@@ -190,22 +195,11 @@ export function CapitalAiCard({ hero = false }: { hero?: boolean } = {}) {
         </div>
       )}
 
-      <div className="flex items-center justify-end mb-1">
-        <AiActionBar
-          summary={`今日资金面「${data.stance}」: ${data.headline}`}
-          evidence={data.evidence}
-          askPrompt={`今日资金定调为「${data.stance}」: ${data.headline}\n请基于主力/北向/国家队三类资金的最新数据, 进一步推演明日方向并给出具体仓位建议。`}
-          accent={accent}
-        />
-      </div>
-
       <AiCardFooter
         kind="capital"
         tradeDate={data.trade_date}
         model={data.model}
         snapshot={{ headline: data.headline, stance: data.stance, evidence: data.evidence }}
-        cacheMeta={getCacheMeta(data)}
-        onPickDate={(iso) => load(false, iso)}
       />
     </div>
   );

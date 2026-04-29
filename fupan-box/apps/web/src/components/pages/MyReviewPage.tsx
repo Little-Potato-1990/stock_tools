@@ -13,12 +13,10 @@ import {
   Wallet,
   Trophy,
   Activity,
-  Upload,
 } from "lucide-react";
 import { api, type TradeRecord, type TradePattern } from "@/lib/api";
 import { useUIStore } from "@/stores/ui-store";
-import { EvidenceBadge } from "@/components/market/EvidenceBadge";
-import { FeedbackThumbs } from "@/components/market/FeedbackThumbs";
+import { MyHoldingsPage } from "@/components/pages/MyHoldingsPage";
 
 type AiReview = {
   mode_label: string;
@@ -32,6 +30,7 @@ type AiReview = {
 
 export function MyReviewPage() {
   const [loggedIn, setLoggedIn] = useState(false);
+  const [view, setView] = useState<"review" | "holdings">("review");
   const [trades, setTrades] = useState<TradeRecord[]>([]);
   const [pattern, setPattern] = useState<TradePattern | null>(null);
   const [loading, setLoading] = useState(false);
@@ -40,11 +39,22 @@ export function MyReviewPage() {
   const [aiReview, setAiReview] = useState<AiReview | null>(null);
   const [aiError, setAiError] = useState<string | null>(null);
   const openStockDetail = useUIStore((s) => s.openStockDetail);
-  const setActiveModule = useUIStore((s) => s.setActiveModule);
+  const openAuthModal = useUIStore((s) => s.openAuthModal);
 
   useEffect(() => {
-    api.restoreToken();
-    setLoggedIn(api.isLoggedIn());
+    const syncLoginState = () => {
+      api.restoreToken();
+      setLoggedIn(api.isLoggedIn());
+    };
+    syncLoginState();
+    if (typeof window !== "undefined") {
+      window.addEventListener("app:auth-changed", syncLoginState);
+    }
+    return () => {
+      if (typeof window !== "undefined") {
+        window.removeEventListener("app:auth-changed", syncLoginState);
+      }
+    };
   }, []);
 
   const load = useCallback(async () => {
@@ -79,10 +89,10 @@ export function MyReviewPage() {
           }}
         >
           <span className="font-bold" style={{ fontSize: "var(--font-md)", color: "var(--text-primary)" }}>
-            我的复盘
+            交易复盘
           </span>
         </div>
-        <div className="flex items-center justify-center" style={{ minHeight: "60vh", pointerEvents: "none" }}>
+        <div className="flex items-center justify-center" style={{ minHeight: "60vh" }}>
           <div
             className="w-full max-w-sm p-6 rounded-xl text-center"
             style={{
@@ -95,8 +105,18 @@ export function MyReviewPage() {
             <BookOpen size={28} style={{ color: "var(--accent-purple)" }} className="mx-auto mb-3" />
             <p className="mb-2">登录后查看交易复盘与 AI 点评</p>
             <p style={{ color: "var(--text-muted)", fontSize: "var(--font-xs)" }}>
-              先到「我的自选」登录, 再回到这里
+              你可以直接在这里登录
             </p>
+            <button
+              onClick={openAuthModal}
+              className="mt-3 px-3 py-1.5 rounded text-xs font-semibold transition-opacity hover:opacity-90"
+              style={{
+                background: "var(--accent-purple)",
+                color: "#fff",
+              }}
+            >
+              立即登录
+            </button>
           </div>
         </div>
       </div>
@@ -143,14 +163,41 @@ export function MyReviewPage() {
             className="font-bold"
             style={{ fontSize: "var(--font-md)", color: "var(--text-primary)" }}
           >
-            我的复盘
+            交易复盘
           </span>
           <span style={{ fontSize: 10, color: "var(--text-muted)" }}>
-            录入真实交易, AI 帮你诊断追高/胜率/期望, 长期形成你的"个人交易模式画像"
+            录入真实交易并管理持仓导入, AI 帮你诊断追高/胜率/期望, 长期形成你的交易模式画像
           </span>
         </div>
         <div className="flex items-center gap-2">
-          {[7, 14, 30, 60, 90].map((d) => (
+          <button
+            onClick={() => setView("review")}
+            className="px-2 py-1 rounded font-bold transition-colors"
+            style={{
+              background: view === "review" ? "var(--accent-purple)" : "var(--bg-tertiary)",
+              color: view === "review" ? "#fff" : "var(--text-secondary)",
+              fontSize: 11,
+              border: "none",
+              cursor: "pointer",
+            }}
+          >
+            交易复盘
+          </button>
+          <button
+            onClick={() => setView("holdings")}
+            className="px-2 py-1 rounded font-bold transition-colors"
+            style={{
+              background: view === "holdings" ? "var(--accent-orange)" : "var(--bg-tertiary)",
+              color: view === "holdings" ? "#1a1d28" : "var(--text-secondary)",
+              fontSize: 11,
+              border: "none",
+              cursor: "pointer",
+            }}
+          >
+            持仓与导入
+          </button>
+          {view === "review" &&
+            [7, 14, 30, 60, 90].map((d) => (
             <button
               key={d}
               onClick={() => setDays(d)}
@@ -167,21 +214,6 @@ export function MyReviewPage() {
             </button>
           ))}
           <button
-            onClick={() => setActiveModule("my_holdings")}
-            className="flex items-center gap-1 px-2 py-1 rounded font-bold"
-            style={{
-              background: "var(--accent-orange)",
-              color: "#1a1d28",
-              fontSize: 11,
-              border: "none",
-              cursor: "pointer",
-            }}
-            title="数据装入入口已统一到「我的持仓」: 截图导入持仓 / 交易记录, FIFO 自动配对生成已平仓 round-trip"
-          >
-            <Upload size={11} />
-            去导入数据
-          </button>
-          <button
             onClick={load}
             disabled={loading}
             className="p-1 rounded"
@@ -192,24 +224,28 @@ export function MyReviewPage() {
         </div>
       </div>
 
-      <div className="p-3 space-y-3">
-        {pattern && <PatternCards pattern={pattern} />}
+      {view === "review" ? (
+        <div className="p-3 space-y-3">
+          {pattern && <PatternCards pattern={pattern} />}
 
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
-          <div className="lg:col-span-2">
-            <TradeList trades={trades} onDelete={removeTrade} onOpenStock={openStockDetail} />
-          </div>
-          <div>
-            <AiReviewCard
-              loading={aiLoading}
-              review={aiReview}
-              error={aiError}
-              onRun={runAiReview}
-              empty={trades.length === 0}
-            />
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
+            <div className="lg:col-span-2">
+              <TradeList trades={trades} onDelete={removeTrade} onOpenStock={openStockDetail} />
+            </div>
+            <div>
+              <AiReviewCard
+                loading={aiLoading}
+                review={aiReview}
+                error={aiError}
+                onRun={runAiReview}
+                empty={trades.length === 0}
+              />
+            </div>
           </div>
         </div>
-      </div>
+      ) : (
+        <MyHoldingsPage embedded />
+      )}
     </div>
   );
 }
@@ -473,25 +509,12 @@ function AiReviewCard({
                 <span className="font-bold" style={{ fontSize: 11, color: "var(--accent-purple)" }}>
                   {review.mode_label}
                 </span>
-                {review.evidence && review.evidence.length > 0 && (
-                  <span className="ml-auto">
-                    <EvidenceBadge evidence={review.evidence} />
-                  </span>
-                )}
               </div>
               <div style={{ color: "var(--text-primary)", lineHeight: 1.5 }}>{review.summary}</div>
             </div>
             <Section icon={<Trophy size={11} style={{ color: "var(--accent-red)" }} />} title="优势" items={review.strengths} color="var(--accent-red)" />
             <Section icon={<TrendingDown size={11} style={{ color: "var(--accent-green)" }} />} title="短板" items={review.weaknesses} color="var(--accent-green)" />
             <Section icon={<Lightbulb size={11} style={{ color: "var(--accent-orange)" }} />} title="改进建议" items={review.suggestions} color="var(--accent-orange)" />
-            <div className="pt-2 mt-2" style={{ borderTop: "1px dashed var(--border-color)" }}>
-              <FeedbackThumbs
-                kind="today"
-                tradeDate={new Date().toISOString().slice(0, 10)}
-                model={review.model}
-                snapshot={{ headline: review.summary, mode_label: review.mode_label, evidence: review.evidence }}
-              />
-            </div>
           </>
         )}
       </div>

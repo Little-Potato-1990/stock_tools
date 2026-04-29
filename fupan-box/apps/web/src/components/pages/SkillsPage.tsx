@@ -16,6 +16,8 @@ import {
 import { PageHeader } from "@/components/layout/PageHeader";
 import { useUIStore } from "@/stores/ui-store";
 import { useSkillStore } from "@/stores/skill-store";
+import { MethodologyPage } from "@/components/pages/MethodologyPage";
+import { SkillScanPage } from "@/components/pages/SkillScanPage";
 import {
   api,
   type UserSkillMeta,
@@ -32,7 +34,10 @@ import {
 export function SkillsPage() {
   const [view, setView] = useState<"list" | "editor">("list");
   const [editingId, setEditingId] = useState<number | null>(null); // null = 新建
+  const [loggedIn, setLoggedIn] = useState(false);
+  const activeModule = useUIStore((s) => s.activeModule);
   const setActiveModule = useUIStore((s) => s.setActiveModule);
+  const openAuthModal = useUIStore((s) => s.openAuthModal);
 
   const openEditor = (id: number | null) => {
     setEditingId(id);
@@ -44,6 +49,61 @@ export function SkillsPage() {
     setEditingId(null);
   };
 
+  useEffect(() => {
+    const syncLoginState = () => {
+      api.restoreToken();
+      setLoggedIn(api.isLoggedIn());
+    };
+    syncLoginState();
+    if (typeof window !== "undefined") {
+      window.addEventListener("app:auth-changed", syncLoginState);
+    }
+    return () => {
+      if (typeof window !== "undefined") {
+        window.removeEventListener("app:auth-changed", syncLoginState);
+      }
+    };
+  }, []);
+
+  if (activeModule === "methodology") {
+    return <MethodologyPage />;
+  }
+  if (activeModule === "skill_scan") {
+    return <SkillScanPage />;
+  }
+
+  if (!loggedIn) {
+    return (
+      <div className="h-full flex flex-col" style={{ background: "var(--bg-primary)" }}>
+        <PageHeader title="我的体系" subtitle="登录后管理你的自定义投资体系" />
+        <div className="flex items-center justify-center" style={{ minHeight: "60vh" }}>
+          <div
+            className="w-full max-w-sm p-6 rounded-xl text-center"
+            style={{
+              background: "var(--bg-card)",
+              border: "1px solid var(--border-color)",
+              color: "var(--text-secondary)",
+              fontSize: "var(--font-md)",
+            }}
+          >
+            <Sparkles size={28} style={{ color: "var(--accent-purple)" }} className="mx-auto mb-3" />
+            <p className="mb-2">登录后可创建与管理你的体系</p>
+            <p style={{ color: "var(--text-muted)", fontSize: "var(--font-xs)" }}>
+              你可以直接在这里登录
+            </p>
+            <button
+              onClick={openAuthModal}
+              className="mt-3 px-3 py-1.5 rounded text-xs font-semibold transition-opacity hover:opacity-90"
+              style={{ background: "var(--accent-purple)", color: "#fff" }}
+            >
+              立即登录
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="h-full flex flex-col" style={{ background: "var(--bg-primary)" }}>
       <PageHeader
@@ -52,6 +112,18 @@ export function SkillsPage() {
         actions={
           view === "list" ? (
             <div className="flex items-center gap-2">
+              <button
+                onClick={() => setActiveModule("methodology")}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded transition-opacity hover:opacity-90"
+                style={{
+                  background: "var(--bg-tertiary)",
+                  color: "var(--text-secondary)",
+                  fontSize: "var(--font-sm)",
+                  border: "1px solid var(--border-color)",
+                }}
+              >
+                方法论文库
+              </button>
               <button
                 onClick={() => setActiveModule("skill_scan")}
                 className="flex items-center gap-1.5 px-3 py-1.5 rounded transition-opacity hover:opacity-90"

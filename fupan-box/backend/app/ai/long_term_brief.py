@@ -328,10 +328,7 @@ def _merge(ctx: dict, hint: dict, llm_out: dict | None) -> dict[str, Any]:
     if llm_out.get("stance") in valid_stance:
         base["stance"] = llm_out["stance"]
 
-    for k in ("fundamental_score", "valuation_score", "consensus_score"):
-        v = llm_out.get(k)
-        if isinstance(v, (int, float)) and 1 <= v <= 10:
-            base[k] = int(v)
+    # 数字评分统一采用规则计算结果, 不允许被 LLM 覆盖.
 
     for k in ("highlights", "risks", "evidence"):
         items = llm_out.get(k) or []
