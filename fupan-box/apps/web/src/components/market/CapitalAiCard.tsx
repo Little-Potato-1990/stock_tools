@@ -91,9 +91,6 @@ export function CapitalAiCard({ hero = false }: { hero?: boolean } = {}) {
         >
           {data.stance}
         </span>
-        <span style={{ fontSize: "var(--font-xs)", color: "var(--text-muted)" }}>
-          {data.trade_date} · {data.model}
-        </span>
         <div className="ml-auto flex items-center gap-1.5">
           <AiActionBar
             askPrompt={`今日资金定调为「${data.stance}」: ${data.headline}\n请基于主力/北向/国家队三类资金的最新数据, 进一步推演明日方向并给出具体仓位建议。`}

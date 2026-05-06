@@ -376,6 +376,12 @@ export function ImportCenter() {
   const [isRevalidating, setIsRevalidating] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
+  const notifyImportUpdated = useCallback(() => {
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(new Event("app:import-updated"));
+    }
+  }, []);
+
   const resetUpload = useCallback(() => {
     setFiles([]);
     setError("");
@@ -475,6 +481,7 @@ export function ImportCenter() {
           reconciliation: result.reconciliation ?? null,
         });
         setJobDetail(detail);
+        notifyImportUpdated();
       } else {
         const result = await api.importTradesScreenshots(files);
         const detail = await fetchJobWithRetry(result.job_id);
@@ -487,6 +494,7 @@ export function ImportCenter() {
           reconciliation: result.reconciliation ?? null,
         });
         setJobDetail(detail);
+        notifyImportUpdated();
       }
     } catch (e: unknown) {
       const err = e as Error & { code?: string };
@@ -501,7 +509,7 @@ export function ImportCenter() {
       window.clearInterval(ticker);
       setIsUploading(false);
     }
-  }, [files, kind, fetchJobWithRetry]);
+  }, [files, kind, fetchJobWithRetry, notifyImportUpdated]);
 
   const loadRecentJobs = useCallback(async () => {
     setRecentLoading(true);

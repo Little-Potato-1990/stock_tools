@@ -24,7 +24,13 @@ from app.models.ai import (
 )
 from app.models.anomaly import IntradayAnomaly
 from app.models.ai_cache import AIBriefCache
-from app.models.plan import UserPlan, UserPlanTrigger
+from app.models.plan import (
+    UserPlan,
+    UserPlanTrigger,
+    UserTradingProfile,
+    UserPlanVersion,
+    UserPlanFeedback,
+)
 from app.models.capital import (
     CapitalFlowDaily,
     NorthHoldDaily,
@@ -48,7 +54,7 @@ __all__ = [
     "AIConversation", "AIMessage", "NewsSummary", "AIPrediction", "AIBriefFeedback",
     "IntradayAnomaly",
     "AIBriefCache",
-    "UserPlan", "UserPlanTrigger",
+    "UserPlan", "UserPlanTrigger", "UserTradingProfile", "UserPlanVersion", "UserPlanFeedback",
     "CapitalFlowDaily", "NorthHoldDaily", "EtfFlowDaily", "AnnouncementEvent",
     "HolderSnapshotQuarterly", "HolderIdentityRegistry",
     "StockFundamentalsQuarterly", "StockForecastEvent",

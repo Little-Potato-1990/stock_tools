@@ -261,16 +261,10 @@ export function WhyRoseModal() {
                     {data.headline}
                   </div>
                   <div
-                    className="mt-1 flex items-center gap-2"
-                    style={{ fontSize: 10, color: "var(--text-muted)" }}
+                    className="mt-1"
+                    style={{ fontSize: 10, color: verdictColor, fontWeight: 600 }}
                   >
-                    <span style={{ color: verdictColor, fontWeight: 600 }}>
-                      {data.verdict_label}
-                    </span>
-                    <span>·</span>
-                    <span>{data.trade_date}</span>
-                    <span>·</span>
-                    <span>{data.model}</span>
+                    {data.verdict_label}
                   </div>
                 </div>
               </div>

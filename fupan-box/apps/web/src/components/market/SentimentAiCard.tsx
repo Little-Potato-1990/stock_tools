@@ -251,9 +251,6 @@ export function SentimentAiCard({ hero = false, onEvidenceClick, onNewsClick }: 
         >
           {data.phase_label}
         </span>
-        <span style={{ fontSize: "var(--font-xs)", color: "var(--text-muted)" }}>
-          {data.trade_date} · {data.model}
-        </span>
         <div className="ml-auto flex items-center gap-1.5">
           <AiActionBar
             askPrompt={`当前情绪阶段判断为「${data.phase_label}」: ${data.judgment}\n请基于近 5 日数据进一步推演明日可能的走势, 并给出更具体的应对建议。`}

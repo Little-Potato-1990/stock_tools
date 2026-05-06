@@ -331,7 +331,6 @@ function ImportEntryCard({
       <div style={{ fontSize: 11, color: "var(--text-muted)", lineHeight: 1.6 }}>
         建议先传 <b style={{ color: "var(--text-secondary)" }}>持仓截图</b>(对账锚点),
         再传 <b style={{ color: "var(--text-secondary)" }}>交易记录</b>(尽量从该股最早一笔成交开始, 多截几张, 重叠会自动去重)。
-        历史不全也没事, 系统会用 virtual_initial 兜底。
       </div>
     </div>
   );
@@ -378,7 +377,7 @@ function HoldingsTable({
               <span style={{ color: "var(--text-primary)" }}>¥{fmtNum(totalMV, 0)}</span>
             </span>
             <span style={{ color: "var(--text-muted)" }}>
-              累计盈亏{" "}
+              当前持仓盈亏{" "}
               <span
                 style={{
                   color: totalPnl >= 0 ? "var(--accent-red)" : "var(--accent-green)",

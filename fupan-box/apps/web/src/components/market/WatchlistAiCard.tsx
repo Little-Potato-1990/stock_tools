@@ -79,9 +79,6 @@ export function WatchlistAiCard({ itemCount }: Props) {
         >
           {loading ? <Loader2 size={12} className="animate-spin" /> : <RotateCcw size={12} />}
         </button>
-        {data?.model && (
-          <span style={{ fontSize: 10, color: "var(--text-muted)" }}>{data.model}</span>
-        )}
         <SkillChip compact onManageClick={() => setActiveModule("skills")} />
       </div>
 

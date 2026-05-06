@@ -297,12 +297,7 @@ export function DebateModal() {
             borderTop: "1px solid var(--border-color)",
           }}
         >
-          <div className="flex items-center gap-2" style={{ fontSize: 10, color: "var(--text-muted)" }}>
-            <span>
-              {data?.model && `模型: ${data.model}`}
-              {data?.trade_date && ` · ${data.trade_date}`}
-            </span>
-          </div>
+          <div className="flex items-center gap-2" />
           <div className="flex items-center gap-1.5">
             <button
               onClick={handleAsk}

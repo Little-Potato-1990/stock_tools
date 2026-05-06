@@ -9,7 +9,6 @@ import {
   Search as SearchIcon,
   Newspaper,
   Star,
-  Target,
   Sparkles,
   BookOpen,
   Wallet,
@@ -105,18 +104,6 @@ export function Sidebar() {
       hint: status?.watchlist.unlocked
         ? `${status.watchlist.count}`
         : "+ 加自选",
-    },
-    {
-      key: "plans",
-      label: "我的计划",
-      icon: Target,
-      unlocked: status?.plans.unlocked ?? false,
-      hint: status?.plans.unlocked
-        ? status.plans.today_triggers > 0
-          ? `${status.plans.today_triggers}`
-          : `${status.plans.active + status.plans.triggered}`
-        : "+ 建计划",
-      highlight: status?.plans.today_triggers ?? 0,
     },
     {
       key: "my_review",

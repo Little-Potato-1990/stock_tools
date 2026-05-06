@@ -204,13 +204,7 @@ export function NewsAiCard({
         <span style={{ fontSize: "var(--font-xs)", color: "var(--text-muted)" }}>
           · 多源聚合 · LLM 主线/政策/突发分桶
         </span>
-        <span className="ml-auto flex items-center gap-2">
-          {brief?.model && (
-            <span style={{ fontSize: 10, color: "var(--text-muted)" }}>
-              {brief.model}
-            </span>
-          )}
-        </span>
+        <span className="ml-auto" />
       </div>
 
       {/* L1 headline */}

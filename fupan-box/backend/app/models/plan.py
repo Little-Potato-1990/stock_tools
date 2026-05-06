@@ -22,7 +22,7 @@ status 流转:
     cancelled -> 用户主动取消
 """
 from datetime import date, datetime
-from sqlalchemy import String, Integer, Float, Text, DateTime, Date, ForeignKey, Index
+from sqlalchemy import String, Integer, Float, Text, DateTime, Date, ForeignKey, Index, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 from app.database import Base
@@ -79,3 +79,64 @@ class UserPlanTrigger(Base):
     condition_label: Mapped[str | None] = mapped_column(String(100))
     price: Mapped[float | None] = mapped_column(Float)
     change_pct: Mapped[float | None] = mapped_column(Float)
+
+
+class UserTradingProfile(Base):
+    """用户交易风格画像（长期持久化，供 AI 草案计划参考）."""
+
+    __tablename__ = "user_trading_profiles"
+    __table_args__ = (
+        Index("ix_user_trading_profiles_user", "user_id"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), unique=True, index=True)
+    profile_json: Mapped[dict | None] = mapped_column(JSONB, default=dict)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now, onupdate=datetime.now)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now)
+
+
+class UserPlanVersion(Base):
+    """AI 草案计划 / 用户确认计划 的版本快照."""
+
+    __tablename__ = "user_plan_versions"
+    __table_args__ = (
+        Index("ix_user_plan_versions_user_date", "user_id", "plan_date"),
+        Index("ix_user_plan_versions_user_status", "user_id", "status"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    plan_date: Mapped[date] = mapped_column(Date, index=True)
+    status: Mapped[str] = mapped_column(String(20), default="ai_draft", index=True)  # ai_draft / user_final
+    model: Mapped[str | None] = mapped_column(String(60))
+    content_json: Mapped[dict | None] = mapped_column(JSONB, default=dict)
+    profile_snapshot: Mapped[dict | None] = mapped_column(JSONB, default=dict)
+    source_version_id: Mapped[int | None] = mapped_column(ForeignKey("user_plan_versions.id"))
+    review_trade_date: Mapped[date | None] = mapped_column(Date)
+    user_note: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now, onupdate=datetime.now)
+
+
+class UserPlanFeedback(Base):
+    """计划执行反馈（按用户+计划日幂等落库）."""
+
+    __tablename__ = "user_plan_feedback"
+    __table_args__ = (
+        UniqueConstraint("user_id", "plan_date", name="uq_user_plan_feedback_user_date"),
+        Index("ix_user_plan_feedback_user_date", "user_id", "plan_date"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    plan_date: Mapped[date] = mapped_column(Date, index=True)
+    plan_version_id: Mapped[int | None] = mapped_column(ForeignKey("user_plan_versions.id"))
+    planned_count: Mapped[int] = mapped_column(Integer, default=0)
+    hit_count: Mapped[int] = mapped_column(Integer, default=0)
+    miss_count: Mapped[int] = mapped_column(Integer, default=0)
+    unexpected_count: Mapped[int] = mapped_column(Integer, default=0)
+    net_pnl: Mapped[float] = mapped_column(Float, default=0.0)
+    feedback_json: Mapped[dict | None] = mapped_column(JSONB, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now, onupdate=datetime.now)

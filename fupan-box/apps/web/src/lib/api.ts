@@ -15,6 +15,12 @@ export interface TradeCreate {
   reason?: string;
 }
 
+export interface TradeUpdatePayload {
+  intraday_chg_at_buy?: number | null;
+  holding_minutes?: number | null;
+  reason?: string | null;
+}
+
 export interface TradeRecord extends TradeCreate {
   id: number;
   pnl: number;
@@ -40,6 +46,11 @@ export interface TradePattern {
   median_holding_min: number | null;
   mode_label: string;
   mode_desc: string;
+  holding_pnl?: number;
+  closed_pnl?: number;
+  account_pnl?: number;
+  holding_from_initial_pnl?: number;
+  holding_from_new_buys_pnl?: number;
 }
 
 export type ReconciliationStatus =
@@ -254,6 +265,47 @@ export interface PlanTriggerRecord {
   condition_label: string | null;
   price: number | null;
   change_pct: number | null;
+}
+
+export interface PlanVersionRecord {
+  id: number;
+  plan_date: string;
+  status: "ai_draft" | "user_final" | string;
+  model: string | null;
+  content_json: Record<string, unknown> | null;
+  profile_snapshot: Record<string, unknown> | null;
+  source_version_id: number | null;
+  review_trade_date: string | null;
+  user_note: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface PlanAIDraftResponse {
+  draft_version: PlanVersionRecord;
+  profile: Record<string, unknown>;
+}
+
+export interface PlanReviewLinkRecord {
+  review_date: string;
+  plan_date: string;
+  has_plan: boolean;
+  plan_version_id: number | null;
+  summary: {
+    planned_count: number;
+    hit_count: number;
+    miss_count: number;
+    unexpected_count: number;
+  };
+  items: Array<{
+    code: string;
+    name: string | null;
+    direction: string;
+    hit: boolean;
+    trades_count: number;
+    net_pnl: number;
+  }>;
+  unexpected_codes: string[];
 }
 
 export interface PlanCreatePayload {
@@ -1122,6 +1174,10 @@ class ApiClient {
     return this.post<TradeRecord>("/api/trades/", t);
   }
 
+  updateTrade(id: number, payload: TradeUpdatePayload) {
+    return this.put<TradeRecord>(`/api/trades/${id}`, payload);
+  }
+
   deleteTrade(id: number) {
     return this.delete<{ ok: boolean }>(`/api/trades/${id}`);
   }
@@ -1288,6 +1344,31 @@ class ApiClient {
       "/api/plans/check-triggers",
       {},
     );
+  }
+
+  createAIDraftPlan(payload?: { plan_date?: string; model?: string }) {
+    return this.post<PlanAIDraftResponse>("/api/plans/ai-draft", payload ?? {});
+  }
+
+  getLatestAIDraft(planDate?: string) {
+    const sp = new URLSearchParams();
+    if (planDate) sp.set("plan_date", planDate);
+    const qs = sp.toString();
+    return this.get<PlanVersionRecord | null>(`/api/plans/ai-draft/latest${qs ? `?${qs}` : ""}`);
+  }
+
+  finalizeAIDraft(
+    versionId: number,
+    payload?: { content_json?: Record<string, unknown>; user_note?: string | null },
+  ) {
+    return this.put<PlanVersionRecord>(`/api/plans/ai-draft/${versionId}/finalize`, payload ?? {});
+  }
+
+  getPlanReviewLink(date?: string) {
+    const sp = new URLSearchParams();
+    if (date) sp.set("date", date);
+    const qs = sp.toString();
+    return this.get<PlanReviewLinkRecord>(`/api/plans/review-link${qs ? `?${qs}` : ""}`);
   }
 
   // 私人维度聚合 — 给 Sidebar 解锁判断 + MyDigestFloating 用

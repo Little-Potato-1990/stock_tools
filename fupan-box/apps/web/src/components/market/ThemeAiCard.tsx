@@ -489,11 +489,6 @@ export function ThemeAiCard({ hero = false, onEvidenceClick, onBriefLoad }: Prop
         >
           AI 题材轮动拆解
         </span>
-        <span
-          style={{ fontSize: "var(--font-xs)", color: "var(--text-muted)" }}
-        >
-          {data.trade_date} · {data.model}
-        </span>
         <div className="ml-auto flex items-center gap-1.5">
           <button
             onClick={() => load(true)}

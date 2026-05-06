@@ -120,9 +120,6 @@ export function InstitutionalAiCard({ hero = false }: { hero?: boolean } = {}) {
         >
           {data.stance}
         </span>
-        <span style={{ fontSize: "var(--font-xs)", color: "var(--text-muted)" }}>
-          报告期 {data.report_date ?? "—"} · {data.model}
-        </span>
         <div className="ml-auto flex items-center gap-1.5">
           <AiActionBar
             askPrompt={`本期主力身份动向定调为「${data.stance}」: ${data.headline}\n请进一步分析国家队/险资/社保/公募/QFII 各自的加仓主线, 并给出具体跟随策略。`}
