@@ -51,6 +51,8 @@ export interface TradePattern {
   account_pnl?: number;
   holding_from_initial_pnl?: number;
   holding_from_new_buys_pnl?: number;
+  holdings_snapshot_pnl?: number;
+  account_vs_holdings_diff?: number;
 }
 
 export type ReconciliationStatus =

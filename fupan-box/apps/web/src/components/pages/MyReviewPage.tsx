@@ -537,7 +537,9 @@ export function MyReviewPage() {
 
       {view === "review" ? (
         <div className="p-3 space-y-3">
-          {(reviewTab === "trades" || reviewTab === "ai") && pattern && <PatternCards pattern={pattern} />}
+          {(reviewTab === "trades" || reviewTab === "ai") && pattern && (
+            <PatternCards pattern={pattern} days={days} allDays={ALL_DAYS} />
+          )}
           {reviewTab === "trades" && (
             <TradeList
               trades={trades}
@@ -597,7 +599,15 @@ export function MyReviewPage() {
 }
 
 
-function PatternCards({ pattern }: { pattern: TradePattern }) {
+function PatternCards({
+  pattern,
+  days,
+  allDays,
+}: {
+  pattern: TradePattern;
+  days: number;
+  allDays: number;
+}) {
   const wr = pattern.win_rate;
   const exp = pattern.expectation;
   const chase = pattern.chase_rate;
@@ -607,6 +617,10 @@ function PatternCards({ pattern }: { pattern: TradePattern }) {
   const accountPnl = pattern.account_pnl ?? (closedPnl + holdingPnl);
   const holdingFromInitial = pattern.holding_from_initial_pnl ?? 0;
   const holdingFromNew = pattern.holding_from_new_buys_pnl ?? (holdingPnl - holdingFromInitial);
+  const allDiffNote =
+    days >= allDays && pattern.account_vs_holdings_diff != null
+      ? ` / 与持仓页差值 ${pattern.account_vs_holdings_diff >= 0 ? "+" : ""}${pattern.account_vs_holdings_diff.toFixed(0)}`
+      : "";
   const wrColor = wr >= 0.55 ? "var(--accent-red)" : wr >= 0.4 ? "var(--accent-orange)" : "var(--accent-green)";
   const expColor = exp >= 1 ? "var(--accent-red)" : exp >= 0 ? "var(--accent-orange)" : "var(--accent-green)";
   const chaseColor = chase >= 0.4 ? "var(--accent-green)" : "var(--accent-red)";
@@ -627,11 +641,11 @@ function PatternCards({ pattern }: { pattern: TradePattern }) {
       <Stat icon={<AlertTriangle size={11} style={{ color: chaseColor }} />} label="追高比例" value={chase * 100} suffix="%" color={chaseColor} sub={`${pattern.chase_count ?? 0} 笔涨幅 >5% 介入`} />
       <Stat
         icon={<Wallet size={11} style={{ color: accountPnl >= 0 ? "var(--accent-red)" : "var(--accent-green)" }} />}
-        label="账户总盈亏"
+        label="区间总盈亏"
         value={accountPnl}
         suffix="元"
         color={accountPnl >= 0 ? "var(--accent-red)" : "var(--accent-green)"}
-        sub={`区间已平仓 ${periodPnl >= 0 ? "+" : ""}${periodPnl.toFixed(0)} / 起点持仓浮盈 ${holdingFromInitial >= 0 ? "+" : ""}${holdingFromInitial.toFixed(0)} / 区间新开仓浮盈 ${holdingFromNew >= 0 ? "+" : ""}${holdingFromNew.toFixed(0)}`}
+        sub={`按右上角时间窗口计算：已平仓 ${periodPnl >= 0 ? "+" : ""}${periodPnl.toFixed(0)} / 起点持仓浮盈 ${holdingFromInitial >= 0 ? "+" : ""}${holdingFromInitial.toFixed(0)} / 区间新开仓浮盈 ${holdingFromNew >= 0 ? "+" : ""}${holdingFromNew.toFixed(0)}${allDiffNote}`}
       />
     </div>
   );

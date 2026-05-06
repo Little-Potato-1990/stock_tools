@@ -7,7 +7,7 @@ from collections import OrderedDict
 from datetime import date, datetime
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
-from sqlalchemy import desc, select
+from sqlalchemy import desc, select, delete
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -105,9 +105,11 @@ async def import_holdings_screenshot(
                 merged[(code, alabel)] = it
         parsed_items = list(merged.values())
         upserted = 0
+        imported_codes: set[str] = set()
         for it in parsed_items:
             if not it.get("code"):
                 continue
+            imported_codes.add(str(it["code"]))
             upserted += 1
             stmt = insert(UserHolding).values(
                 user_id=user.id,
@@ -142,6 +144,20 @@ async def import_holdings_screenshot(
                 },
             )
             await db.execute(stmt)
+
+        # 持仓截图是「当前快照」语义：本次截图未出现的旧持仓应清零/移除，
+        # 避免历史残留仓位持续污染区间盈亏计算。
+        if imported_codes:
+            await db.execute(
+                delete(UserHolding).where(
+                    UserHolding.user_id == user.id,
+                    UserHolding.account_label == "default",
+                    ~UserHolding.stock_code.in_(sorted(imported_codes)),
+                )
+            )
+        else:
+            # 极端兜底：若解析结果为空，不做全量清空，避免 OCR 失败导致误删。
+            all_warnings.append("本次未识别到有效持仓代码，已跳过快照清理")
         await db.commit()
 
         # holdings 更新后, 也跑一次 reconcile 让数据完整性卡片刷新

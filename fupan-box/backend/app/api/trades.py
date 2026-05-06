@@ -19,6 +19,10 @@ from app.ai.trade_review import diagnose_pattern, generate_ai_review
 
 router = APIRouter()
 
+# 同花顺历史成交截图不含费税列时的兜底估算参数（保守低佣金，避免过度扣减）。
+_EST_COMMISSION_RATE = 0.0000377  # 约万0.377，贴近同花顺收益曲线的实盘净值口径
+_EST_STAMP_TAX_RATE = 0.001     # 卖出千1
+
 
 def _real_trade_stmt(user_id: int, since: date_type):
     """仅保留真实交易配对: 排除含 virtual_initial 原始腿的 round-trip."""
@@ -49,6 +53,94 @@ def _is_buy(side: str | None) -> bool:
 def _is_sell(side: str | None) -> bool:
     s = (side or "").strip().lower()
     return s in {"sell", "s", "卖", "卖出"}
+
+
+def _estimate_trade_fees(r: UserTradeRaw) -> tuple[float, float, float]:
+    """返回 (fee, transfer_fee, stamp_tax) 的有效值.
+
+    若 OCR 流水费税全为 0，则按成交额做保守估算，减少收益高估:
+    - commission: 万0.4
+    - stamp tax: 卖出千1
+    """
+    fee = float(r.fee or 0.0)
+    transfer_fee = float(r.transfer_fee or 0.0)
+    stamp_tax = float(r.stamp_tax or 0.0)
+
+    if fee > 0 or transfer_fee > 0 or stamp_tax > 0:
+        return fee, transfer_fee, stamp_tax
+
+    amount = float(r.amount) if r.amount is not None else float(r.price) * float(r.qty)
+    est_fee = amount * _EST_COMMISSION_RATE
+    est_stamp = amount * _EST_STAMP_TAX_RATE if _is_sell(r.side) else 0.0
+    return est_fee, 0.0, est_stamp
+
+
+def _select_mirror_rows_to_skip(
+    raws: list[UserTradeRaw],
+    holdings_qty_by_key: dict[tuple[str, str], float],
+) -> set[int]:
+    """识别同一键上同时存在买卖的镜像行，选择一侧跳过.
+
+    键定义: (code, account, date, time, price, qty)。该形态通常是 OCR 方向误判噪声。
+    选择规则: 以当前持仓数量为目标，优先删除能让净仓位更接近目标的一侧。
+    """
+    mirrors: dict[
+        tuple[str, str, date_type, str | None, float, int],
+        dict[str, list[UserTradeRaw]],
+    ] = defaultdict(lambda: {"buy": [], "sell": []})
+    net_qty_by_key: dict[tuple[str, str], float] = defaultdict(float)
+
+    for r in raws:
+        key_pos = (str(r.stock_code), str(r.account_label or "default"))
+        if _is_buy(r.side):
+            net_qty_by_key[key_pos] += float(r.qty)
+            side = "buy"
+        elif _is_sell(r.side):
+            net_qty_by_key[key_pos] -= float(r.qty)
+            side = "sell"
+        else:
+            continue
+        mk = (
+            key_pos[0],
+            key_pos[1],
+            r.trade_date,
+            r.trade_time,
+            float(r.price),
+            int(r.qty),
+        )
+        mirrors[mk][side].append(r)
+
+    # 按时间顺序处理，保持结果稳定。
+    mirror_keys = sorted(
+        mirrors.keys(),
+        key=lambda k: (k[2], k[3] or "", k[0], k[5], k[4]),
+    )
+
+    skip_ids: set[int] = set()
+    for mk in mirror_keys:
+        bucket = mirrors[mk]
+        buys = bucket["buy"]
+        sells = bucket["sell"]
+        n = min(len(buys), len(sells))
+        if n <= 0:
+            continue
+
+        key_pos = (mk[0], mk[1])
+        qty = float(mk[5] or 0)
+        target = float(holdings_qty_by_key.get(key_pos, 0.0))
+        cur_net = float(net_qty_by_key.get(key_pos, 0.0))
+
+        # 需要增大净仓位 => 删 sell；反之删 buy。
+        drop_side = "sell" if (target - cur_net) >= 0 else "buy"
+        chosen = sells if drop_side == "sell" else buys
+        for r in chosen[:n]:
+            skip_ids.add(int(r.id))
+        if drop_side == "sell":
+            net_qty_by_key[key_pos] += qty * n
+        else:
+            net_qty_by_key[key_pos] -= qty * n
+
+    return skip_ids
 
 
 async def _latest_quote_map(db: AsyncSession, codes: list[str]) -> dict[str, float]:
@@ -135,6 +227,12 @@ async def _account_pnl_since(
         select(UserHolding).where(UserHolding.user_id == user_id, UserHolding.qty > 0)
     )
     holdings = list(holdings_rows.scalars().all())
+    holdings_qty_by_key = {
+        (str(h.stock_code), str(h.account_label or "default")): float(h.qty or 0.0)
+        for h in holdings
+    }
+
+    skip_raw_ids = _select_mirror_rows_to_skip(raws, holdings_qty_by_key)
     current_price_by_key: dict[tuple[str, str], float] = {}
     current_price_by_code: dict[str, float] = {}
     for h in holdings:
@@ -148,28 +246,65 @@ async def _account_pnl_since(
         current_price_by_code.setdefault(str(h.stock_code), p)
 
     lots: dict[tuple[str, str], deque[dict[str, float | date_type]]] = defaultdict(deque)
+    pre_lots: dict[tuple[str, str], deque[dict[str, float | date_type]]] = defaultdict(deque)
+    # 区间内已平仓盈亏(严格口径): 起点前底仓按锚定价计, 区间内新开仓按买入成本计.
     closed_pnl = 0.0
+    old_sell_realized_pnl = 0.0
+    old_lot_sell_chunks: list[tuple[tuple[str, str], float, float]] = []
 
     for r in raws:
+        if int(r.id) in skip_raw_ids:
+            continue
         key = (str(r.stock_code), str(r.account_label or "default"))
+        if r.trade_date < since:
+            if _is_buy(r.side):
+                total_cost_pre = float(r.price) * float(r.qty) + float(r.fee or 0.0) + float(r.transfer_fee or 0.0) + float(r.stamp_tax or 0.0)
+                unit_cost_pre = (total_cost_pre / float(r.qty)) if r.qty else float(r.price)
+                pre_lots[key].append({
+                    "buy_date": r.trade_date,
+                    "buy_price": unit_cost_pre,
+                    "qty_left": float(r.qty),
+                })
+            elif _is_sell(r.side):
+                need_pre = float(r.qty)
+                q_pre = pre_lots[key]
+                while need_pre > 0 and q_pre:
+                    lot_pre = q_pre[0]
+                    take_pre = min(need_pre, float(lot_pre["qty_left"]))
+                    left_pre = float(lot_pre["qty_left"]) - take_pre
+                    need_pre -= take_pre
+                    if left_pre <= 0:
+                        q_pre.popleft()
+                    else:
+                        lot_pre["qty_left"] = left_pre
         if _is_buy(r.side):
+            fee, transfer_fee, stamp_tax = _estimate_trade_fees(r)
+            total_cost = float(r.price) * float(r.qty) + fee + transfer_fee + stamp_tax
+            unit_cost = (total_cost / float(r.qty)) if r.qty else float(r.price)
             lots[key].append({
                 "buy_date": r.trade_date,
-                "buy_price": float(r.price),
+                "buy_price": unit_cost,
                 "qty_left": float(r.qty),
             })
             continue
         if not _is_sell(r.side):
             continue
         need = float(r.qty)
-        sell_px = float(r.price)
+        fee, transfer_fee, stamp_tax = _estimate_trade_fees(r)
+        total_net = float(r.price) * float(r.qty) - fee - transfer_fee - stamp_tax
+        sell_px = (total_net / float(r.qty)) if r.qty else float(r.price)
         q = lots[key]
         while need > 0 and q:
             lot = q[0]
             lot_qty = float(lot["qty_left"])
             take = min(need, lot_qty)
             if r.trade_date >= since:
-                closed_pnl += (sell_px - float(lot["buy_price"])) * take
+                buy_date = lot["buy_date"]
+                if isinstance(buy_date, date_type) and buy_date < since:
+                    old_lot_sell_chunks.append((key, take, float(lot["buy_price"])))
+                    old_sell_realized_pnl += (sell_px - float(lot["buy_price"])) * take
+                else:
+                    closed_pnl += (sell_px - float(lot["buy_price"])) * take
             left = lot_qty - take
             need -= take
             if left <= 0:
@@ -180,6 +315,8 @@ async def _account_pnl_since(
 
     open_old_lots: list[tuple[tuple[str, str], float, float]] = []
     open_new_lots: list[tuple[tuple[str, str], float, float]] = []
+    open_old_qty_by_key: dict[tuple[str, str], float] = defaultdict(float)
+    open_new_qty_by_key: dict[tuple[str, str], float] = defaultdict(float)
     open_codes: set[str] = set()
 
     for key, q in lots.items():
@@ -193,8 +330,10 @@ async def _account_pnl_since(
             buy_px = float(lot["buy_price"])
             if isinstance(buy_date, date_type) and buy_date >= since:
                 open_new_lots.append((key, qty, buy_px))
+                open_new_qty_by_key[key] += qty
             else:
                 open_old_lots.append((key, qty, buy_px))
+                open_old_qty_by_key[key] += qty
 
     # holdings 没有市价时, 用日线最新 close 兜底
     missing_codes = sorted(c for c in open_codes if c not in current_price_by_code)
@@ -211,7 +350,11 @@ async def _account_pnl_since(
             continue
         open_new_pnl += (cur - buy_px) * qty
 
-    old_codes = sorted({k[0] for k, _, _ in open_old_lots})
+    old_codes = sorted(
+        {k[0] for k, _, _ in open_old_lots}
+        | {k[0] for k, _, _ in old_lot_sell_chunks}
+        | {str(h.stock_code) for h in holdings if (h.qty or 0) > 0}
+    )
     anchor_px_map = await _anchor_quote_map(db, old_codes, since)
 
     open_initial_pnl = 0.0
@@ -223,6 +366,62 @@ async def _account_pnl_since(
         anchor_px = anchor_px_map.get(code, buy_px)
         open_initial_pnl += (cur - anchor_px) * qty
 
+    pre_qty_by_key: dict[tuple[str, str], float] = {
+        key: sum(float(lot["qty_left"]) for lot in q if float(lot["qty_left"]) > 0)
+        for key, q in pre_lots.items()
+    }
+
+    # 用当前持仓做终态约束，补齐「流水未能回放出的剩余仓位」:
+    # - end_qty 来自 UserHolding(当前真实持仓)
+    # - lot_end_qty 来自 raw FIFO 回放后的剩余
+    # 差额 uncovered_qty 说明 raw 覆盖不足或中间有噪声行，需补计入区间浮盈。
+    for h in holdings:
+        key = (str(h.stock_code), str(h.account_label or "default"))
+        end_qty = float(h.qty or 0)
+        if end_qty <= 0:
+            continue
+        lot_old = float(open_old_qty_by_key.get(key, 0.0))
+        lot_new = float(open_new_qty_by_key.get(key, 0.0))
+        lot_end = lot_old + lot_new
+        uncovered_qty = end_qty - lot_end
+        if uncovered_qty <= 1e-9:
+            continue
+
+        code = key[0]
+        cur = current_price_by_key.get(key) or current_price_by_code.get(code)
+        if cur is None:
+            continue
+
+        pre_qty = float(pre_qty_by_key.get(key, 0.0))
+        missing_initial_qty = max(0.0, pre_qty - lot_old)
+        fill_initial_qty = min(uncovered_qty, missing_initial_qty)
+        fill_new_qty = max(0.0, uncovered_qty - fill_initial_qty)
+
+        if fill_initial_qty > 0:
+            anchor_px = anchor_px_map.get(code, cur)
+            open_initial_pnl += (cur - anchor_px) * fill_initial_qty
+        if fill_new_qty > 0:
+            avg_cost = float(h.avg_cost) if h.avg_cost is not None else cur
+            open_new_pnl += (cur - avg_cost) * fill_new_qty
+
+    # 起点前底仓在区间内卖出: 只计 "区间内" 收益, 即 (卖出净价 - 区间锚定价) * 数量.
+    old_sell_anchor_basis = 0.0
+    old_sell_buy_basis = 0.0
+    for key, qty, buy_px in old_lot_sell_chunks:
+        code = key[0]
+        anchor_px = anchor_px_map.get(code)
+        if anchor_px is None:
+            # 没有锚定价时, 回退到原口径 (卖出 - 买入), 避免静默丢失收益.
+            continue
+        old_sell_anchor_basis += anchor_px * qty
+        old_sell_buy_basis += buy_px * qty
+    if old_lot_sell_chunks:
+        closed_pnl = closed_pnl + old_sell_realized_pnl - (old_sell_anchor_basis - old_sell_buy_basis)
+
+    # 区间口径: 统计该时间窗口内的全部盈亏变化。
+    # 包含:
+    # 1) 起点前底仓在窗口内的浮盈变化(open_initial_pnl)
+    # 2) 窗口内新开仓未平部分的浮盈(open_new_pnl)
     holding_pnl = open_initial_pnl + open_new_pnl
     return {
         "closed_pnl": round(closed_pnl, 2),
@@ -231,6 +430,22 @@ async def _account_pnl_since(
         "holding_from_initial_pnl": round(open_initial_pnl, 2),
         "holding_from_new_buys_pnl": round(open_new_pnl, 2),
     }
+
+
+async def _current_holdings_pnl(db: AsyncSession, user_id: int) -> float:
+    v = await db.scalar(
+        select(func.coalesce(func.sum(UserHolding.pnl), 0)).where(UserHolding.user_id == user_id)
+    )
+    return round(float(v or 0.0), 2)
+
+
+async def _earliest_real_raw_trade_date(db: AsyncSession, user_id: int) -> date_type | None:
+    return await db.scalar(
+        select(func.min(UserTradeRaw.trade_date)).where(
+            UserTradeRaw.user_id == user_id,
+            UserTradeRaw.source != "virtual_initial",
+        )
+    )
 
 
 def _auto_reason_draft(trade: UserTrade) -> str:
@@ -342,6 +557,10 @@ async def list_trades(
 ):
     from datetime import timedelta
     since = date_type.today() - timedelta(days=days)
+    if days >= 3650:
+        earliest = await _earliest_real_raw_trade_date(db, user.id)
+        if earliest is not None:
+            since = earliest
     result = await db.execute(
         _real_trade_stmt(user.id, since)
         .order_by(UserTrade.trade_date.desc(), UserTrade.id.desc())
@@ -414,6 +633,11 @@ async def get_pattern(
     pattern["account_pnl"] = pnl["account_pnl"]
     pattern["holding_from_initial_pnl"] = pnl["holding_from_initial_pnl"]
     pattern["holding_from_new_buys_pnl"] = pnl["holding_from_new_buys_pnl"]
+    pattern["holdings_snapshot_pnl"] = await _current_holdings_pnl(db, user.id)
+    pattern["account_vs_holdings_diff"] = round(
+        float(pattern["account_pnl"]) - float(pattern["holdings_snapshot_pnl"]),
+        2,
+    )
     return pattern
 
 
@@ -431,6 +655,10 @@ async def post_ai_review(
     await check_and_log_quota(db, user, action="trade_review", model=model)
 
     since = date_type.today() - timedelta(days=days)
+    if days >= 3650:
+        earliest = await _earliest_real_raw_trade_date(db, user.id)
+        if earliest is not None:
+            since = earliest
     result = await db.execute(
         _real_trade_stmt(user.id, since)
         .order_by(UserTrade.trade_date.desc())
@@ -447,5 +675,10 @@ async def post_ai_review(
     pattern["account_pnl"] = pnl["account_pnl"]
     pattern["holding_from_initial_pnl"] = pnl["holding_from_initial_pnl"]
     pattern["holding_from_new_buys_pnl"] = pnl["holding_from_new_buys_pnl"]
+    pattern["holdings_snapshot_pnl"] = await _current_holdings_pnl(db, user.id)
+    pattern["account_vs_holdings_diff"] = round(
+        float(pattern["account_pnl"]) - float(pattern["holdings_snapshot_pnl"]),
+        2,
+    )
     review = await generate_ai_review(trades, pattern, model)
     return {"pattern": pattern, "review": review}
