@@ -3,7 +3,7 @@
 /**
  * 个股「行情盘口」展示块.
  *
- * 内容: 基础资料表 / 所属概念 chips / 最近涨停原因 / 近期行情表.
+ * 内容: 基础资料表 / 所属概念 chips / 最近涨停原因 / 近期行情K线.
  * 抽自原 StockSearchPage 的 StockDetailInline, 给「个股深度」页 QuoteTab 复用.
  *
  * 数据自取 (传 code 即可), 调用方无需自己 fetch.
@@ -13,6 +13,7 @@ import { useEffect, useState } from "react";
 import { Sparkles } from "lucide-react";
 import { api } from "@/lib/api";
 import { useUIStore } from "@/stores/ui-store";
+import { KlineChart } from "@/components/market/KlineChart";
 
 export interface StockQuoteDetail {
   stock_code: string;
@@ -55,8 +56,11 @@ export function StockQuoteSection({ code, headerActions, showWhyRose = true }: P
 
   useEffect(() => {
     let alive = true;
-    setLoading(true);
-    setActiveTheme(null);
+    const t = window.setTimeout(() => {
+      if (!alive) return;
+      setLoading(true);
+      setActiveTheme(null);
+    }, 0);
     api
       .getStockDetail(code)
       .then((d) => alive && setDetail(d as unknown as StockQuoteDetail))
@@ -64,6 +68,7 @@ export function StockQuoteSection({ code, headerActions, showWhyRose = true }: P
       .finally(() => alive && setLoading(false));
     return () => {
       alive = false;
+      window.clearTimeout(t);
     };
   }, [code]);
 
@@ -302,8 +307,8 @@ export function StockQuoteSection({ code, headerActions, showWhyRose = true }: P
         </div>
       )}
 
-      {/* 近期行情表 */}
-      {detail.recent_quotes && detail.recent_quotes.length > 0 && (
+      {/* 近期行情 K 线 */}
+      {detail.stock_code && (
         <div>
           <div
             className="font-bold mb-2"
@@ -311,118 +316,7 @@ export function StockQuoteSection({ code, headerActions, showWhyRose = true }: P
           >
             近期行情
           </div>
-          <div
-            className="overflow-x-auto rounded"
-            style={{ border: "1px solid var(--border-color)" }}
-          >
-            <table className="w-full" style={{ fontSize: 11 }}>
-              <thead>
-                <tr style={{ background: "var(--bg-tertiary)" }}>
-                  {["日期", "开", "收", "高", "低", "涨跌幅", "成交"].map(
-                    (h) => (
-                      <th
-                        key={h}
-                        className="font-semibold"
-                        style={{
-                          padding: "6px 8px",
-                          color: "var(--text-muted)",
-                          textAlign: "left",
-                        }}
-                      >
-                        {h}
-                      </th>
-                    )
-                  )}
-                </tr>
-              </thead>
-              <tbody>
-                {detail.recent_quotes.map((q, idx) => (
-                  <tr
-                    key={q.trade_date}
-                    style={{
-                      borderTop:
-                        idx > 0 ? "1px solid var(--border-color)" : "none",
-                      background:
-                        idx % 2 === 0
-                          ? "transparent"
-                          : "rgba(255,255,255,0.015)",
-                    }}
-                  >
-                    <td
-                      className="tabular-nums"
-                      style={{
-                        padding: "6px 8px",
-                        color: "var(--text-secondary)",
-                      }}
-                    >
-                      {q.trade_date}
-                    </td>
-                    <td
-                      className="tabular-nums"
-                      style={{
-                        padding: "6px 8px",
-                        color: "var(--text-primary)",
-                      }}
-                    >
-                      {q.open.toFixed(2)}
-                    </td>
-                    <td
-                      className="tabular-nums font-bold"
-                      style={{
-                        padding: "6px 8px",
-                        color:
-                          q.change_pct >= 0
-                            ? "var(--accent-red)"
-                            : "var(--accent-green)",
-                      }}
-                    >
-                      {q.close.toFixed(2)}
-                    </td>
-                    <td
-                      className="tabular-nums"
-                      style={{
-                        padding: "6px 8px",
-                        color: "var(--text-primary)",
-                      }}
-                    >
-                      {q.high.toFixed(2)}
-                    </td>
-                    <td
-                      className="tabular-nums"
-                      style={{
-                        padding: "6px 8px",
-                        color: "var(--text-primary)",
-                      }}
-                    >
-                      {q.low.toFixed(2)}
-                    </td>
-                    <td
-                      className="tabular-nums font-bold"
-                      style={{
-                        padding: "6px 8px",
-                        color:
-                          q.change_pct >= 0
-                            ? "var(--accent-red)"
-                            : "var(--accent-green)",
-                      }}
-                    >
-                      {q.change_pct >= 0 ? "+" : ""}
-                      {q.change_pct.toFixed(2)}%
-                    </td>
-                    <td
-                      className="tabular-nums"
-                      style={{
-                        padding: "6px 8px",
-                        color: "var(--text-secondary)",
-                      }}
-                    >
-                      {(q.amount / 1e8).toFixed(2)}亿
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <KlineChart code={detail.stock_code} defaultLod="day" height={520} variant="ths" />
         </div>
       )}
     </div>

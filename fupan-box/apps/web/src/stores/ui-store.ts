@@ -43,6 +43,17 @@ interface FocusedStock {
   name?: string;
 }
 
+export interface ReviewTradeContext {
+  tradeId: number;
+  code: string;
+  name?: string;
+  tradeDate: string;
+  side: "buy" | "sell";
+  price: number;
+  qty: number;
+  days: number;
+}
+
 /** 用户最近交互痕迹 (供 AI 副驾理解"刚才在看什么") */
 export interface RecentInteraction {
   kind: "stock" | "theme" | "ai_explain";
@@ -165,6 +176,16 @@ interface UIState {
   /** P1 #6 联动: AnomalyDrawer 默认筛选某只股 (从自选/计划页跳过来时) */
   anomalyFilterCode: string | null;
   setAnomalyFilterCode: (code: string | null) => void;
+
+  /** 交易复盘 -> 个股深度 的上下文 */
+  reviewTradeContext: ReviewTradeContext | null;
+  openMidlongFromReviewTrade: (ctx: ReviewTradeContext) => void;
+  clearReviewTradeContext: () => void;
+
+  /** 个股深度返回复盘时，用于恢复筛选与定位 */
+  pendingReviewRestore: { days: number; tradeId: number } | null;
+  returnToReviewFromMidlong: () => void;
+  consumePendingReviewRestore: () => { days: number; tradeId: number } | null;
 }
 
 const getStoredModel = () => {
@@ -308,4 +329,34 @@ export const useUIStore = create<UIState>((set) => ({
   anomalyFilterCode: null,
   setAnomalyFilterCode: (code) =>
     set({ anomalyFilterCode: code, anomalyDrawerOpen: code != null }),
+
+  reviewTradeContext: null,
+  // 记录这次跨页来源，便于个股深度的最近浏览命中
+  openMidlongFromReviewTrade: (ctx) => {
+    set({
+      reviewTradeContext: ctx,
+      focusedStock: { code: ctx.code, name: ctx.name },
+      activeModule: "midlong",
+    });
+    useUIStore.getState().pushInteraction({ kind: "stock", key: ctx.code, label: ctx.name });
+  },
+  clearReviewTradeContext: () => set({ reviewTradeContext: null }),
+
+  pendingReviewRestore: null,
+  returnToReviewFromMidlong: () =>
+    set((s) => ({
+      activeModule: "my_review",
+      pendingReviewRestore: s.reviewTradeContext
+        ? { days: s.reviewTradeContext.days, tradeId: s.reviewTradeContext.tradeId }
+        : null,
+      reviewTradeContext: null,
+    })),
+  consumePendingReviewRestore: () => {
+    let val: { days: number; tradeId: number } | null = null;
+    set((s) => {
+      val = s.pendingReviewRestore;
+      return { pendingReviewRestore: null };
+    });
+    return val;
+  },
 }));

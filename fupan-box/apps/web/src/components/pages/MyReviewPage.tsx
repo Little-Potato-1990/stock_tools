@@ -2,8 +2,6 @@
 
 import { useEffect, useState, useCallback } from "react";
 import {
-  Trash2,
-  Pencil,
   TrendingDown,
   Sparkles,
   Target,
@@ -132,15 +130,11 @@ export function MyReviewPage() {
   const [editingTrade, setEditingTrade] = useState<TradeRecord | null>(null);
   const [editHoldingMinutes, setEditHoldingMinutes] = useState("");
   const [editSaving, setEditSaving] = useState(false);
+  const [highlightTradeId, setHighlightTradeId] = useState<number | null>(null);
   const openStockDetail = useUIStore((s) => s.openStockDetail);
   const openAuthModal = useUIStore((s) => s.openAuthModal);
-
-  const minutesToDaysText = (minutes: number | null | undefined) => {
-    if (minutes == null) return "";
-    const days = minutes / (60 * 24);
-    // 最多保留 2 位小数，去掉末尾多余 0
-    return days.toFixed(2).replace(/\.?0+$/, "");
-  };
+  const openMidlongFromReviewTrade = useUIStore((s) => s.openMidlongFromReviewTrade);
+  const consumePendingReviewRestore = useUIStore((s) => s.consumePendingReviewRestore);
 
   useEffect(() => {
     const syncLoginState = () => {
@@ -183,6 +177,29 @@ export function MyReviewPage() {
   }, [load, loggedIn]);
 
   useEffect(() => {
+    if (!loggedIn) return;
+    const restore = consumePendingReviewRestore();
+    if (!restore) return;
+    const timer = window.setTimeout(() => {
+      setView("review");
+      setReviewTab("trades");
+      setDays(restore.days);
+      setHighlightTradeId(restore.tradeId);
+      const el = document.getElementById(`trade-row-${restore.tradeId}`);
+      if (el) {
+        el.scrollIntoView({ behavior: "smooth", block: "center" });
+      }
+    }, 80);
+    return () => window.clearTimeout(timer);
+  }, [loggedIn, consumePendingReviewRestore]);
+
+  useEffect(() => {
+    if (highlightTradeId == null) return;
+    const t = window.setTimeout(() => setHighlightTradeId(null), 2200);
+    return () => window.clearTimeout(t);
+  }, [highlightTradeId]);
+
+  useEffect(() => {
     if (typeof window === "undefined") return;
     const onImportUpdated = () => {
       if (api.isLoggedIn()) {
@@ -192,17 +209,6 @@ export function MyReviewPage() {
     window.addEventListener("app:import-updated", onImportUpdated);
     return () => window.removeEventListener("app:import-updated", onImportUpdated);
   }, [load]);
-
-  const removeTrade = async (id: number) => {
-    if (!confirm("确认删除该笔交易?")) return;
-    await api.deleteTrade(id);
-    await load();
-  };
-
-  const openEditTrade = (trade: TradeRecord) => {
-    setEditingTrade(trade);
-    setEditHoldingMinutes(trade.holding_minutes == null ? "" : minutesToDaysText(trade.holding_minutes));
-  };
 
   const saveTradeEdit = async () => {
     if (!editingTrade) return;
@@ -227,6 +233,21 @@ export function MyReviewPage() {
     } finally {
       setEditSaving(false);
     }
+  };
+
+  const openTradeDeepAnalysis = (t: TradeRecord) => {
+    const isBuy = t.buy_price > 0 && t.sell_price <= 0;
+    const price = isBuy ? t.buy_price : t.sell_price;
+    openMidlongFromReviewTrade({
+      tradeId: t.id,
+      code: t.code,
+      name: t.name || undefined,
+      tradeDate: t.trade_date,
+      side: isBuy ? "buy" : "sell",
+      price,
+      qty: t.qty,
+      days,
+    });
   };
 
   const runAiReview = async () => {
@@ -546,6 +567,8 @@ export function MyReviewPage() {
             <TradeList
               trades={trades}
               onOpenStock={openStockDetail}
+              onOpenDeepAnalysis={openTradeDeepAnalysis}
+              highlightedTradeId={highlightTradeId}
             />
           )}
           {reviewTab === "ai" && (
@@ -692,9 +715,13 @@ function Stat({
 function TradeList({
   trades,
   onOpenStock,
+  onOpenDeepAnalysis,
+  highlightedTradeId,
 }: {
   trades: TradeRecord[];
   onOpenStock: (code: string, name?: string) => void;
+  onOpenDeepAnalysis: (trade: TradeRecord) => void;
+  highlightedTradeId: number | null;
 }) {
   return (
     <div
@@ -727,6 +754,7 @@ function TradeList({
               <th className="px-2 py-1.5 text-center" style={{ width: 60 }}>方向</th>
               <th className="px-2 py-1.5 text-right tabular-nums" style={{ width: 80 }}>成交价</th>
               <th className="px-2 py-1.5 text-right tabular-nums" style={{ width: 60 }}>数量</th>
+              <th className="px-2 py-1.5 text-center" style={{ width: 90 }}>操作</th>
             </tr>
           </thead>
           <tbody>
@@ -736,7 +764,18 @@ function TradeList({
               const sideColor = isBuy ? "var(--accent-red)" : "var(--accent-green)";
               const dealPrice = isBuy ? t.buy_price : t.sell_price;
               return (
-                <tr key={t.id} style={{ borderTop: "1px solid var(--border-color)" }}>
+                <tr
+                  key={t.id}
+                  id={`trade-row-${t.id}`}
+                  style={{
+                    borderTop: "1px solid var(--border-color)",
+                    background:
+                      highlightedTradeId === t.id
+                        ? "rgba(168,85,247,0.16)"
+                        : "transparent",
+                    transition: "background 0.25s ease",
+                  }}
+                >
                   <td className="px-2 py-1.5" style={{ color: "var(--text-secondary)" }}>{t.trade_date}</td>
                   <td className="px-2 py-1.5">
                     <button
@@ -754,6 +793,21 @@ function TradeList({
                     {dealPrice.toFixed(2)}
                   </td>
                   <td className="px-2 py-1.5 text-right tabular-nums">{t.qty}</td>
+                  <td className="px-2 py-1.5 text-center">
+                    <button
+                      onClick={() => onOpenDeepAnalysis(t)}
+                      className="px-2 py-0.5 rounded font-bold"
+                      style={{
+                        background: "rgba(245,158,11,0.16)",
+                        color: "var(--accent-orange)",
+                        border: "1px solid rgba(245,158,11,0.4)",
+                        fontSize: 10,
+                        cursor: "pointer",
+                      }}
+                    >
+                      深度分析
+                    </button>
+                  </td>
                 </tr>
               );
             })}

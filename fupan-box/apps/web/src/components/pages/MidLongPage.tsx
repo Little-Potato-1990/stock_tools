@@ -769,12 +769,17 @@ export function MidLongPage() {
   const setFocused = useUIStore((s) => s.setFocusedStock);
   const pushInteraction = useUIStore((s) => s.pushInteraction);
   const openWhyRose = useUIStore((s) => s.openWhyRose);
+  const reviewTradeContext = useUIStore((s) => s.reviewTradeContext);
+  const clearReviewTradeContext = useUIStore((s) => s.clearReviewTradeContext);
   const [code, setCode] = useState<string | null>(focused?.code ?? null);
 
   const handlePick = (c: string, name?: string) => {
     setCode(c);
     setFocused({ code: c, name });
     pushInteraction({ kind: "stock", key: c, label: name });
+    if (reviewTradeContext && reviewTradeContext.code !== c) {
+      clearReviewTradeContext();
+    }
   };
 
   const tabSpec = useMemo(() => TABS.find((t) => t.id === activeTab)!, [activeTab]);
