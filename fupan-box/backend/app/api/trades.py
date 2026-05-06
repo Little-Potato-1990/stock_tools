@@ -25,13 +25,19 @@ _EST_STAMP_TAX_RATE = 0.001     # 卖出千1
 
 
 def _real_trade_stmt(user_id: int, since: date_type):
-    """仅保留真实交易配对: 排除含 virtual_initial 原始腿的 round-trip."""
-    virtual_leg_exists = (
+    """保留含真实成交腿的配对交易.
+
+    说明:
+    - 某些真实卖出会与 virtual_initial 买腿配对(用于补齐起始仓位)；
+      这类交易应在明细中展示，不能因包含 virtual 腿而整笔过滤。
+    - 仅当一笔配对完全没有真实腿时才排除。
+    """
+    real_leg_exists = (
         select(UserTradeRaw.id)
         .where(
             UserTradeRaw.user_id == user_id,
             UserTradeRaw.matched_trade_id == UserTrade.id,
-            UserTradeRaw.source == "virtual_initial",
+            UserTradeRaw.source != "virtual_initial",
         )
         .exists()
     )
@@ -40,7 +46,7 @@ def _real_trade_stmt(user_id: int, since: date_type):
         .where(
             UserTrade.user_id == user_id,
             UserTrade.trade_date >= since,
-            ~virtual_leg_exists,
+            real_leg_exists,
         )
     )
 
@@ -557,17 +563,37 @@ async def list_trades(
 ):
     from datetime import timedelta
     since = date_type.today() - timedelta(days=days)
-    if days >= 3650:
-        earliest = await _earliest_real_raw_trade_date(db, user.id)
-        if earliest is not None:
-            since = earliest
-    result = await db.execute(
-        _real_trade_stmt(user.id, since)
-        .order_by(UserTrade.trade_date.desc(), UserTrade.id.desc())
-    )
-    trades = list(result.scalars().all())
-    await _autofill_reason_if_missing(db, trades)
-    return trades
+    raws = (
+        await db.execute(
+            select(UserTradeRaw)
+            .where(
+                UserTradeRaw.user_id == user.id,
+                UserTradeRaw.trade_date >= since,
+                UserTradeRaw.source != "virtual_initial",
+            )
+            .order_by(UserTradeRaw.trade_date.desc(), UserTradeRaw.id.desc())
+        )
+    ).scalars().all()
+
+    # 交易明细按原始成交逐条展示（单边买/卖），不做配对依赖。
+    return [
+        TradeOut(
+            id=int(r.id),
+            trade_date=r.trade_date,
+            code=str(r.stock_code),
+            name=r.stock_name,
+            buy_price=float(r.price or 0.0) if _is_buy(r.side) else 0.0,
+            sell_price=float(r.price or 0.0) if _is_sell(r.side) else 0.0,
+            qty=int(r.qty or 0),
+            intraday_chg_at_buy=None,
+            holding_minutes=None,
+            reason=None,
+            pnl=0.0,
+            pnl_pct=0.0,
+            created_at=r.created_at,
+        )
+        for r in raws
+    ]
 
 
 @router.put("/{trade_id}", response_model=TradeOut)

@@ -130,11 +130,17 @@ export function MyReviewPage() {
   const [planReview, setPlanReview] = useState<PlanReviewLinkRecord | null>(null);
   const [holdingCodes, setHoldingCodes] = useState<string[]>([]);
   const [editingTrade, setEditingTrade] = useState<TradeRecord | null>(null);
-  const [editReason, setEditReason] = useState("");
   const [editHoldingMinutes, setEditHoldingMinutes] = useState("");
   const [editSaving, setEditSaving] = useState(false);
   const openStockDetail = useUIStore((s) => s.openStockDetail);
   const openAuthModal = useUIStore((s) => s.openAuthModal);
+
+  const minutesToDaysText = (minutes: number | null | undefined) => {
+    if (minutes == null) return "";
+    const days = minutes / (60 * 24);
+    // 最多保留 2 位小数，去掉末尾多余 0
+    return days.toFixed(2).replace(/\.?0+$/, "");
+  };
 
   useEffect(() => {
     const syncLoginState = () => {
@@ -195,22 +201,18 @@ export function MyReviewPage() {
 
   const openEditTrade = (trade: TradeRecord) => {
     setEditingTrade(trade);
-    setEditReason(trade.reason || "");
-    setEditHoldingMinutes(
-      trade.holding_minutes == null ? "" : String(trade.holding_minutes),
-    );
+    setEditHoldingMinutes(trade.holding_minutes == null ? "" : minutesToDaysText(trade.holding_minutes));
   };
 
   const saveTradeEdit = async () => {
     if (!editingTrade) return;
     const payload: TradeUpdatePayload = {
-      reason: editReason.trim() || null,
       holding_minutes:
-        editHoldingMinutes.trim() === "" ? null : Number(editHoldingMinutes),
+        editHoldingMinutes.trim() === "" ? null : Math.round(Number(editHoldingMinutes) * 60 * 24),
     };
     if (payload.holding_minutes != null) {
       if (Number.isNaN(payload.holding_minutes) || payload.holding_minutes < 0) {
-        alert("持仓分钟请输入大于等于 0 的数字");
+        alert("持有天数请输入大于等于 0 的数字");
         return;
       }
       payload.holding_minutes = Math.round(payload.holding_minutes);
@@ -543,8 +545,6 @@ export function MyReviewPage() {
           {reviewTab === "trades" && (
             <TradeList
               trades={trades}
-              onDelete={removeTrade}
-              onEdit={openEditTrade}
               onOpenStock={openStockDetail}
             />
           )}
@@ -586,10 +586,8 @@ export function MyReviewPage() {
       )}
       <TradeEditModal
         trade={editingTrade}
-        reason={editReason}
         holdingMinutes={editHoldingMinutes}
         saving={editSaving}
-        onReasonChange={setEditReason}
         onHoldingMinutesChange={setEditHoldingMinutes}
         onCancel={() => setEditingTrade(null)}
         onSave={saveTradeEdit}
@@ -693,13 +691,9 @@ function Stat({
 
 function TradeList({
   trades,
-  onDelete,
-  onEdit,
   onOpenStock,
 }: {
   trades: TradeRecord[];
-  onDelete: (id: number) => void;
-  onEdit: (trade: TradeRecord) => void;
   onOpenStock: (code: string, name?: string) => void;
 }) {
   return (
@@ -730,17 +724,17 @@ function TradeList({
             <tr style={{ background: "var(--bg-tertiary)", color: "var(--text-muted)" }}>
               <th className="px-2 py-1.5 text-left" style={{ width: 90 }}>日期</th>
               <th className="px-2 py-1.5 text-left" style={{ width: 130 }}>标的</th>
-              <th className="px-2 py-1.5 text-right tabular-nums" style={{ width: 80 }}>买/卖价</th>
+              <th className="px-2 py-1.5 text-center" style={{ width: 60 }}>方向</th>
+              <th className="px-2 py-1.5 text-right tabular-nums" style={{ width: 80 }}>成交价</th>
               <th className="px-2 py-1.5 text-right tabular-nums" style={{ width: 60 }}>数量</th>
-              <th className="px-2 py-1.5 text-right tabular-nums" style={{ width: 80 }}>盈亏</th>
-              <th className="px-2 py-1.5 text-center tabular-nums" style={{ width: 70 }}>持仓</th>
-              <th className="px-2 py-1.5 text-left">介入逻辑</th>
-              <th className="px-2 py-1.5 text-center" style={{ width: 68 }}></th>
             </tr>
           </thead>
           <tbody>
             {trades.map((t) => {
-              const winColor = t.pnl >= 0 ? "var(--accent-red)" : "var(--accent-green)";
+              const isBuy = t.buy_price > 0 && t.sell_price <= 0;
+              const sideLabel = isBuy ? "买" : "卖";
+              const sideColor = isBuy ? "var(--accent-red)" : "var(--accent-green)";
+              const dealPrice = isBuy ? t.buy_price : t.sell_price;
               return (
                 <tr key={t.id} style={{ borderTop: "1px solid var(--border-color)" }}>
                   <td className="px-2 py-1.5" style={{ color: "var(--text-secondary)" }}>{t.trade_date}</td>
@@ -753,38 +747,13 @@ function TradeList({
                       {t.code} {t.name || ""}
                     </button>
                   </td>
+                  <td className="px-2 py-1.5 text-center" style={{ color: sideColor, fontWeight: 700 }}>
+                    {sideLabel}
+                  </td>
                   <td className="px-2 py-1.5 text-right tabular-nums" style={{ color: "var(--text-secondary)" }}>
-                    {t.buy_price.toFixed(2)} / {t.sell_price.toFixed(2)}
+                    {dealPrice.toFixed(2)}
                   </td>
                   <td className="px-2 py-1.5 text-right tabular-nums">{t.qty}</td>
-                  <td className="px-2 py-1.5 text-right tabular-nums font-bold" style={{ color: winColor }}>
-                    {t.pnl >= 0 ? "+" : ""}{t.pnl.toFixed(0)}
-                    <div style={{ fontSize: 10, color: winColor }}>
-                      {t.pnl_pct >= 0 ? "+" : ""}{t.pnl_pct.toFixed(2)}%
-                    </div>
-                  </td>
-                  <td className="px-2 py-1.5 text-center tabular-nums" style={{ color: "var(--text-muted)" }}>
-                    {t.holding_minutes != null ? `${t.holding_minutes}m` : "—"}
-                  </td>
-                  <td className="px-2 py-1.5" style={{ color: "var(--text-secondary)" }}>{t.reason || "—"}</td>
-                  <td className="px-2 py-1.5 text-center">
-                    <button
-                      onClick={() => onEdit(t)}
-                      className="p-1"
-                      style={{
-                        color: "var(--text-muted)",
-                        background: "none",
-                        border: "none",
-                        cursor: "pointer",
-                      }}
-                      title="编辑"
-                    >
-                      <Pencil size={11} />
-                    </button>
-                    <button onClick={() => onDelete(t.id)} className="p-1" style={{ color: "var(--text-muted)", background: "none", border: "none", cursor: "pointer" }} title="删除">
-                      <Trash2 size={11} />
-                    </button>
-                  </td>
                 </tr>
               );
             })}
@@ -797,19 +766,15 @@ function TradeList({
 
 function TradeEditModal({
   trade,
-  reason,
   holdingMinutes,
   saving,
-  onReasonChange,
   onHoldingMinutesChange,
   onCancel,
   onSave,
 }: {
   trade: TradeRecord | null;
-  reason: string;
   holdingMinutes: string;
   saving: boolean;
-  onReasonChange: (v: string) => void;
   onHoldingMinutesChange: (v: string) => void;
   onCancel: () => void;
   onSave: () => void;
@@ -845,23 +810,12 @@ function TradeEditModal({
           </button>
         </div>
         <label className="flex flex-col gap-1" style={{ fontSize: 11 }}>
-          <span style={{ color: "var(--text-muted)" }}>持仓分钟</span>
+          <span style={{ color: "var(--text-muted)" }}>持有天数</span>
           <input
             value={holdingMinutes}
             onChange={(e) => onHoldingMinutesChange(e.target.value)}
-            placeholder="例如 45"
+            placeholder="例如 1.5"
             className="px-2 py-1 rounded"
-            style={{ background: "var(--bg-tertiary)", border: "1px solid var(--border-color)" }}
-          />
-        </label>
-        <label className="flex flex-col gap-1" style={{ fontSize: 11 }}>
-          <span style={{ color: "var(--text-muted)" }}>介入逻辑</span>
-          <textarea
-            value={reason}
-            onChange={(e) => onReasonChange(e.target.value)}
-            rows={4}
-            placeholder="可直接改写 AI 草稿"
-            className="px-2 py-1 rounded resize-none"
             style={{ background: "var(--bg-tertiary)", border: "1px solid var(--border-color)" }}
           />
         </label>
